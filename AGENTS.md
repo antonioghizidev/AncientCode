@@ -24,8 +24,11 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
 ## Estado atual
 
 - **M1 concluído** (skeleton: config, provider OpenAI-compat + SSE, histórico redigido, loop
-  fail-closed, REPL). 66 testes, 0 falhas.
-- **Próximo**: **M2 — Tool loop** (`specs/milestones/02-m2-tool-loop.md`).
+  fail-closed, REPL). Ver `docs/session-2026-09-14-m1.md`.
+- **M2 concluído** (tool registry, filesystem confinado, tool `shell` com `ask`, loop
+  multi-turno com gate e teto, fallback JSON, scan de exfiltração). 105 testes, 0 falhas.
+  Ver `docs/session-2026-09-15-m2.md`.
+- **Próximo**: **M3 — Modo plano + gate** (`specs/milestones/03-m3-modo-plano-gate.md`).
 - M7/M8 são "futuro" — **não iniciar** antes do gate dos anteriores.
 
 ## Como trabalhar (resumo da metodologia)

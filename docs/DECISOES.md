@@ -102,3 +102,72 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   no Linux (o alvo).
 - **Consequência**: risco residual de data race negligenciável no código atual (um mutex no
   Store), revisado na 1ª execução de CI no Linux.
+## 2026-09-15 — Sessão M2
+
+### D-2026-09-15-01 — Contrato de tool: interface Tool + Registry com nome estrito
+
+- **Contexto**: SPEC §3.3/§5.6 — o modelo controla nomes e argumentos de tools.
+- **Decisão**: `internal/tools` define `Tool{Name, Description, Parameters, Execute}` e um
+  `Registry` determinístico; nome validado com `^[a-z][a-z0-9_]*$`; args sempre parseados com
+  `UnmarshalStrict` (unknown fields e trailing data são erro).
+- **Consequência**: nome/tool desconhecido nunca vira handler dinâmico; fail-closed por construção.
+
+### D-2026-09-15-02 — Confinamento de caminhos com EvalSymlinks além do Clean+prefixo
+
+- **Contexto**: SPEC §7.1 exige rejeitar `..`, absolutos fora da raiz e symlinks que escapam.
+- **Decisão**: `files.resolve/resolveWrite` fazem `filepath.Join(root, Clean(rel))`, verificam
+  o prefixo e, para existentes, resolver por `EvalSymlinks` e rechecar; para escrita, cria os
+  pais dentro da raiz e revalida via symlink. `root` com trajeto normalizado no construtor.
+- **Consequência**: symlink apontando para fora é bloqueado mesmo quando o alvo não existir.
+
+### D-2026-09-15-03 — Paths sensíveis bloqueados fail-closed (categorias por segmento)
+
+- **Decisão**: `read_file`/`write_file`/`list_dir` rejeitam segmentos sensíveis (`.ssh`, `.aws`,
+  `.gnupg`, `.git-credentials`, `.kube`, `.config`, `shadow`, `passwd` e qualquer `.env*`).
+- **Consequência**: `read_file` sobre segredos é barrado antes de projetar conteúdo no modelo;
+  over-block é aceito (deny-by-default).
+
+### D-2026-09-15-04 — Loop multi-turno: planar antes de agir
+
+- **Contexto**: SPEC §3.3 passo 5 e §5.6.4/§5.6.5.
+- **Decisão**: o turno valida+escaneia+aprova TODAS as tool_calls ANTES de persistir o
+  assistant ou executar qualquer uma; depois persiste e executa sequencialmente; resultado
+  sempre truncado, redigido e envolto em marcadores untrusted antes de voltar ao modelo.
+- **Consequência**: rejeição exfiltração/tool desconhecida/deny não deixa histórico parcial.
+
+### D-2026-09-15-05 — Aprovação por política (allow/ask/deny) já no M2, UI no M3
+
+- **Decisão**: `Approver` injetável executa o policy `ask`; `deny` recusa; read-only default
+  `allow`. O REPL ganha uma UI mínima de y/N no stdin. O modo plano (remover mutáveis do
+  registro) e o fluxo `--run` completam-se no M3.
+- **Consequência**: nenhuma tool mutável roda sem aprovação desde já; M3 evolve a UX.
+
+### D-2026-09-15-06 — Fallback JSON §4.3 implementado no loop (não no provider)
+
+- **Decisão**: quando o provider não devolve `tool_calls` e `json_mode_fallback != never`, o
+  loop tenta parsear o `content` como `{"type":"tool_call","tool":...,"args":{...}}` ou
+  `{"type":"final","content":...}`; em `always`, texto livre é erro estrito; o mesmo pipeline
+  de validação/execução é reutilizado e o id sintético (`fallback`) liga as mensagens tool.
+- **Consequência**: um só handler de tools serve nativo e fallback; nada novo é executado fora
+  do gate.
+
+### D-2026-09-15-07 — Tool shell: hard-block em forma normalizada + negação de encadeamento
+
+- **Decisão**: a tool `shell` executa `bash -c` só após: limite de tamanho, scan de hard-block
+  (padrões normalizados sem espaços/aspas para sobreviver a quoting) e rejeição de
+  encadeamento (`; && || | &`, newline, `$(` , backtick). Desabilitada por default.
+- **Consequência**: `rm -rf "/"`, `chmod 777 /`, pipes etc. recusados independentemente de como
+  o modelo escrever; testes não precisam do bash nos caminhos de rejeição.
+
+### D-2026-09-15-08 — System prompt de hierarquia e marcadores embrionário no loop
+
+- **Decisão**: o loop prepende (efêmero, não persistido) um system prompt declaraando
+  precedência das regras e o tratamento de `[untrusted-tool-output]...[/...]` como dado.
+- **Consequência**: injeção via conteúdo de arquivo já enfrenta instrução explícita; prompt
+  completo por provider fica para M3/M4.
+
+### D-2026-09-15-09 — Teto de iterações por turno = 20
+
+- **Decisão**: em vez de configurável nesta fase, constante `maxToolIterations = 20` com
+  falha fechada ao estourar (SPEC §5.6.5 "loop com teto").
+- **Consequência**: roteiro de loop infinito não corrompe o histórico nem trava o harness.

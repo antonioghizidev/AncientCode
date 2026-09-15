@@ -535,6 +535,9 @@ para reuso).
 ### Milestone 2 — Tool loop
 - [ ] registry de tools, `shell` (desabilitado por padrão), `files`, parse de tool_calls nativos + fallback JSON
 - **Aceite**: agente resolve "lista os 5 containers em execução" via `docker ps` com aprovação/whitelist; comando não listado é recusado.
+- **Status M2**: ✅ implementado em 2026-09-15 (registry + files + shell com ask + loop multi-turno
+  com gate e teto + fallback JSON + scan de exfiltração). Ver `specs/milestones/02-m2-tool-loop.md`.
+  Pendente do aceite §12: smoke real com `docker ps` (exige M4/sandbox).
 
 ### Milestone 3 — Modo plano + gate
 - **Aceite**: `--plan` nunca executa mutações; plano só roda após `y`.

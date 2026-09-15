@@ -21,7 +21,8 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
 
 - **M1 — Skeleton funcional**: ✅ concluído (implementação e testes; aceite final pendente de
   smoke test no notebook alvo). Ver `milestones/01-m1-skeleton-funcional.md`.
-- **Próximo**: M2 — Tool loop.
+- **M2 — Tool loop**: ✅ concluído em 2026-09-15. Ver `milestones/02-m2-tool-loop.md`.
+- **Próximo**: M3 — Modo plano + gate.
 
 ## Fluxo entre sessões
 
