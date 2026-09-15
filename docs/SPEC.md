@@ -522,6 +522,10 @@ para reuso).
 
 ## 12. Roteiro e critérios de aceite
 
+> Especificações detalhadas (escopo, contratos, testes de segurança obrigatórios) de cada
+> milestone vivem em [`specs/milestones/`](../specs/milestones/). Metodologia de trabalho:
+> [`specs/methodology.md`](../specs/methodology.md).
+
 ### Milestone 1 — Skeleton funcional — ✅ CONCLUÍDO (2026-09-14)
 
 - [x] config + client OpenAI-compat (OpenRouter + NVIDIA) + SSE + REPL básico
