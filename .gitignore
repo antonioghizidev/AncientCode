@@ -1,0 +1,16 @@
+# Binaries and build artifacts
+ancientai
+ancientai.exe
+*.test
+/dist/
+
+# Secrets — never versioned
+.env
+.env.*
+*.pem
+*.key
+
+# Sessions and local state
+sessions/
+*.log
+docs/.obsidian/

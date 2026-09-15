@@ -1,0 +1,102 @@
+// Package model persists session history in a JSONL file, applying secret
+// redaction before anything touches disk (SPEC §5.5, §5.6.3 and §9).
+package model
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+
+	"ancientai/internal/provider"
+	"ancientai/internal/redact"
+)
+
+// Store is an append-only, mutex-guarded session file.
+type Store struct {
+	path string
+	mu   sync.Mutex
+}
+
+// Open ensures the parent directory exists and returns a Store bound to path.
+func Open(path string) (*Store, error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("model: create session dir: %w", err)
+	}
+	return &Store{path: path}, nil
+}
+
+// RedactMessage masks every secret-carrying field of a message. It is exported
+// so the loop can apply the same rule before handing data to the provider.
+func RedactMessage(m provider.ChatMessage) provider.ChatMessage {
+	m.Content = redact.Redact(m.Content)
+	for i := range m.ToolCalls {
+		m.ToolCalls[i].Function.Arguments = redact.Redact(m.ToolCalls[i].Function.Arguments)
+	}
+	return m
+}
+
+// Append persists messages atomically (one JSON line each) after redaction.
+func (s *Store) Append(msgs ...provider.ChatMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return fmt.Errorf("model: open session for append: %w", err)
+	}
+	defer f.Close()
+
+	enc := json.NewEncoder(f)
+	for _, m := range msgs {
+		if err := enc.Encode(RedactMessage(m)); err != nil {
+			return fmt.Errorf("model: append message: %w", err)
+		}
+	}
+	return nil
+}
+
+// Load returns the full history. A missing file yields an empty (nil) slice.
+// Messages are redacted again on load as defense in depth.
+func (s *Store) Load() ([]provider.ChatMessage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	f, err := os.Open(s.path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("model: open session for read: %w", err)
+	}
+	defer f.Close()
+
+	var out []provider.ChatMessage
+	dec := json.NewDecoder(f)
+	for {
+		var m provider.ChatMessage
+		if err := dec.Decode(&m); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("model: corrupt session file %s: %w", s.path, err)
+		}
+		out = append(out, RedactMessage(m))
+	}
+	return out, nil
+}
+
+// Reset truncates the session file. It is destructive and therefore only
+// called through an explicit command, never automatically.
+func (s *Store) Reset() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.Remove(s.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("model: reset session: %w", err)
+	}
+	return nil
+}

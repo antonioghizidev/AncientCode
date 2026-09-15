@@ -1,0 +1,36 @@
+# AncientAI — exemplo de configuração.
+# Copie para ancientai.yaml e preencha. NUNCA versione ancientai.yaml
+# (a chave vive em variável de ambiente, nunca no arquivo).
+#
+# Provedores:
+#   openrouter  -> base_url https://openrouter.ai/api/v1        api_key_env OPENROUTER_API_KEY
+#   nvidia      -> base_url https://integrate.api.nvidia.com/v1 api_key_env NVIDIA_API_KEY
+#   litellm     -> base_url http://127.0.0.1:4000/v1           api_key_env LITELLM_API_KEY
+#
+# Overrides por env: ANCIENTAI_PROVIDER, ANCIENTAI_BASE_URL, ANCIENTAI_MODEL, ANCIENTAI_WORKDIR.
+
+provider: openrouter
+base_url: https://openrouter.ai/api/v1
+api_key_env: OPENROUTER_API_KEY
+model: anthropic/claude-sonnet-4-5
+
+# execution
+workdir: /home/ancientai/tasks
+code_root: /home/ancientai/code
+run_user: ancientai          # nunca root
+shell_tool: disabled         # disabled | enabled (enabled exige approval.default=ask)
+toolbox_mode: plan           # plan (default) | run
+tool_timeouts:
+  docker: 60s
+  apt: 180s
+  shell: 30s
+output_max_bytes: 65536
+
+# policies
+approval:
+  default: ask               # allow | ask | deny
+  read_only: allow
+  write_file: ask
+
+# provider fallback
+json_mode_fallback: auto     # auto | always | never
