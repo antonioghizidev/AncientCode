@@ -30,6 +30,15 @@ type Result struct {
 	Duration  time.Duration
 }
 
+// DeniedError marks a tool-call refused by a security policy (hard-block,
+// whitelist or chaining denial). The loop classifies it as status="denied"
+// in the audit (SPEC §5.7) — a refusal, not a runtime error.
+type DeniedError struct {
+	Reason string
+}
+
+func (e *DeniedError) Error() string { return "denied: " + e.Reason }
+
 // Tool is one callable instrument exposed to the model.
 type Tool interface {
 	// Name is the stable identifier sent to the model (lowercase snake_case).

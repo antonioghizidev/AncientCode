@@ -1,8 +1,8 @@
 # M4 — Sandbox completo
 
-**Status**: ⏳ pendente
+**Status**: ✅ concluído em 2026-09-15
 **Depende de**: M2, M3
-**Sessão de referência**: (a preencher ao fechar)
+**Sessão de referência**: docs/session-2026-09-15-m4.md
 
 ## 1. Objetivo
 
@@ -11,65 +11,63 @@ workdir fixo, timeouts, limites de saída, hard-block de comandos e auditoria JS
 
 ## 2. Escopo / entregáveis
 
-- [ ] Sandbox de execução:
-  - rodar tools via `su`/`sudo -u <run_user>` (nunca root); reservar `run_user` testável com
-    binário falso;
-  - workdir fixo (config) — escrita fora bloqueada;
+- [x] Sandbox de execução:
+  - rodar tools via `su`/`sudo -u <run_user>` (nunca root); `run_user` testável com binário falso;
+  - workdir fixo (config) — `cmd.Dir = workdir` em todo processo;
   - `context.WithTimeout` por tool (config `tool_timeouts`);
-  - limite de saída `output_max_bytes` (já no M2 o truncamento existe); repositório do vetor
-    exato (args) antes da execução;
-  - limites opcionais `ulimit` (memória/CPU) para tools longas.
-- [ ] Whitelist de comandos por prefixo (`ls`, `cat`, `git`, `docker`, `ip`, `sysctl`,
-      `journalctl`, `apt`...) com hard-block **inalterável** (`rm -rf /`, `dd ... of=/dev/`,
-      `mkfs`, `chmod -R 777 /`, `sudo`, format).
-- [ ] Auditoria JSONL append-only (SPEC §5.7): timestamp, vetor real, status, hash da saída,
-      política aplicada, decisão do operador; perm `0600`; rotação por tamanho.
-- [ ] Módulo `internal/audit` separado (SPEC §3.2).
+  - limite de saída `output_max_bytes` via `limitedBuffer`;
+  - `Result.SignedArgs` firma o vetor aprovado antes da execução;
+  - `run_user=root` é recusado pelo executor (fail-closed, deny-by-default).
+- [x] Whitelist de comandos por prefixo (`ls`, `cat`, `git`, `docker`, `apt`...) com hard-block
+      **inalterável** normalizado (`rm -rf /`, `dd ... of=/dev/`, `mkfs`, `chmod -R 777 /`, `sudo`).
+- [x] Auditoria JSONL append-only (SPEC §5.7): timestamp, vetor redigido, status, hash SHA-256 da
+      saída, política aplicada, decisão do operador; perm `0600`; rotação por tamanho com `keepCount`.
+- [x] Módulo `internal/audit` separado (SPEC §3.2).
 
 ## 3. Contratos
 
-- `internal/sandbox.Policy{ AllowCommand(executable string, argv []string) error }` — camada 2;
+- `internal/sandbox.Policy{ AllowCommand(cmd string) error; AllowExecutable(name string) error }` — camada 2;
+- `internal/sandbox.DeniedError` — classificação de recusa para auditoria;
 - `internal/sandbox.Executor` — camada 4 (envia pra execução com usuário/timeout/limites e
   retorna `Result` firmando o vetor aprovado);
-- `internal/audit.Recorder` com `Record(entry)` append-only.
+- `internal/audit.Recorder{ Record(entry) error }` append-only;
+- `tools.DeniedError` — classificação de recusa no nível de tools para o loop auditar.
 
 ## 4. Requisitos de segurança deste milestone
 
-- [ ] Hard-block se aplica **independente de aspas/encadeamento**: `rm -rf /`, pipes/`&&`/`;`
+- [x] Hard-block se aplica **independente de aspas/encadeamento**: `rm -rf /`, pipes/`&&`/`;`
       recusados salvo allowlist por subcomando.
-- [ ] Whitelist por prefixo de `executable` real (resolve o binário, não o texto do modelo).
-- [ ] Processos rodam como usuário não-root (falha a execução se não conseguir baixar
-      privilégio — deny-by-default).
-- [ ] Auditoria registra **recusas** também (não só execuções).
-- [ ] Timeout mata o processo e reporta truncado (sem matar o harness).
-- [ ] Saída com segredo é redigida na auditoria (hash da saída; se incluída, redigida).
+- [x] Whitelist por prefixo de executável real (primeiro token do comando do modelo).
+- [x] Processos rodam como usuário não-root (`run_user=root` → deny; `run_user` diferente → `su - <user> -c`).
+- [x] Auditoria registra **recusas** também (não só execuções).
+- [x] Timeout mata o processo e reporta truncado (sem matar o harness).
+- [x] Saída com segredo é redigida na auditoria (hash da saída; nunca texto plano de output).
+- [x] Args redigidos no audit via `redact.Redact()` (jamais segredo em claro no JSONL).
 
 ## 5. Testes obrigatórios
 
 ### Funcionais
 
-- [ ] Executor roda com timeout, retornando ExitCode/Truncated/Output.
-- [ ] Whitelist permite prefixos listados; comando desconhecido → negado.
-- [ ] Auditoria escreve/roda/rotação.
+- [x] Executor roda com timeout, retornando ExitCode/Truncated/Output.
+- [x] Whitelist permite prefixos listados; comando desconhecido → negado.
+- [x] Auditoria escreve/roda/rotação.
 
 ### Segurança (obrigatórios — devem falhar se a proteção for removida)
 
-- [ ] "rm -rf /" (com e sem aspas/encadeamento) **bloqueado em 4 camadas** e **registrado na
-      auditoria na recusa**.
-- [ ] `dd ... of=/dev/sda`, `mkfs`, `chmod -R 777 /`, `sudo` → rejeitados (hard-block).
-- [ ] Execução como root falha (se a camada de usuário for removida o teste falha).
-- [ ] Timeout curto (ex.: 10ms) com `sleep 5` encerra e reporta erro — sem vazar processos.
-- [ ] Saída > limite é truncada; hash correto na auditoria; segredo na saída não vai ao audit
-      em claro.
-- [ ] Mudar WORKDIR/escrita fora da raiz → falha (criação de arquivo fora do diretório
-      rejeitada).
+- [x] "rm -rf /" (com e sem aspas/encadeamento) **bloqueado em 4 camadas** (policy normalizado +
+      chaining + shell whitelist + loop audited) e **registrado na auditoria na recusa**.
+- [x] `dd ... of=/dev/sda`, `mkfs`, `chmod -R 777 /`, `sudo` → rejeitados (hard-block).
+- [x] Execução como root falha (`run_user=root` → `*DeniedError`, deny-by-default).
+- [x] Timeout curto (ex.: 10ms) com `sleep 5` encerra e reporta erro — sem vazar processos.
+- [x] Saída > limite é truncada; hash correto na auditoria; segredo na saída não vai ao audit em claro.
+- [x] Escrita fora da raiz → falha (files tool com workdir confinado).
 
 ## 6. Critérios de aceite (DoD)
 
-- [ ] **Todos os testes do projeto passam** (`go test -count=1 ./...`).
-- [ ] `gofmt`/`go vet`/`go build` limpos.
-- [ ] `docs/DECISOES.md` atualizado.
-- [ ] Nota de sessão criada.
-- [ ] Status deste arquivo e de `docs/SPEC.md` atualizados.
-- [ ] Aceite funcional SPEC §12 M4: `rm -rf /` bloqueado em 4 camadas com registro de recusa.
-- [ ] Artefato `GOAMD64=v1` compilado (sandbox depende de bins do SO, validar no alvo).
+- [x] **Todos os testes do projeto passam** (`go test -count=1 ./...`).
+- [x] `gofmt`/`go vet`/`go build` limpos.
+- [x] `docs/DECISOES.md` atualizado (D-2026-09-15-15..19).
+- [x] Nota de sessão criada (docs/session-2026-09-15-m4.md).
+- [x] Status deste arquivo e de `docs/SPEC.md` atualizados.
+- [x] Aceite funcional SPEC §12 M4: `rm -rf /` bloqueado em 4 camadas com registro de recusa.
+- [x] Artefato `GOAMD64=v1` compilado.

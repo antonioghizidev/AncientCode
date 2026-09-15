@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"ancientai/internal/audit"
 	"ancientai/internal/config"
 	"ancientai/internal/model"
 	"ancientai/internal/provider"
@@ -64,7 +65,8 @@ type Loop struct {
 	cfg       *config.Config
 	reg       *tools.Registry
 	appr      Approver
-	toolbox   string // plan (default) | run — mutable per session via SetToolboxMode
+	rec       *audit.Recorder // M4: append-only JSONL audit (nil = disabled)
+	toolbox   string          // plan (default) | run — mutable per session via SetToolboxMode
 	toolboxMu sync.RWMutex
 }
 
@@ -89,6 +91,16 @@ func (l *Loop) SetToolboxMode(mode string) error {
 	l.toolbox = mode
 	l.toolboxMu.Unlock()
 	return nil
+}
+
+// SetAudit attaches an audit recorder (SPEC §5.7). A nil recorder disables
+// auditing, which is the fail-closed default when none is wired.
+func (l *Loop) SetAudit(rec *audit.Recorder) { l.rec = rec }
+
+func (l *Loop) recordToolCall(e audit.Entry) {
+	if l.rec != nil {
+		_ = l.rec.Record(e)
+	}
 }
 
 func (l *Loop) toolboxMode() string {
@@ -198,12 +210,15 @@ func (l *Loop) planCalls(ctx context.Context, calls []provider.CompletedToolCall
 			return nil, errors.New("loop: tool call sem nome; recusado (fail-closed)")
 		}
 		if len(c.Args) > tools.MaxArgsBytes {
+			l.recordToolCall(audit.Entry{Tool: c.Name, Args: redact.Redact(string(c.Args)), Policy: l.policyFor(c.Name), Decision: "denied", Status: "denied"})
 			return nil, fmt.Errorf("loop: tool %q tem argumentos acima do limite (%d bytes); recusado", c.Name, tools.MaxArgsBytes)
 		}
 		if !json.Valid([]byte(c.Args)) {
+			l.recordToolCall(audit.Entry{Tool: c.Name, Args: redact.Redact(string(c.Args)), Policy: l.policyFor(c.Name), Decision: "denied", Status: "denied"})
 			return nil, fmt.Errorf("loop: tool %q tem argumentos JSON invalidos; recusado (parse estrito)", c.Name)
 		}
 		if found := redact.FindSecrets(c.Name + " " + c.Args); len(found) > 0 {
+			l.recordToolCall(audit.Entry{Tool: c.Name, Args: redact.Redact(string(c.Args)), Policy: l.policyFor(c.Name), Decision: "denied", Status: "denied"})
 			return nil, fmt.Errorf("loop: tool %q contem possivel segredo nos argumentos; recusado (scan de exfiltracao)", c.Name)
 		}
 		if !l.toolEnabled(c.Name) {
@@ -219,9 +234,11 @@ func (l *Loop) planCalls(ctx context.Context, calls []provider.CompletedToolCall
 
 		switch l.policyFor(c.Name) {
 		case policyDeny:
+			l.recordToolCall(audit.Entry{Tool: c.Name, Args: redact.Redact(string(c.Args)), Policy: "deny", Decision: "denied", Status: "denied"})
 			return nil, fmt.Errorf("loop: tool %q negada pela politica; recusado", c.Name)
 		case policyAsk:
 			if l.appr == nil {
+				l.recordToolCall(audit.Entry{Tool: c.Name, Args: redact.Redact(string(c.Args)), Policy: "ask", Decision: "denied", Status: "denied"})
 				return nil, fmt.Errorf("loop: tool %q exige aprovacao e nao ha approver configurado; recusado (fail-closed)", c.Name)
 			}
 			dctx := ctx
@@ -233,16 +250,20 @@ func (l *Loop) planCalls(ctx context.Context, calls []provider.CompletedToolCall
 			dec, err := l.appr.Decide(dctx, c.Name, summaryFor(c))
 			if err != nil {
 				if errors.Is(err, context.DeadlineExceeded) {
+					l.recordToolCall(audit.Entry{Tool: c.Name, Args: redact.Redact(string(c.Args)), Policy: "ask", Decision: "timeout", Status: "denied"})
 					return nil, fmt.Errorf("loop: aprovacao de %q expirou; recusado (fail-closed)", c.Name)
 				}
+				l.recordToolCall(audit.Entry{Tool: c.Name, Args: redact.Redact(string(c.Args)), Policy: "ask", Decision: "denied", Status: "denied"})
 				return nil, fmt.Errorf("loop: aprovacao de %q falhou: %w", c.Name, err)
 			}
 			if dec != DecisionApprove {
+				l.recordToolCall(audit.Entry{Tool: c.Name, Args: redact.Redact(string(c.Args)), Policy: "ask", Decision: "denied", Status: "denied"})
 				return nil, fmt.Errorf("loop: tool %q nao foi aprovada; recusado", c.Name)
 			}
 		case policyAllow:
 			// auto-run, but the operator's hard veto is still the last word.
 			if l.appr != nil && l.appr.Vetoed(c.Name) {
+				l.recordToolCall(audit.Entry{Tool: c.Name, Args: redact.Redact(string(c.Args)), Policy: "allow", Decision: "vetoed", Status: "denied"})
 				return nil, fmt.Errorf("loop: tool %q vetada pelo operador; recusado mesmo com politica allow", c.Name)
 			}
 		default:
@@ -258,9 +279,34 @@ func (l *Loop) execOne(ctx context.Context, a action) error {
 	if err != nil {
 		return errors.New("loop: config de timeout da tool invalida; nao executado")
 	}
+	start := time.Now()
 	tctx, cancel := context.WithTimeout(ctx, dur)
 	res, err := a.tool.Execute(tctx, json.RawMessage(a.call.Args))
 	cancel()
+
+	status, decision := "executed", "allow"
+	if err != nil {
+		var de *tools.DeniedError
+		if errors.As(err, &de) {
+			status, decision = "denied", de.Reason
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			status = "timeout"
+		} else {
+			status = "error"
+		}
+	}
+	entry := audit.Entry{
+		Tool:       a.call.Name,
+		Args:       redact.Redact(string(a.call.Args)),
+		Status:     status,
+		Policy:     l.policyFor(a.call.Name),
+		Decision:   decision,
+		ExitCode:   res.ExitCode,
+		OutputHash: audit.HashOutput(res.Output),
+		Truncated:  res.Truncated,
+		Duration:   time.Since(start).String(),
+	}
+	l.recordToolCall(entry)
 
 	out := ""
 	if err != nil {

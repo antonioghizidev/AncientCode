@@ -23,7 +23,8 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
   smoke test no notebook alvo). Ver `milestones/01-m1-skeleton-funcional.md`.
 - **M2 — Tool loop**: ✅ concluído em 2026-09-15. Ver `milestones/02-m2-tool-loop.md`.
 - **M3 — Modo plano + gate**: ✅ concluído em 2026-09-15. Ver `milestones/03-m3-modo-plano-gate.md`.
-- **Próximo**: M4 — Sandbox completo (auditar aprovações, run_user, timeouts, limites, hard-block).
+- **M4 — Sandbox completo**: ✅ concluído em 2026-09-15. Ver `milestones/04-m4-sandbox-completo.md`.
+- **Próximo**: M5 — Docker/apt tools + sessão persistente.
 
 ## Fluxo entre sessões
 

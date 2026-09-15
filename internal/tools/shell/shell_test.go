@@ -2,7 +2,9 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +13,6 @@ import (
 )
 
 func TestHardBlockPatterns(t *testing.T) {
-	// These must be refused BEFORE any execution exists, so they never need bash.
 	blocked := []string{
 		"rm -rf /",
 		`rm -rf "/"`,
@@ -28,7 +29,7 @@ func TestHardBlockPatterns(t *testing.T) {
 		"cat /etc/shadow ; rm -rf /tmp",
 	}
 	for _, cmd := range blocked {
-		_, err := New(65536).Execute(context.Background(), tools.Raw(`{"cmd":`+quote(cmd)+`}`))
+		_, err := NewSimple(65536).Execute(context.Background(), tools.Raw(`{"cmd":`+quote(cmd)+`}`))
 		if err == nil {
 			t.Errorf("hard-block missed: %q", cmd)
 		}
@@ -46,7 +47,7 @@ func TestChainingDenied(t *testing.T) {
 		"echo $(whoami)",
 	}
 	for _, cmd := range blocked {
-		if _, err := New(65536).Execute(context.Background(), tools.Raw(`{"cmd":`+quote(cmd)+`}`)); err == nil {
+		if _, err := NewSimple(65536).Execute(context.Background(), tools.Raw(`{"cmd":`+quote(cmd)+`}`)); err == nil {
 			t.Errorf("chaining not denied: %q", cmd)
 		}
 	}
@@ -54,7 +55,7 @@ func TestChainingDenied(t *testing.T) {
 
 func TestOversizedCmdRejected(t *testing.T) {
 	cmd := strings.Repeat("a", maxCmdBytes+1)
-	if _, err := New(65536).Execute(context.Background(), tools.Raw(`{"cmd":`+quote(cmd)+`}`)); err == nil {
+	if _, err := NewSimple(65536).Execute(context.Background(), tools.Raw(`{"cmd":`+quote(cmd)+`}`)); err == nil {
 		t.Fatal("oversized cmd accepted")
 	}
 }
@@ -65,17 +66,15 @@ func TestStrictArgs(t *testing.T) {
 		`{"cmd":123}`,
 		`{"cmd":"echo ok"} trailing`,
 	} {
-		if _, err := New(65536).Execute(context.Background(), tools.Raw(args)); err == nil {
+		if _, err := NewSimple(65536).Execute(context.Background(), tools.Raw(args)); err == nil {
 			t.Errorf("strict args accepted: %s", args)
 		}
 	}
 }
 
 func TestEcho(t *testing.T) {
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash not available")
-	}
-	res, err := New(65536).Execute(context.Background(), tools.Raw(`{"cmd":"echo ok"}`))
+	requireBash(t)
+	res, err := NewSimple(65536).Execute(t.Context(), tools.Raw(`{"cmd":"echo ok"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,29 +83,26 @@ func TestEcho(t *testing.T) {
 	}
 }
 
-func TestUnknownCommandExitCode(t *testing.T) {
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash not available")
+// Security: an executable outside the whitelist is denied before any
+// execution attempt (deny-by-default), even with approval.
+func TestUnknownCommandDeniedByWhitelist(t *testing.T) {
+	_, err := NewSimple(65536).Execute(t.Context(), tools.Raw(`{"cmd":"definitely-not-a-real-cmd-xyz"}`))
+	var de *tools.DeniedError
+	if !errors.As(err, &de) {
+		t.Fatalf("expected whitelist denial, got %v", err)
 	}
-	res, err := New(65536).Execute(context.Background(), tools.Raw(`{"cmd":"definitely-not-a-real-cmd-xyz"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.ExitCode == 0 {
-		t.Fatal("unknown command should exit non-zero")
+	if !strings.Contains(de.Reason, "not in the allowed list") {
+		t.Fatalf("unexpected reason: %s", de.Reason)
 	}
 }
 
 // Security: a runaway command is killed by the context, not the host.
 func TestTimeoutKills(t *testing.T) {
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash not available")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	requireBash(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
-	res, err := New(65536).Execute(ctx, tools.Raw(`{"cmd":"sleep 5"}`))
+	res, err := NewSimple(65536).Execute(ctx, tools.Raw(`{"cmd":"sleep 5"}`))
 	if err == nil {
-		// The child may have been killed: exit code 137, no harness hang.
 		if res.ExitCode == 0 {
 			t.Fatal("sleep completed despite timeout")
 		}
@@ -119,10 +115,8 @@ func TestTimeoutKills(t *testing.T) {
 }
 
 func TestOutputTruncated(t *testing.T) {
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash not available")
-	}
-	res, err := New(16).Execute(context.Background(), tools.Raw(`{"cmd":"seq 1 100000"}`))
+	requireBash(t)
+	res, err := NewSimple(16).Execute(t.Context(), tools.Raw(`{"cmd":"seq 1 100000"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,6 +125,27 @@ func TestOutputTruncated(t *testing.T) {
 	}
 	if len(res.Output) > 16 {
 		t.Fatalf("buffer exceeded limit: %d", len(res.Output))
+	}
+}
+
+// requireBash skips when bash is not usable.  On non-Linux hosts the shell
+// functional tests are not meaningful (the target is Linux minimal), so we
+// skip unconditionally on other platforms.  On Linux we still trial-run
+// `bash -c "true"` to guard against environments where the launcher exists
+// but the shell is broken (e.g. Windows Store / WSL shim).
+func requireBash(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("shell functional tests only run on Linux (target host)")
+	}
+	path, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash not available")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(ctx, path, "-c", "true").Run(); err != nil {
+		t.Skipf("bash unusable on this host: %v", err)
 	}
 }
 

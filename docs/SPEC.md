@@ -545,8 +545,14 @@ para reuso).
 - **Status M3**: ✅ implementado em 2026-09-15 (`SetToolboxMode`, `Approver` interface com `Decide`+`Vetoed`, `approval.timeout_seconds`, `Loop.Continue`, fluxo do plano no REPL, `--run` com allow explícito). 112 testes, 0 falhas. Ver `specs/milestones/03-m3-modo-plano-gate.md` e `docs/session-2026-09-15-m3.md`. Aceite real §12 (smoke no notebook) pendente junto com M4/sandbox.
 
 ### Milestone 4 — Sandbox completo
-- [ ] usuário não-privilegiado, workdir fixo, timeouts, limites de saída, audit JSONL, hard-block
+- [x] usuário não-privilegiado, workdir fixo, timeouts, limites de saída, audit JSONL, hard-block
 - **Aceite**: "rm -rf /" proposto pelo modelo é bloqueado em 4 camadas; auditoria registra rejeição.
+- **Status M4**: ✅ implementado em 2026-09-15 (internal/audit JSONL append-only com SHA-256 + rotação;
+  internal/sandbox/policy com whitelist por prefixo + hard-block inalterável normalize-agnostic;
+  internal/sandbox/executor com run_user, workdir fixo, timeout, limit; shell refatorado;
+  auditoria no loop com classificação denied/timeout/error e args redigidos; run_user=root recusado;
+  whitelist exige executável autorizado). Ver `specs/milestones/04-m4-sandbox-completo.md` e
+  `docs/session-2026-09-15-m4.md`. Aceite real §12 pendente (smoke com `docker ps` após M5/sandbox).
 
 ### Milestone 5 — Docker/apt tools + sessão persistente
 - **Aceite**: diagnóstico real de container quebrado (logs, inspect, restart) automatizado com aprovações; `--resume` recupera contexto.

@@ -31,7 +31,11 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
 - **M3 concluído** (toolbox por modo plan/run, `Approver` interface com veto, fluxo do plano
   y/n/feedback no REPL, `--run` com allow explícito, `approval.timeout_seconds`).
   112 testes, 0 falhas. Ver `docs/session-2026-09-15-m3.md`.
-- **Próximo**: **M4 — Sandbox completo** (`specs/milestones/04-m4-sandbox.md`).
+- **M4 concluído** (sandbox completo: internal/audit JSONL append-only, internal/sandbox
+  policy whitelist+hard-block, executor run_user/workdir/timeout, shell refatorado sobre
+  sandbox, auditoria no loop com denied/timeout/error, args redigidos no audit).
+  Ver `docs/session-2026-09-15-m4.md`.
+- **Próximo**: **M5 — Docker/apt tools** (`specs/milestones/05-m5-docker-apt-sessao.md`).
 - M7/M8 são "futuro" — **não iniciar** antes do gate dos anteriores.
 
 ## Como trabalhar (resumo da metodologia)

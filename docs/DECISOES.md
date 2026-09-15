@@ -223,3 +223,52 @@ As decisões que alteram a SPEC devem ser refletidas lá.
 - **Decisão**: todas as leituras de stdin usam um único `bufio.Reader` + `ReadString('\n')`.
 - **Consequência**: sem corrida entre prompt de plano/approver/REPL; EOF padronizado por
   `io.EOF`.
+
+## 2026-09-15 — Sessão M4
+
+### D-2026-09-15-15 — Sandbox: whitelist por prefixo + hard-block inalterável normalize-agnostic
+
+- **Contexto**: SPEC §5.2 camada 2 — "rm -rf /" deve ser recusado independente de aspas,
+  encadeamento ou reformatação pelo modelo.
+- **Decisão**: normalizar a forma do comando (strip whitespace/quotes/backslash) e aplicar
+  hard-block via regexps fixos antes de qualquer whitelist. A whitelist usa o primeiro token
+  (executável real) como prefixo; comandos cujo executável não está na lista são negados.
+  `DefaultAllowed` inclui utilitários de leitura/diagnóstico (ls, cat, git, docker, apt...).
+- **Consequência**: um `chmod 777 /` com aspas múltiplas e espaços é normalizado e negado
+  antes de qualquer execução; whitelist não pode ser descartada via config (fail-closed).
+
+### D-2026-09-15-16 — Audit: args redigidos antes de gravar no JSONL
+
+- **Contexto**: SPEC §5.7 e "segredos jamais" — se o modelo colocar uma chave em args, o
+  scan de exfiltração nega a chamada mas o audit gravava os args brutos antes de redigir.
+- **Decisão**: todos os campos `Args` dos `audit.Entry` passam por `redact.Redact()` antes de
+  serializar. O hash de saída (SHA-256) é armazenado; o texto plano da saída nunca vai ao audit.
+- **Consequência**: nenhum segredo aparece em claro no arquivo de auditoria, mesmo em recusas.
+
+### D-2026-09-15-17 — Refatoração do shell: delega ao sandbox (policy + executor)
+
+- **Contexto**: shell era a única tool com verificação de hard-block embutida; agora o sandbox
+  é o ponto único de camada 2 (policy) e camada 4 (executor).
+- **Decisão**: `shell.New(policy, exec, maxOut)` e `shell.NewSimple(maxOut)`. Hard-block +
+  chaining via `policy.AllowCommand`; whitelist via `policy.AllowExecutable` no primeiro token;
+  execução via `executor.Exec`. shell traduz `*sandbox.DeniedError` → `*tools.DeniedError` para
+  o loop classificar corretamente na auditoria.
+- **Consequência**: camadas 2 e 4 são verificadas em um único fluxo; testes do shell podem
+  usar policy/executor mockados sem dependência de bash.
+
+### D-2026-09-15-18 — run_user=root é recusado pelo executor (fail-closed)
+
+- **Contexto**: SPEC §5.2 — "processos rodam como usuário não-root"; root = downgrade silencioso.
+- **Decisão**: `Executor.Exec` recusa com `*DeniedError` quando `run_user == "root"` no Linux.
+- **Consequência**: o operador não pode configurar execução root por engano; o teste
+  `TestExecRunAsRootDenied` falha se a proteção for removida.
+
+### D-2026-09-15-19 — Audit no loop: denied vs error via tools.DeniedError
+
+- **Contexto**: o loop registrava toda tool que retornava erro como `status="error"`, o que
+  confunde recusas de segurança com falhas de runtime.
+- **Decisão**: recusas de política do sandbox são traduzidas para `*tools.DeniedError` (tool
+  level) e o loop verifica `errors.As(err, &de)` para classificar como `status="denied"` com
+  `decision=de.Reason`. Timeout mantém `status="timeout"`. Erros de execução ficam `status="error"`.
+- **Consequência**: auditoria distingue claramente três classificações — denied/timeout/error — e
+  cada entrada carrega o motivo exato (`Reason`), rastreável.
