@@ -66,7 +66,37 @@ func runConfig() *config.Config {
 	}
 }
 
-func newTestLoop(t *testing.T, fp *scriptedProvider, cfg *config.Config, appr Approver, root string) *Loop {
+func newTestLoop(t *testing.T, fp *scriptedProvider, cfg *config.Config, appr func(ctx context.Context, name, summary string) (bool, error), root string) *Loop {
+	t.Helper()
+	st, err := model.Open(filepath.Join(t.TempDir(), "s", "session.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+	var reg *tools.Registry
+	if root != "" {
+		reg = testRegistry(t, root)
+	}
+	return New(fp, st, cfg, reg, wrapApprover(appr))
+}
+
+func testRegistry(t *testing.T, root string) *tools.Registry {
+	t.Helper()
+	fs := files.NewFiles(root, 65536)
+	reg := tools.NewRegistry()
+	for _, tl := range []tools.Tool{fs.ToolReadFile(), fs.ToolWriteFile(), fs.ToolListDir()} {
+		if err := reg.Register(tl); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return reg
+}
+
+// newTestLoopA builds a loop with an approver supplied directly (interface),
+// used by tests that need Vetoed.
+func newTestLoopA(t *testing.T, fp *scriptedProvider, cfg *config.Config, appr Approver, root string) *Loop {
 	t.Helper()
 	st, err := model.Open(filepath.Join(t.TempDir(), "s", "session.jsonl"))
 	if err != nil {
@@ -82,21 +112,46 @@ func newTestLoop(t *testing.T, fp *scriptedProvider, cfg *config.Config, appr Ap
 	return New(fp, st, cfg, reg, appr)
 }
 
-func testRegistry(t *testing.T, root string) *tools.Registry {
-	t.Helper()
-	fs := files.NewFiles(root, 65536)
-	reg := tools.NewRegistry()
-	for _, tl := range []tools.Tool{fs.ToolReadFile(), fs.ToolWriteFile(), fs.ToolListDir()} {
-		if err := reg.Register(tl); err != nil {
-			t.Fatal(err)
-		}
+// funcApprover adapts a func-based approver to the Approver interface.
+type funcApprover struct {
+	dec  func(ctx context.Context, name, summary string) (bool, error)
+	veto func(name string) bool
+}
+
+func (f *funcApprover) Decide(ctx context.Context, name, summary string) (Decision, error) {
+	ok, err := f.dec(ctx, name, summary)
+	if err != nil {
+		return DecisionDeny, err
 	}
-	return reg
+	if ok {
+		return DecisionApprove, nil
+	}
+	return DecisionDeny, nil
+}
+
+func (f *funcApprover) Vetoed(name string) bool {
+	if f.veto != nil {
+		return f.veto(name)
+	}
+	return false
+}
+
+func wrapApprover(fn func(ctx context.Context, name, summary string) (bool, error)) Approver {
+	if fn == nil {
+		return nil
+	}
+	return &funcApprover{dec: fn}
 }
 
 func alwaysApprove(_ context.Context, _ string, _ string) (bool, error) { return true, nil }
 
 func neverApprove(_ context.Context, _ string, _ string) (bool, error) { return false, nil }
+
+// vetoApprove approves everything but vetoes a specific tool — the operator's
+// hard deny that must win even over an allow policy.
+func vetoApprove(vetoed string) Approver {
+	return &funcApprover{dec: alwaysApprove, veto: func(name string) bool { return name == vetoed }}
+}
 
 func TestTurnAppendsAndReturns(t *testing.T) {
 	fp := &scriptedProvider{script: []provider.ChatResult{{FinalContent: "oi!", FinishReason: "stop"}}}
@@ -322,6 +377,30 @@ func TestTurnApprovalRequiresApprover(t *testing.T) {
 	}
 }
 
+// Security: an approval that takes longer than approval.timeout_seconds fails
+// closed — nothing runs after the operator's decision window.
+func TestTurnApprovalTimeoutFailsClosed(t *testing.T) {
+	root := t.TempDir()
+	cfg := runConfig()
+	cfg.Approval.WriteFile = "ask"
+	cfg.Approval.TimeoutSeconds = 1
+	fp := &scriptedProvider{script: []provider.ChatResult{
+		{ToolCalls: []provider.CompletedToolCall{{ID: "c1", Name: "write_file", Args: `{"path":"t.txt","content":"x"}`}}},
+	}}
+	slow := func(ctx context.Context, _ string, _ string) (bool, error) {
+		<-ctx.Done()
+		return false, ctx.Err()
+	}
+	l := newTestLoop(t, fp, cfg, slow, root)
+	_, err := l.Turn(context.Background(), "escreva")
+	if err == nil || !strings.Contains(err.Error(), "expirou") {
+		t.Fatalf("expected fail-closed on approval timeout, got %v", err)
+	}
+	if _, serr := os.Stat(filepath.Join(root, "t.txt")); !os.IsNotExist(serr) {
+		t.Fatalf("file written despite approval timeout (err=%v)", serr)
+	}
+}
+
 // Security: invalid JSON arguments interrupt the turn fail-closed.
 func TestTurnStrictArgsFailClosed(t *testing.T) {
 	root := t.TempDir()
@@ -411,6 +490,143 @@ func TestTurnToolRuntimeErrorFeedsBack(t *testing.T) {
 	}
 }
 
+// Security: in plan mode a mutation tool call never runs — the tool is not even
+// registered for the provider and, even if the model fakes it, it is rejected
+// fail-closed before execution.
+func TestTurnPlanModeNeverMutates(t *testing.T) {
+	root := t.TempDir()
+	fp := &scriptedProvider{script: []provider.ChatResult{
+		{ToolCalls: []provider.CompletedToolCall{{ID: "c1", Name: "write_file", Args: `{"path":"x.txt","content":"x"}`}}},
+	}}
+	l := newTestLoop(t, fp, &config.Config{}, nil, root)
+	_, err := l.Turn(context.Background(), "escreva")
+	if err == nil || !strings.Contains(err.Error(), "nao esta habilitada") {
+		t.Fatalf("expected fail-closed rejection in plan mode, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "x.txt")); !os.IsNotExist(err) {
+		t.Fatalf("mutation happened in plan mode (err=%v)", err)
+	}
+}
+
+// Security: a denied ask never executes, even when the config default is allow
+// (SP3 M3 bullet: deny no approver recusa mesmo com approval.default=allow).
+func TestTurnDenyNeverExecutes(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.Config{
+		ToolboxMode: "run",
+		Approval:    config.Approval{Default: "allow", WriteFile: "ask"},
+	}
+	fp := &scriptedProvider{script: []provider.ChatResult{
+		{ToolCalls: []provider.CompletedToolCall{{ID: "c1", Name: "write_file", Args: `{"path":"a.txt","content":"x"}`}}},
+	}}
+	l := newTestLoop(t, fp, cfg, neverApprove, root)
+	_, err := l.Turn(context.Background(), "escreva")
+	if err == nil || !strings.Contains(err.Error(), "nao foi aprovada") {
+		t.Fatalf("expected denial even with allow default, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "a.txt")); !os.IsNotExist(err) {
+		t.Fatalf("file written despite denied approval (err=%v)", err)
+	}
+}
+
+// Security: the operator's hard veto overrides an allow policy.
+func TestTurnVetoOverridesAllow(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.Config{
+		ToolboxMode: "run",
+		Approval:    config.Approval{Default: "allow", WriteFile: "allow"},
+	}
+	fp := &scriptedProvider{script: []provider.ChatResult{
+		{ToolCalls: []provider.CompletedToolCall{{ID: "c1", Name: "write_file", Args: `{"path":"v.txt","content":"x"}`}}},
+	}}
+	l := newTestLoopA(t, fp, cfg, vetoApprove("write_file"), root)
+	_, err := l.Turn(context.Background(), "escreva")
+	if err == nil || !strings.Contains(err.Error(), "vetada") {
+		t.Fatalf("expected veto to refuse write_file, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "v.txt")); !os.IsNotExist(err) {
+		t.Fatalf("file written despite operator veto (err=%v)", err)
+	}
+}
+
+// Security: the exact command the operator approves is the exact vector that
+// runs — approval summary is captured, write lands at the approved path.
+func TestTurnApprovedVectorIsFrozen(t *testing.T) {
+	root := t.TempDir()
+	var approved string
+	fp := &scriptedProvider{script: []provider.ChatResult{
+		{ToolCalls: []provider.CompletedToolCall{{ID: "c1", Name: "write_file", Args: `{"path":"approved.txt","content":"z"}`}}},
+		{FinalContent: "ok"},
+	}}
+	l := newTestLoop(t, fp, runConfig(), func(_ context.Context, _ string, summary string) (bool, error) {
+		approved = summary
+		return true, nil
+	}, root)
+	if _, err := l.Turn(context.Background(), "escreva"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(approved, "approved.txt") {
+		t.Fatalf("approval summary does not show the real command: %q", approved)
+	}
+	b, err := os.ReadFile(filepath.Join(root, "approved.txt"))
+	if err != nil || string(b) != "z" {
+		t.Fatalf("executed vector differs from approved (content=%q err=%v)", b, err)
+	}
+}
+
+// M3 plan flow: Turn in plan mode returns the plan; switching to run mode and
+// Continue makes the model execute exactly what was approved.
+func TestTurnPlanFlowReRunAfterApproval(t *testing.T) {
+	root := t.TempDir()
+	fp := &scriptedProvider{script: []provider.ChatResult{
+		{FinalContent: "plano: vou escrever approved.txt com conteudo z", FinishReason: "stop"},
+		{ToolCalls: []provider.CompletedToolCall{{ID: "c1", Name: "write_file", Args: `{"path":"approved.txt","content":"z"}`}}},
+		{FinalContent: "feito", FinishReason: "stop"},
+	}}
+	l := newTestLoop(t, fp, &config.Config{}, alwaysApprove, root)
+
+	got, err := l.Turn(context.Background(), "crie um arquivo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "plano") {
+		t.Fatalf("plan turn returned %q", got)
+	}
+	// Plan mode: nothing mutative exposed nor executed.
+	if got := defNames(fp.gotDefs[0]); strings.Contains(got, "write_file") {
+		t.Fatalf("write_file exposed during plan: %s", got)
+	}
+
+	if err := l.SetToolboxMode("run"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = l.Continue(context.Background(), "Executado. Execute o plano agora.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "feito" {
+		t.Fatalf("run turn returned %q", got)
+	}
+	b, err := os.ReadFile(filepath.Join(root, "approved.txt"))
+	if err != nil || string(b) != "z" {
+		t.Fatalf("execution after approval failed (content=%q err=%v)", b, err)
+	}
+	// The original user request appears once, the directive appended after.
+	hist, _ := l.st.Load()
+	uc := userContent(hist)
+	if strings.Count(uc, "crie um arquivo") != 1 {
+		t.Fatalf("user request duplicated in history: %q", uc)
+	}
+}
+
+func defNames(defs []provider.ToolDef) string {
+	var names []string
+	for _, d := range defs {
+		names = append(names, d.Function.Name)
+	}
+	return strings.Join(names, ",")
+}
+
 // Security: output is truncated by config before it reaches the model.
 func TestTurnTruncatesToolOutput(t *testing.T) {
 	root := t.TempDir()
@@ -427,7 +643,7 @@ func TestTurnTruncatesToolOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l := New(fp, st, cfg, testRegistry(t, root), alwaysApprove)
+	l := New(fp, st, cfg, testRegistry(t, root), wrapApprover(alwaysApprove))
 	if _, err := l.Turn(context.Background(), "grande"); err != nil {
 		t.Fatal(err)
 	}

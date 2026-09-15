@@ -49,9 +49,10 @@ var defaultToolTimeouts = map[string]string{
 }
 
 type Approval struct {
-	Default   string `yaml:"default"`
-	ReadOnly  string `yaml:"read_only"`
-	WriteFile string `yaml:"write_file"`
+	Default        string `yaml:"default"`
+	ReadOnly       string `yaml:"read_only"`
+	WriteFile      string `yaml:"write_file"`
+	TimeoutSeconds int    `yaml:"timeout_seconds"`
 }
 
 type Config struct {

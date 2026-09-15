@@ -55,6 +55,16 @@ func TestLoadDefaultsAndMinimalFile(t *testing.T) {
 	}
 }
 
+func TestLoadApprovalTimeout(t *testing.T) {
+	cfg, err := loadWithKey(t, "model: some/model\napproval:\n  timeout_seconds: 5\n")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Approval.TimeoutSeconds != 5 {
+		t.Errorf("approval.timeout_seconds = %d, want 5", cfg.Approval.TimeoutSeconds)
+	}
+}
+
 func TestLoadForEachProvider(t *testing.T) {
 	for _, p := range []string{ProviderOpenRouter, ProviderNVIDIA, ProviderLiteLLM} {
 		t.Run(p, func(t *testing.T) {

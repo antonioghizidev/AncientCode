@@ -28,7 +28,10 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
 - **M2 concluído** (tool registry, filesystem confinado, tool `shell` com `ask`, loop
   multi-turno com gate e teto, fallback JSON, scan de exfiltração). 105 testes, 0 falhas.
   Ver `docs/session-2026-09-15-m2.md`.
-- **Próximo**: **M3 — Modo plano + gate** (`specs/milestones/03-m3-modo-plano-gate.md`).
+- **M3 concluído** (toolbox por modo plan/run, `Approver` interface com veto, fluxo do plano
+  y/n/feedback no REPL, `--run` com allow explícito, `approval.timeout_seconds`).
+  112 testes, 0 falhas. Ver `docs/session-2026-09-15-m3.md`.
+- **Próximo**: **M4 — Sandbox completo** (`specs/milestones/04-m4-sandbox.md`).
 - M7/M8 são "futuro" — **não iniciar** antes do gate dos anteriores.
 
 ## Como trabalhar (resumo da metodologia)

@@ -22,7 +22,8 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
 - **M1 — Skeleton funcional**: ✅ concluído (implementação e testes; aceite final pendente de
   smoke test no notebook alvo). Ver `milestones/01-m1-skeleton-funcional.md`.
 - **M2 — Tool loop**: ✅ concluído em 2026-09-15. Ver `milestones/02-m2-tool-loop.md`.
-- **Próximo**: M3 — Modo plano + gate.
+- **M3 — Modo plano + gate**: ✅ concluído em 2026-09-15. Ver `milestones/03-m3-modo-plano-gate.md`.
+- **Próximo**: M4 — Sandbox completo (auditar aprovações, run_user, timeouts, limites, hard-block).
 
 ## Fluxo entre sessões
 

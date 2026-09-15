@@ -540,7 +540,9 @@ para reuso).
   Pendente do aceite §12: smoke real com `docker ps` (exige M4/sandbox).
 
 ### Milestone 3 — Modo plano + gate
+- [x] toolbox_mode=plan esconde mutáveis; gate de aprovação por tool (allow/ask/deny); fluxo do plano (y/n/feedback); `--run` exige config explícita
 - **Aceite**: `--plan` nunca executa mutações; plano só roda após `y`.
+- **Status M3**: ✅ implementado em 2026-09-15 (`SetToolboxMode`, `Approver` interface com `Decide`+`Vetoed`, `approval.timeout_seconds`, `Loop.Continue`, fluxo do plano no REPL, `--run` com allow explícito). 112 testes, 0 falhas. Ver `specs/milestones/03-m3-modo-plano-gate.md` e `docs/session-2026-09-15-m3.md`. Aceite real §12 (smoke no notebook) pendente junto com M4/sandbox.
 
 ### Milestone 4 — Sandbox completo
 - [ ] usuário não-privilegiado, workdir fixo, timeouts, limites de saída, audit JSONL, hard-block

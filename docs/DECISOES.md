@@ -171,3 +171,55 @@ As decisões que alteram a SPEC devem ser refletidas lá.
 - **Decisão**: em vez de configurável nesta fase, constante `maxToolIterations = 20` com
   falha fechada ao estourar (SPEC §5.6.5 "loop com teto").
 - **Consequência**: roteiro de loop infinito não corrompe o histórico nem trava o harness.
+
+## 2026-09-15 — Sessão M3
+
+### D-2026-09-15-10 — Modo plano por toolbox: mutáveis fora do payload, gate rígido
+
+- **Contexto**: SPEC §6 — `toolbox_mode: plan` (default) não pode expor nada mutante.
+- **Decisão**: `enabledTools()` deriva do modo em tempo de execução (não mais da config lida
+  uma vez): `plan` só read-only; `run` adiciona `write_file` e `shell` (se habilitado).
+  System prompt de plan explicita "produza um plano, não execute mudanças" e proíbe inventar
+  tool_calls fora da lista (teste de segurança garante que um fake provider tenta `write_file`
+  no plano → rejeitado fail-closed, nada executado).
+- **Consequência**: em `plan`, tool mutável é rejeitada antes de qualquer efeito, não importa
+  o que o modelo emita.
+
+### D-2026-09-15-11 — Approver é interface: Decide + Vetoed (firewall humano é a última palavra)
+
+- **Contexto**: SPEC §5.6.6 e M3 ("deny no approver recusa mesmo com approval.default=allow").
+- **Decisão**: `Approver` vira interface com `Decide(ctx, tool, summary) (Approved|Denied)` para
+  políticas `ask` e `Vetoed(tool) bool` como kill-switch do operador que sobrepõe até a política
+  `allow`. `ask` com `approval.timeout_seconds` expira e nega (fail-closed). No REPL, responder
+  `d` a uma pergunta de aprovação registra o veto da tool para a sessão.
+- **Consequência**: "executa automaticamente" (`allow`) ainda pode ser anulado pelo operador;
+  configuração permissiva nunca apaga a existência de uma UI de aprovação.
+
+### D-2026-09-15-12 — Fluxo do plano fora do loop: Turn (plano) + Continue (execução)
+
+- **Contexto**: re-executar o turno com toolbox completo sem duplicar a mensagem do usuário.
+- **Decisão**: o loop ganha `SetToolboxMode` (por sessão) e `Continue(ctx, msg)` que retoma do
+  histórico atual (mensagem diretiva opcional anexada, user request permanece única). O REPL
+  orquestra: `Turn` no modo plan → apresenta o plano → `y` chama `Continue("Aprovado: execute...")`
+  em modo run; `n` descarta; `feedback:<msg>` replaneja. A mensagem do plano fica no histórico
+  (formato chat válido) e o modelo executa a partir dela.
+- **Consequência**: "o plano só roda após y" é garantido pela orquestração no REPL; testes do
+  loop exercitam o mesmo caminho (`Turn` plan → `SetToolboxMode(run)` → `Continue`).
+- **Pendência (M4)**: auditoria JSONL das aprovações.
+
+### D-2026-09-15-13 — --run: execução direta exige allow explícito (sem downgrade silencioso)
+
+- **Decisão**: `--run` força `toolbox_mode=run` e é rejeitado na inicialização se
+  `approval.write_file != allow` ou `shell_tool=enabled` (shell é sempre ask). Ao contrário do
+  fluxo interativo, não há gate de plano nem prompts por tool.
+- **Consequência**: script não-interativo só roda com política explicitamente relaxada na config;
+  aprovações por `ask` (que esse fluxo proíbe) expiram por `approval.timeout_seconds` e negam
+  fail-closed onde estiverem em uso.
+
+### D-2026-09-15-14 — Um único bufio.Reader no REPL (fim do Scanner)
+
+- **Contexto**: o prompt do plano, o approver e a entrada do usuário compartilham o stdin;
+  `bufio.Scanner` pré-carrega buffer, o que "engoliria" as respostas seguintes.
+- **Decisão**: todas as leituras de stdin usam um único `bufio.Reader` + `ReadString('\n')`.
+- **Consequência**: sem corrida entre prompt de plano/approver/REPL; EOF padronizado por
+  `io.EOF`.
