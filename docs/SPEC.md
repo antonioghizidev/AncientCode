@@ -555,7 +555,17 @@ para reuso).
   `docs/session-2026-09-15-m4.md`. Aceite real §12 pendente (smoke com `docker ps` após M5/sandbox).
 
 ### Milestone 5 — Docker/apt tools + sessão persistente
+- [x] docker/apt tools com subcomando whitelist + vetor de args (nunca shell); apt install sempre ask, remove/purge recusados; `--resume <id>`, `--cleanup <dias>`, `session_context_bytes` + `Store.Reduce` por turnos
 - **Aceite**: diagnóstico real de container quebrado (logs, inspect, restart) automatizado com aprovações; `--resume` recupera contexto.
+- **Status M5**: ✅ implementado em 2026-09-15 (internal/tools/docker com whitelist fechada
+  {ps,logs,inspect,stats,top,images,port,version,info,restart,stop,start} e vetor
+  `exec.Command("docker",...)`; internal/tools/apttools update/install com regex de pacote e
+  remove/purge negados; docker/apt registrados only com `docker_tool`/`apt_tool=enabled` + ask;
+  session_context_bytes no loop + Store.Reduce/SummaryMessage; --resume/--cleanup explícitos;
+  correção de bug M4 latente — timeout default do shell era 30ns). Host: 157 pass / 14 skip,
+  0 falhas; suíte Linux real (shell/sandbox/loop/fake-PATH) verde no WSL. Ver
+  `specs/milestones/05-m5-docker-apt-sessao.md` e `docs/session-2026-09-15-m5.md`.
+  Aceite real §12 pendente (smoke com docker/apt reais no Inspiron via SSH).
 
 ### Milestone 6 — Agente de codificação (§10)
 - [ ] `code_scaffold`, `write_file`/`edit_file` com diff + aprovação, `code_review` read-only, confinamento ao `code_root`

@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"ancientai/internal/sandbox"
 	"ancientai/internal/tools"
@@ -35,7 +36,7 @@ func New(policy *sandbox.Policy, exec *sandbox.Executor, outputMaxBytes int) too
 		policy = sandbox.NewPolicy(sandbox.DefaultAllowed)
 	}
 	if exec == nil {
-		exec = sandbox.NewExecutor("", "", 30, outputMaxBytes)
+		exec = sandbox.NewExecutor("", "", 30*time.Second, outputMaxBytes)
 	}
 	return Tool{policy: policy, exec: exec}
 }

@@ -35,7 +35,12 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   policy whitelist+hard-block, executor run_user/workdir/timeout, shell refatorado sobre
   sandbox, auditoria no loop com denied/timeout/error, args redigidos no audit).
   Ver `docs/session-2026-09-15-m4.md`.
-- **Próximo**: **M5 — Docker/apt tools** (`specs/milestones/05-m5-docker-apt-sessao.md`).
+- **M5 concluído** (docker tool com subcomando whitelist + vetor de args; apt update/install
+  com remove/purge negados; toggles docker_tool/apt_tool exigem ask; sessão: `--resume`,
+  `--cleanup` explícito, `session_context_bytes` + `Store.Reduce` por turnos; bug M4 latente
+  corrigido — timeout default do shell era 30ns). Host: 157 pass / 14 skip, 0 falhas; suíte
+  Linux real verde no WSL. Ver `docs/session-2026-09-15-m5.md`.
+- **Próximo**: **M6 — agente de codificação** (`specs/milestones/06-m6-agente-codificacao.md`).
 - M7/M8 são "futuro" — **não iniciar** antes do gate dos anteriores.
 
 ## Como trabalhar (resumo da metodologia)

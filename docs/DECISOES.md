@@ -272,3 +272,68 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   `decision=de.Reason`. Timeout mantém `status="timeout"`. Erros de execução ficam `status="error"`.
 - **Consequência**: auditoria distingue claramente três classificações — denied/timeout/error — e
   cada entrada carrega o motivo exato (`Reason`), rastreável.
+
+### D-2026-09-15-20 — Docker tool: subcomando whitelist + vetor de args (nunca shell)
+
+- **Contexto**: M5 — operar containers diagnóstico (ps/logs/inspect/restart/stop) com metas
+  fechadas; `docker run`/`push`/`build`/`exec` são vetados (SPEC §5.2).
+- **Decisão**: `internal/tools/docker` com whitelist fechada `{ps, logs, inspect, stats, top, images,
+  port, version, info, restart, stop, start}`; tudo mais vira `*tools.DeniedError` ANTES de tocar
+  a CLI. Texto do modelo passa apenas por posições de argv de `exec.Command("docker", ...)` —
+  nunca "docker "+texto. `execCommand` injetável (helper-process) + fake binário via PATH nos testes.
+- **Consequência**: subcomandos meta (run/exec/push/pull/build/compose/…) são recusados mesmo com
+  aprovação humana e auditados como `status="denied"`; o vetor congelado garante zero shell.
+
+### D-2026-09-15-21 — apt tool: update/install apenas; remove/purge recusados por default
+
+- **Contexto**: M5 — instalação de pacote é mutante de alto risco; remoção é mutante a mais.
+- **Decisão**: `internal/tools/apttools` permite somente `update` e `install`; `remove`/`purge`/
+  `upgrade`/`autoremove` retornam `*tools.DeniedError`. Nomes de pacote validados por regex estrita
+  `^[a-z0-9][a-z0-9.+_-]*$` (sem opções, paths ou shells). Vetor `apt-get install -y <pkg...>`.
+  Política no loop é sempre `ask`.
+- **Consequência**: a superfície mutante do gestor de pacotes fica mínima e opções de apt (-y com
+  significado adverso, paths, globs) são injeções bloqueadas na camada de validação, testadas.
+
+### D-2026-09-15-22 — Redução de contexto por turnos completos (`session_context_bytes`)
+
+- **Contexto**: SPEC §9 / M5 — sessões longas estouram o contexto do modelo; tokenizer local não
+  existe (hardware mínimo) e truncar texto solto quebra metadados de tool_calls.
+- **Decisão**: `model.ReduceMessages(hist, maxBytes)` descarta turnos inteiros (user + respostas
+  assistant/tool até o próximo user), do mais antigo para o mais novo, até caber no orçamento;
+  nunca separa uma mensagem `tool` da `tool_calls` que ela responde. `--session_context_bytes` (0 =
+  off, fail-closed). `SummaryMessage` marca resumos como "nao autoritativo" (contrato pronto;
+  sumarização via modelo fica como gancho futuro, opcional no spec).
+- **Consequência**: históricos podem ser encolhidos sem corromper a conversa; total > orçamento
+  mantém sempre o turno mais novo.
+
+### D-2026-09-15-23 — --resume <id> e --cleanup <dias> (nada automático)
+
+- **Contexto**: M5 — sessão persistente; `--session`+`--reset` avisava só com flag; limpeza de
+  sessões antigas "sem auto-executar".
+- **Decisão**: `--resume <id>` reutiliza `sessions/<id>.jsonl` e é recusado junto com `--reset`
+  (não se limpa a sessão que se está retomando). `--cleanup <n>` remove apenas `*.jsonl` de
+  `sessions/` mais antigos que n dias — explicitamente, com listagem do que removeu. Nenhuma
+  deleção acontece sem flag.
+- **Consequência**: retomar é semântica explícita (≠ session nova) e limpeza é auditável pelo
+  operador; testes cobrem "só remove velhos .jsonl".
+
+### D-2026-09-15-24 — Toggles docker_tool/apt_tool exigem approval.default=ask (como shell_tool)
+
+- **Contexto**: espelhar a regra de `shell_tool=enabled` (SPEC §5.3): correr docker/apt num modo
+  sem gate humano seria downgrade silencioso.
+- **Decisão**: config ganha `docker_tool`/`apt_tool` (enabled|disabled, default disabled). A
+  validação exige `approval.default=ask` quando ativos; `--run` (não-interativo) é incompatível.
+  No loop, docker/apt entram no toolbox apenas no modo run E habilitados; política `ask`.
+- **Consequência**: não dá para ativar ferramentas mutantes de sistema num modo automático; a
+  regra é testada na validação e no mapeamento de toolbox.
+
+### D-2026-09-15-25 — Bug M4 latente corrigido: default de timeout do shell era 30ns
+
+- **Contexto**: `shell.New` (nil executor) passava `30` como `time.Duration` ao constructor
+  `NewExecutor("", "", 30, out)` — 30 **nanossegundos**, não 30s. Nenhum teste de shell funcional
+  rodava em Linux local (skips em Windows), então a falha só apareceu ao executar a suíte real no
+  WSL durante o M5.
+- **Decisão**: explicitamente `30 * time.Second`. Helpers de teste agora usam `os.Executable()`
+  (path absoluto) em vez de `os.Args[0]` — `cmd.Dir` (workdir do sandbox) quebrava path relativo.
+- **Consequência**: o caminho default de execução real tem timeout correto; rodar a suíte de shell
+  no Linux (CI/Inspiron) é obrigatório a partir de agora, não apenas o cross-compile.

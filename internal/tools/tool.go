@@ -12,7 +12,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"regexp"
+	"syscall"
 	"time"
 
 	"ancientai/internal/provider"
@@ -38,6 +40,18 @@ type DeniedError struct {
 }
 
 func (e *DeniedError) Error() string { return "denied: " + e.Reason }
+
+// ExitCodeOf extracts the child process exit code from an *exec.ExitError.
+// Returns ok=false when the error does not carry an exit status.
+func ExitCodeOf(runErr error) (int, bool) {
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) {
+		if st, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+			return st.ExitStatus(), true
+		}
+	}
+	return 0, false
+}
 
 // Tool is one callable instrument exposed to the model.
 type Tool interface {

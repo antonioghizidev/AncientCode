@@ -1,6 +1,6 @@
 # Binaries and build artifacts
-ancientai
-ancientai.exe
+/ancientai
+/ancientai.exe
 *.test
 /dist/
 

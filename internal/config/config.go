@@ -61,13 +61,16 @@ type Config struct {
 	APIKeyEnv string `yaml:"api_key_env"`
 	Model     string `yaml:"model"`
 
-	Workdir        string            `yaml:"workdir"`
-	CodeRoot       string            `yaml:"code_root"`
-	RunUser        string            `yaml:"run_user"`
-	ShellTool      string            `yaml:"shell_tool"`
-	ToolboxMode    string            `yaml:"toolbox_mode"`
-	ToolTimeouts   map[string]string `yaml:"tool_timeouts"`
-	OutputMaxBytes int               `yaml:"output_max_bytes"`
+	Workdir         string            `yaml:"workdir"`
+	CodeRoot        string            `yaml:"code_root"`
+	RunUser         string            `yaml:"run_user"`
+	ShellTool       string            `yaml:"shell_tool"`
+	DockerTool      string            `yaml:"docker_tool"`
+	AptTool         string            `yaml:"apt_tool"`
+	ToolboxMode     string            `yaml:"toolbox_mode"`
+	ToolTimeouts    map[string]string `yaml:"tool_timeouts"`
+	OutputMaxBytes  int               `yaml:"output_max_bytes"`
+	SessionCtxBytes int               `yaml:"session_context_bytes"` // 0 = sem truncamento de historico
 
 	Approval Approval `yaml:"approval"`
 
@@ -128,6 +131,12 @@ func applyDefaults(c *Config) {
 	}
 	if c.ShellTool == "" {
 		c.ShellTool = "disabled"
+	}
+	if c.DockerTool == "" {
+		c.DockerTool = "disabled"
+	}
+	if c.AptTool == "" {
+		c.AptTool = "disabled"
 	}
 	if c.ToolboxMode == "" {
 		c.ToolboxMode = "plan"
@@ -216,9 +225,25 @@ func (c *Config) Validate() error {
 	if c.ShellTool == "enabled" && c.Approval.Default != "ask" {
 		return errors.New("config: shell_tool=enabled requires approval.default=ask (SPEC §5.3)")
 	}
+	if c.DockerTool != "disabled" && c.DockerTool != "enabled" {
+		return fmt.Errorf("config: docker_tool must be disabled or enabled, got %q", c.DockerTool)
+	}
+	if c.DockerTool == "enabled" && c.Approval.Default != "ask" {
+		return errors.New("config: docker_tool=enabled requires approval.default=ask")
+	}
+	if c.AptTool != "disabled" && c.AptTool != "enabled" {
+		return fmt.Errorf("config: apt_tool must be disabled or enabled, got %q", c.AptTool)
+	}
+	if c.AptTool == "enabled" && c.Approval.Default != "ask" {
+		return errors.New("config: apt_tool=enabled requires approval.default=ask")
+	}
 
 	if c.ToolboxMode != "plan" && c.ToolboxMode != "run" {
 		return fmt.Errorf("config: toolbox_mode must be plan or run, got %q", c.ToolboxMode)
+	}
+
+	if c.SessionCtxBytes < 0 {
+		return errors.New("config: session_context_bytes must be >= 0")
 	}
 
 	for name, val := range c.Approval.approvalMap() {

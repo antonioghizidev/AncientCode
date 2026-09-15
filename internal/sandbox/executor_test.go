@@ -21,7 +21,11 @@ const (
 func fakeExec(t *testing.T, behavior string) func(ctx context.Context, name string, args ...string) *exec.Cmd {
 	t.Helper()
 	return func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=TestSandboxHelperProcess")
+		helper, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
+		cmd := exec.CommandContext(ctx, helper, "-test.run=TestSandboxHelperProcess")
 		cmd.Env = append(os.Environ(), helperEnv+"=1", behaviorEnv+"="+behavior)
 		return cmd
 	}

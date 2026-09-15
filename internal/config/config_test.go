@@ -143,6 +143,28 @@ func TestValidateShellEnabledRequiresAsk(t *testing.T) {
 	}
 }
 
+func TestValidateDockerAndAptRequireAsk(t *testing.T) {
+	// Mutating operating tools are deny-by-default: enabling them requires ask.
+	for _, tc := range []struct {
+		yaml string
+		name string
+	}{
+		{"docker_tool: enabled", "docker_tool"},
+		{"apt_tool: enabled", "apt_tool"},
+	} {
+		if _, err := loadWithKey(t, "model: x/y\napproval:\n  default: allow\n"+tc.yaml); err == nil || !strings.Contains(err.Error(), tc.name) {
+			t.Fatalf("want %s error with allow, got %v", tc.name, err)
+		}
+	}
+	if _, err := loadWithKey(t, "model: x/y\napproval:\n  default: ask\ndocker_tool: enabled\napt_tool: enabled"); err != nil {
+		t.Fatalf("enabled with ask rejected: %v", err)
+	}
+	// Invalid toggle value is rejected.
+	if _, err := loadWithKey(t, "model: x/y\ndocker_tool: sometimes"); err == nil || !strings.Contains(err.Error(), "docker_tool") {
+		t.Fatalf("want docker_tool error, got %v", err)
+	}
+}
+
 func TestValidateRejectsBadApprovalValue(t *testing.T) {
 	_, err := loadWithKey(t, "model: x/y\napproval:\n  default: maybe")
 	if err == nil || !strings.Contains(err.Error(), "approval") {

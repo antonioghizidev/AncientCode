@@ -24,7 +24,8 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
 - **M2 — Tool loop**: ✅ concluído em 2026-09-15. Ver `milestones/02-m2-tool-loop.md`.
 - **M3 — Modo plano + gate**: ✅ concluído em 2026-09-15. Ver `milestones/03-m3-modo-plano-gate.md`.
 - **M4 — Sandbox completo**: ✅ concluído em 2026-09-15. Ver `milestones/04-m4-sandbox-completo.md`.
-- **Próximo**: M5 — Docker/apt tools + sessão persistente.
+- **M5 — Docker/apt tools + sessão persistente**: ✅ concluído em 2026-09-15. Ver `milestones/05-m5-docker-apt-sessao.md`.
+- **Próximo**: M6 — Agente de codificação.
 
 ## Fluxo entre sessões
 

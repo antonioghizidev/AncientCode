@@ -100,3 +100,73 @@ func (s *Store) Reset() error {
 	}
 	return nil
 }
+
+// ReduceMessages trims old history so the serialized bytes of the remaining
+// messages fit within maxBytes, never splitting a turn: a turn is one user
+// message plus every assistant/tool message that follows until the next user
+// message. A tool message is never separated from the tool_calls it answers
+// (SPEC §9). At least the newest turn is always kept, so a tiny budget never
+// yields an empty conversation.
+func ReduceMessages(hist []provider.ChatMessage, maxBytes int) []provider.ChatMessage {
+	var turns [][]provider.ChatMessage
+	var cur []provider.ChatMessage
+	for _, m := range hist {
+		if m.Role == "user" && len(cur) > 0 {
+			turns = append(turns, cur)
+			cur = nil
+		}
+		cur = append(cur, m)
+	}
+	if len(cur) > 0 {
+		turns = append(turns, cur)
+	}
+	if len(turns) == 0 {
+		return hist
+	}
+
+	total := 0
+	var kept [][]provider.ChatMessage
+	for i := len(turns) - 1; i >= 0; i-- {
+		sz := turnBytes(turns[i])
+		if len(kept) > 0 && total+sz > maxBytes {
+			break
+		}
+		total += sz
+		kept = append(kept, turns[i])
+	}
+	out := make([]provider.ChatMessage, 0, total)
+	for i := len(kept) - 1; i >= 0; i-- {
+		out = append(out, kept[i]...)
+	}
+	return out
+}
+
+// turnBytes estimates the on-disk footprint of a full turn (JSON line each).
+func turnBytes(turn []provider.ChatMessage) int {
+	n := 0
+	for _, m := range turn {
+		if b, err := json.Marshal(m); err == nil {
+			n += len(b) + 1 // newline
+		}
+	}
+	return n
+}
+
+// Reduce returns a copy of the history trimmed by ReduceMessages.
+func (s *Store) Reduce(maxBytes int) ([]provider.ChatMessage, error) {
+	hist, err := s.Load()
+	if err != nil {
+		return nil, err
+	}
+	return ReduceMessages(hist, maxBytes), nil
+}
+
+// SummaryMessage wraps a model-generated summary as an explicitly
+// non-authoritative entry: summarization is a heuristic and must never be
+// mistaken for faithful conversation (SPEC M5, §9).
+func SummaryMessage(summary string) provider.ChatMessage {
+	return provider.ChatMessage{
+		Role:    "assistant",
+		Content: "[resumo de contexto — nao autoritativo]\n" + summary,
+	}
+}

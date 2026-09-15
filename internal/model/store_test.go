@@ -125,3 +125,125 @@ func TestStoreReset(t *testing.T) {
 		t.Fatalf("expected empty after reset, got %d messages", len(got))
 	}
 }
+
+// SECURITY: a corrupt session file must cause a load error (fail-closed).
+func TestStoreCorruptSessionRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s", "session.jsonl")
+	s, _ := Open(path)
+	// Overwrite with invalid JSONL directly.
+	os.WriteFile(path, []byte("not json\n{\"Role\":\"user\",\"Content\":\"ok\"}\n"), 0o600)
+	if _, err := s.Load(); err == nil {
+		t.Fatal("corrupt session file was accepted")
+	}
+}
+
+// --- Reduce / ReduceMessages tests (M5) ---
+
+func TestReduceEmptyIsNoop(t *testing.T) {
+	got := ReduceMessages(nil, 1024)
+	if got != nil {
+		t.Fatalf("want nil, got %d", len(got))
+	}
+}
+
+func TestReduceKeepsNewestTurnWhenBudgetTiny(t *testing.T) {
+	hist := []provider.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "resp1"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "resp2"},
+		{Role: "user", Content: "third"},
+		{Role: "assistant", Content: "resp3"},
+	}
+	got := ReduceMessages(hist, 200)
+	// The most recent turn (user third + assistant resp3) must survive even at
+	// a tiny budget.  The leading system message is treated as part of the
+	// first turn (no preceding user message).
+	if len(got) == 0 {
+		t.Fatal("nothing kept")
+	}
+	if got[len(got)-1].Role != "assistant" || !strings.Contains(got[len(got)-1].Content, "resp3") {
+		t.Fatalf("newest message not retained: %+v", got[len(got)-1])
+	}
+}
+
+func TestReduceKeepsFullTurns(t *testing.T) {
+	var hist []provider.ChatMessage
+	for i := 0; i < 20; i++ {
+		hist = append(hist, provider.ChatMessage{Role: "user", Content: "u" + string(rune('a'+i))})
+		hist = append(hist, provider.ChatMessage{Role: "assistant", Content: "a" + string(rune('a'+i)), ToolCalls: []provider.RequestToolCall{{ID: "tc_" + string(rune('0'+i))}}, ToolCallID: ""})
+		hist = append(hist, provider.ChatMessage{Role: "tool", Content: "tool_" + string(rune('0'+i)), ToolCallID: "tc_" + string(rune('0'+i))})
+	}
+	got := ReduceMessages(hist, 1500)
+	if len(got) == 0 {
+		t.Fatal("nothing kept")
+	}
+	// Every tool message must have a preceding tool_call in the result.
+	var tcActive bool
+	for _, m := range got {
+		if len(m.ToolCalls) > 0 {
+			tcActive = true
+		}
+		if m.Role == "tool" {
+			if !tcActive {
+				t.Fatalf("tool message without preceding tool_call in retained slice")
+			}
+			tcActive = false
+		}
+	}
+}
+
+func TestReduceKeepsToolCallsWithTheirResponse(t *testing.T) {
+	hist := []provider.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "u1"},
+		{Role: "assistant", Content: "", ToolCalls: []provider.RequestToolCall{{ID: "tc1"}}},
+		{Role: "tool", Content: "tool1", ToolCallID: "tc1"},
+		{Role: "assistant", Content: "final resp"},
+	}
+	got := ReduceMessages(hist, 200)
+	// tc1+tool1 must not be split
+	var sawToolCall, sawToolResp bool
+	for _, m := range got {
+		if len(m.ToolCalls) > 0 && m.ToolCalls[0].ID == "tc1" {
+			sawToolCall = true
+		}
+		if m.ToolCallID == "tc1" {
+			sawToolResp = true
+		}
+	}
+	if sawToolCall != sawToolResp {
+		t.Fatalf("tool_call or tool response split: sawToolCall=%v sawToolResp=%v", sawToolCall, sawToolResp)
+	}
+}
+
+// SummaryMessage must include the non-authoritative marker.
+func TestSummaryMessageAnnotatesNonAuthoritative(t *testing.T) {
+	sm := SummaryMessage("resumo sintético")
+	if !strings.Contains(sm.Content, "resumo sintético") {
+		t.Fatal("summary content lost")
+	}
+	if !strings.Contains(sm.Content, "nao autoritativo") {
+		t.Fatalf("non-authoritative marker missing: %s", sm.Content)
+	}
+}
+
+// Store.Reduce calls Load and then ReduceMessages.
+func TestStoreReduce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s", "session.jsonl")
+	s, _ := Open(path)
+	for i := 0; i < 50; i++ {
+		_ = s.Append(
+			provider.ChatMessage{Role: "user", Content: "turn" + string(rune('A'+i%26))},
+			provider.ChatMessage{Role: "assistant", Content: "resp"},
+		)
+	}
+	got, err := s.Reduce(3000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 || len(got) >= 100 {
+		t.Fatalf("unexpected keep: %d messages", len(got))
+	}
+}

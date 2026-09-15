@@ -123,7 +123,7 @@ func (l *Loop) Continue(ctx context.Context, message string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("loop: load history: %w", err)
 	}
-	return l.run(ctx, hist)
+	return l.run(ctx, l.reduceHist(hist))
 }
 
 // Turn processes one user message: redact, persist, load and run the bounded
@@ -140,7 +140,7 @@ func (l *Loop) Turn(ctx context.Context, user string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("loop: load history: %w", err)
 	}
-	return l.run(ctx, hist)
+	return l.run(ctx, l.reduceHist(hist))
 }
 
 func (l *Loop) run(ctx context.Context, hist []provider.ChatMessage) (string, error) {
@@ -192,8 +192,19 @@ func (l *Loop) run(ctx context.Context, hist []provider.ChatMessage) (string, er
 		if err != nil {
 			return "", fmt.Errorf("loop: reload history: %w", err)
 		}
+		hist = l.reduceHist(hist)
 	}
 	return "", errors.New("loop: tool iteration limit reached; failing closed")
+}
+
+// reduceHist applies the M5 context budget (session_context_bytes) when > 0:
+// the oldest complete turns are dropped so the remaining history fits. The
+// value 0 disables trimming (full history, fail-closed default).
+func (l *Loop) reduceHist(hist []provider.ChatMessage) []provider.ChatMessage {
+	if l.cfg.SessionCtxBytes <= 0 {
+		return hist
+	}
+	return model.ReduceMessages(hist, l.cfg.SessionCtxBytes)
 }
 
 type action struct {
@@ -362,7 +373,7 @@ func (l *Loop) toolEnabled(name string) bool {
 
 // enabledTools derives the toolbox from the mode. Plan mode exposes only
 // read-only tools (SPEC §6); run mode adds write_file and, only when enabled
-// in config, shell.
+// in config, shell, docker and apt (SPEC §5.2, M5).
 func (l *Loop) enabledTools() []string {
 	mode := l.toolboxMode()
 	var names []string
@@ -370,6 +381,12 @@ func (l *Loop) enabledTools() []string {
 		names = append(names, "write_file")
 		if l.cfg.ShellTool == "enabled" {
 			names = append(names, "shell")
+		}
+		if l.cfg.DockerTool == "enabled" {
+			names = append(names, "docker")
+		}
+		if l.cfg.AptTool == "enabled" {
+			names = append(names, "apt")
 		}
 	}
 	return append(names, "read_file", "list_dir")
@@ -389,10 +406,11 @@ func (l *Loop) defs() []provider.ToolDef {
 }
 
 // policyFor maps a tool to its approval policy (SPEC §5.2 item 3). Unknown
-// tools are denied by default.
+// tools are denied by default. docker and apt always ask — even read-only
+// subcommands go through the human gate (M5 aceite: "com aprovações").
 func (l *Loop) policyFor(name string) string {
 	switch name {
-	case "shell":
+	case "shell", "docker", "apt":
 		return policyAsk
 	case "write_file":
 		if p := l.cfg.Approval.WriteFile; p != "" {
