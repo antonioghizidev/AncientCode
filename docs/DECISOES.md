@@ -437,3 +437,52 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   continua fail-closed e auditando qualquer exit_code.
 - **Consequência**: guia de validação do Inspiron passa a separar "prova do chain" (ok sem
   root) de "efeito de sistema" (apt precisa de permissão).
+
+### D-2026-09-16-32 — Teto de request HTTP do provider: 2 min → 5 min
+
+- **Contexto**: o cold start do NVIDIA NIM (nemotron 30b) na máquina do Inspiron passou do
+  timeout fixo de `2*time.Minute` do `http.Client` do adapter OpenAI-compatível; o loop
+  tratou o erro como falha de turno e **falhou-closed (nenhuma tool executada)** — resiliência
+  correta, mas o request legítimo morreu no primeiro token, lento.
+- **Decisão**: em `internal/provider/openai.go`, o cliente padrão passa a usar
+  `5 * time.Minute` (per-request). O teto de iterações do loop, os limites de SSE (16 MiB) e o
+  `approval.timeout_seconds` continuam intactos; o timeout maior só amplia a janela de uma
+  chamada. Teste de piso `TestDefaultClientTimeoutFloor` veda um downgrade silencioso.
+- **Alternativa**: expor o timeout em config (sem necessidade real até o momento; mais superfície);
+  manter 2 min (rejeitava o cold start do NIM).
+- **Consequência**: provedores lentos (NIM/OpenRouter free) conseguem completar round-trips
+  no Inspiron; nenhum relaxamento de segurança (tudo o que limita abuso é por turno, não por
+  timeout HTTP).
+
+### D-2026-09-16-33 — Tools de arquivos recusam caminho absoluto (fail-closed), contrato root-relativo
+
+- **Contexto**: validação real no Inspiron — o modelo passou um caminho **absoluto**
+  (`/opt/ancientai/code/smoke-nvidia.txt`) a `write_file`. O contrato da tool é "path relativo
+  à raiz", mas `filepath.Join(root, rel)` **re-root** o caminho absoluto (Go não descarta o
+  segundo elemento absoluto no Join), gravando em `code_root/opt/ancientai/code/...` e
+  **devolvendo sucesso** — o usuário e o audit viam "executado" num arquivo que não estava onde
+  o modelo prometia.
+- **Decisão**: `Files.resolve`/`resolveWrite` passam a recusar `filepath.IsAbs(rel)` com erro
+  claro ("must be relative to the root"), antes de qualquer Junção — alinha-se à ética de
+  parser estrito/fail-closed e à rejeição de absolutos já existente no `code_scaffold`
+  (`Leading separators rejected`, code.go:167-179). `code_review`/`edit_file`/`read_file`/
+  `list_dir`/`write_file` herdam a recusa via `Resolve`/`ResolveWrite`. Teste
+  `TestRejectAbsolutePath` (read/write/list + caminho relativo ainda funcionando).
+- **Alternativa**: resolver o absoluto dentro da raiz se for sub-árvore (gerava o caminho
+  aninhado surpreendente); continuar como estava (re-root silencioso = campo minado).
+- **Consequência**: caminho absoluto em qualquer tool de arquivo → erro determinístico no gate
+  humano, sem escrita oculta; modelo pode retentar com relativo (validado ao vivo no NVIDIA).
+
+### D-2026-09-16-34 — Pareamento de modelo/provedor: NVIDIA NIM com `toolbox_mode: run`
+
+- **Contexto**: validação real no Inspiron com `nvidia/nemotron-3.5-lightning-30b-a3b`
+  (NVIDIA NIM, API key dedicada). O nemotron executa ferramentas **sem primeiro descrever um
+  plano em texto**; em `toolbox_mode: plan` ele tentava `write_file` direto (recusado
+  fail-closed pelo gate — comportamento correto do loop) e não produzia o plano exigido,
+  travando o fluxo y/N.
+- **Decisão**: para este perfil de modelo (agente "chatter"), a config dedicada usa
+  `toolbox_mode: run`, mantendo o gate **ask por tool** (aprovação humana inegociável — mesma
+  garantia de confidencialidade, sem a fricção do plano). O `plan` permanece recomendado para
+  modelos que planejam em texto (ex. DeepSeek, validado em M6/OpenRouter).
+- **Consequência**: `shell`, `write_file`, `docker`, `apt` seguem cada um pedindo aprovação e
+  entrando no audit; nenhuma tool mutante roda sem o `y` humano.

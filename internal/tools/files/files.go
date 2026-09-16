@@ -111,6 +111,9 @@ func (f *Files) resolve(rel string) (string, error) {
 	if strings.TrimSpace(rel) == "" {
 		return "", errors.New("files: path is required")
 	}
+	if filepath.IsAbs(rel) {
+		return "", fmt.Errorf("files: path %q must be relative to the root %q (absolute paths are refused fail-closed)", rel, f.root)
+	}
 	clean := filepath.Clean(filepath.Join(f.root, rel))
 	if !f.within(clean) {
 		return "", fmt.Errorf("files: path %q escapes the root %q", rel, f.root)
@@ -129,6 +132,9 @@ func (f *Files) resolve(rel string) (string, error) {
 func (f *Files) resolveWrite(rel string) (string, error) {
 	if strings.TrimSpace(rel) == "" {
 		return "", errors.New("files: path is required")
+	}
+	if filepath.IsAbs(rel) {
+		return "", fmt.Errorf("files: path %q must be relative to the root %q (absolute paths are refused fail-closed)", rel, f.root)
 	}
 	clean := filepath.Clean(filepath.Join(f.root, rel))
 	if !f.within(clean) {

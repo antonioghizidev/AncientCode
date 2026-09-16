@@ -37,7 +37,10 @@ type Client struct {
 // never lives in the configuration.
 func NewOpenAICompatible(baseURL, model, apiKeyEnv string, hc *http.Client) *Client {
 	if hc == nil {
-		hc = &http.Client{Timeout: 2 * time.Minute}
+		// Default request ceiling sized for slow real providers (NVIDIA NIM /
+		// OpenRouter first-token latency on low-end hardware). Applies per
+		// HTTP request; the loop cap and SSE limits still bound the turn.
+		hc = &http.Client{Timeout: 5 * time.Minute}
 	}
 	return &Client{
 		baseURL:      strings.TrimRight(baseURL, "/"),

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 const testKey = "sk-abcdefGHIJKLMNOPQRSTUVWXyz123456"
@@ -238,5 +239,15 @@ func TestChatMissingAPIKey(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "UNSET_ENV_VARIABLE_987654") {
 		t.Errorf("error should name the env var: %v", err)
+	}
+}
+
+func TestDefaultClientTimeoutFloor(t *testing.T) {
+	// Slow providers (NVIDIA NIM cold start on low-end hardware) need a request
+	// ceiling well above 2 minutes; a floor test prevents a silent downgrade
+	// back to a tight timeout.
+	client := NewOpenAICompatible("http://example.invalid/v1", "m", "UNSET_ENV_VARIABLE_987654", nil)
+	if client.http.Timeout < 5*time.Minute {
+		t.Fatalf("default HTTP timeout = %v, want >= 5m", client.http.Timeout)
 	}
 }

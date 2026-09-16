@@ -53,13 +53,22 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   preview `edit_file` corrigido (diff LCS stdlib, D-2026-09-16-29, teste de regressão).
   Ajustes de implantação: `run_user` exige harness no usuário dedicado `ancientai` ou
   privilégio (D-2026-09-16-30); apt não-root sem efeito, docker ok via grupo
-  (D-2026-09-16-31). Quota free do OpenRouter esgotou (429) durante o smoke — revalidar
-  `shell`/`apt` com efeito no usuário dedicado.
-- **Próximo**: **finalizar a validação/tuning no Inspiron como usuário dedicado** (shell/apt
-  com efeito, `--resume` conversa real, quota renovada/outro modelo) — **depois** avaliar
-  **M7 — Skills** (`specs/milestones/07-m7-skills.md`).
+  (D-2026-09-16-31).
+- **M6 pós-commit (NVIDIA NIM, usuário dedicado)**: validação real no Inspiron como
+  `ancientai` com provider NVIDIA (`nvidia/nemotron-3.5-lightning-30b-a3b`). Provider NIM
+  vivo (o slug `:free` 404 nos directs NIM; o `-30b-a3b` responde); cold start passou de
+  2 min → timeout provider 5 min (D-2026-09-16-32); write/shell **com efeito** executados e
+  auditados (`ask→allow→executed`, owner `ancientai`, guarda de chaining M2 negou `;` e o
+  modelo decompôs). Defeito de re-root de caminho absoluto em `write_file` corrigido —
+  tools de arquivo recusam absoluto, fail-closed (D-2026-09-16-33). Pareamento:
+  nemotron/NIM → `toolbox_mode: run` com ask (D-2026-09-16-34); `plan` para modelos que
+  planejam (validado em M6/OpenRouter). Ver
+  `docs/session-2026-09-16-inspiron-nvidia.md`.
+- **Próximo**: opcional `sudo install` do binário validado para `/opt/ancientai/bin` (atual: em
+  `/home/ancientai/ancientai-0.6.0-m6`), reenceno `--resume` conversa real na NIM — e, quando
+  fechar, **avaliar M7 — Skills** (`specs/milestones/07-m7-skills.md`).
 - M7/M8 são "futuro" — **não iniciar** antes do gate dos anteriores e da validação no Inspiron
-  como usuário dedicado.
+  como usuário dedicado (validação de efeito de ferramentas na NIM **concluída** nesta sessão).
 
 ## Como trabalhar (resumo da metodologia)
 

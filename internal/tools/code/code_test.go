@@ -290,6 +290,11 @@ func Run() {
 	if err := os.WriteFile(dest, []byte(fixture), 0o777); err != nil {
 		t.Fatal(err)
 	}
+	// O umask real reduz 0777 na criacao; o teste quer o mode exato 0777
+	// para a heuristica de permissoes (Linux real).
+	if err := os.Chmod(dest, 0o777); err != nil {
+		t.Fatal(err)
+	}
 	res, err := ts.ToolCodeReview().Execute(context.Background(), json.RawMessage(`{"path":"bad.go"}`))
 	if err != nil {
 		t.Fatalf("code_review: %v", err)

@@ -50,6 +50,34 @@ func TestListDir(t *testing.T) {
 	}
 }
 
+// Security: absolute paths must be refused (the contract is root-relative);
+// silently re-rooting an absolute path hid writes in a surprising location.
+func TestRejectAbsolutePath(t *testing.T) {
+	fs, root := setup(t)
+	absInside := filepath.Join(root, "hello.txt")
+	absOutside := filepath.Join(filepath.Dir(root), "abs-outside.txt")
+	for _, targ := range []string{
+		`{"path":` + strconv.Quote(absInside) + `}`,
+		`{"path":` + strconv.Quote(absOutside) + `}`,
+	} {
+		if _, err := fs.ToolReadFile().Execute(context.Background(), tools.Raw(targ)); err == nil {
+			t.Errorf("read absolute allowed: %s", targ)
+		}
+	}
+	if _, err := fs.ToolWriteFile().Execute(context.Background(), []byte(`{"path":`+strconv.Quote(absOutside)+`,"content":"x"}`)); err == nil {
+		t.Fatal("write absolute allowed")
+	}
+	if _, err := fs.ToolListDir().Execute(context.Background(), tools.Raw(`{"path":`+strconv.Quote(filepath.Dir(root))+`}`)); err == nil {
+		t.Fatal("list_dir absolute allowed")
+	}
+	if _, err := fs.ToolWriteFile().Execute(context.Background(), tools.Raw(`{"path":"sub/deep/abs-check.txt","content":"x"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fs.ToolReadFile().Execute(context.Background(), tools.Raw(`{"path":"sub/deep/abs-check.txt"}`)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Security: path traversal via .. must be confined to the root.
 func TestRejectPathTraversal(t *testing.T) {
 	fs, root := setup(t)
