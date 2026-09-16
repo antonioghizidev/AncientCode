@@ -486,3 +486,29 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   modelos que planejam em texto (ex. DeepSeek, validado em M6/OpenRouter).
 - **Consequência**: `shell`, `write_file`, `docker`, `apt` seguem cada um pedindo aprovação e
   entrando no audit; nenhuma tool mutante roda sem o `y` humano.
+
+## 2026-09-16 — Indicadores de progresso no REPL
+
+### D-2026-09-16-35 — Fases visíveis no REPL (aguardando/recebendo/gate/erro), TTY-only
+
+- **Contexto**: no Inspiron com NVIDIA NIM, o turno pode levar minutos até o primeiro token
+  (cold start). Sem nenhuma saída, o operador não distingue "o modelo está pensando" de "o
+  harness travou", e não pedir indicação de problema em caso de falha de rede/provedor.
+- **Decisão**: o loop ganha um gancho opcional `SetStatus(func(string))` que notifica fases de
+  bloqueio: `modelo: aguardando o primeiro token...`, `modelo: recebendo tokens...` (disparado
+  pelo primeiro `onEvent` de conteúdo/reasoning via SSE), `gate humano: aguardando sua
+  aprovacao...`; sempre seguida de `""` (limpeza) quando a fase termina. No REPL, o render é
+  **TTY-only** (`os.ModeCharDevice` no stdout): canais/pipes (scripts, testes, smokes `--run`)
+  continuam recebendo o mesmo texto limpo de sempre. O teto de um turno (3 min) foi alinhado ao
+  novo timeout do provider (5 min, D-2026-09-16-32) para que um cold start legítimo não seja
+  morto pelo loop enquanto o HTTP ainda esperaria.
+- **Alternativa**: spinner animado em goroutine (correria com prompts de aprovação impressos
+  dentro do turno — risco de texto embaralhado no gate humano); sempre printar indicadores
+  (poluiria smokes automatizados auditáveis).
+- **Consequência**: fases de espera/problema ficam visíveis em terminal; a linha de status usa
+  `\r` e se auto-limpa (`renderStatus`), e erros continuam saindo como `erro: ...` já redigidos.
+  Validado ao vivo em pty (WSL, util-linux `script`) com provider loopback recusando
+  conexão: `>>> modelo: aguardando o primeiro token...` → limpeza → `erro:` com o motivo. Novos
+  testes: `TestStatusHookStreamsPhases` e `TestStatusHookReportsHumanGate` (loop).
+  Binário Linux `0.6.0-m6-ind` cruzado (`GOAMD64=v1`) e implantado em
+  `/home/ancientai/ancientai-0.6.0-m6-ind` no Inspiron.

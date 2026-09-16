@@ -68,6 +68,7 @@ type Loop struct {
 	rec       *audit.Recorder // M4: append-only JSONL audit (nil = disabled)
 	toolbox   string          // plan (default) | run — mutable per session via SetToolboxMode
 	toolboxMu sync.RWMutex
+	status    func(string) // optional UI hook: phase events (nil = silent)
 }
 
 // New builds a loop. reg may be nil (no tools) and appr may be nil (ask
@@ -96,6 +97,18 @@ func (l *Loop) SetToolboxMode(mode string) error {
 // SetAudit attaches an audit recorder (SPEC §5.7). A nil recorder disables
 // auditing, which is the fail-closed default when none is wired.
 func (l *Loop) SetAudit(rec *audit.Recorder) { l.rec = rec }
+
+// SetStatus attaches an optional UI phase callback. It is invoked with a short
+// human-readable phase label whenever the loop is about to block on a remote
+// call or on the human gate, and with "" when the blocking phase ends (so a
+// TTY UI can clear its status line). Nil (the default) keeps the loop silent.
+func (l *Loop) SetStatus(fn func(string)) { l.status = fn }
+
+func (l *Loop) notify(phase string) {
+	if l.status != nil {
+		l.status(phase)
+	}
+}
 
 func (l *Loop) recordToolCall(e audit.Entry) {
 	if l.rec != nil {
@@ -145,7 +158,16 @@ func (l *Loop) Turn(ctx context.Context, user string) (string, error) {
 
 func (l *Loop) run(ctx context.Context, hist []provider.ChatMessage) (string, error) {
 	for iter := 0; iter < maxToolIterations; iter++ {
-		res, err := l.p.Chat(ctx, appendSystem(l.systemPrompt(), hist), l.defs(), nil)
+		l.notify("modelo: aguardando o primeiro token...")
+		streaming := false
+		onEvent := func(ev provider.StreamEvent) {
+			if !streaming && (ev.DeltaContent != "" || len(ev.ToolCallDeltas) > 0) {
+				streaming = true
+				l.notify("modelo: recebendo tokens...")
+			}
+		}
+		res, err := l.p.Chat(ctx, appendSystem(l.systemPrompt(), hist), l.defs(), onEvent)
+		l.notify("")
 		if err != nil {
 			return "", fmt.Errorf("loop: chat: %w", err)
 		}
@@ -258,7 +280,9 @@ func (l *Loop) planCalls(ctx context.Context, calls []provider.CompletedToolCall
 				dctx, cancel = context.WithTimeout(ctx, time.Duration(t)*time.Second)
 				defer cancel()
 			}
+			l.notify("gate humano: aguardando sua aprovacao...")
 			dec, err := l.appr.Decide(dctx, c.Name, summaryFor(c))
+			l.notify("")
 			if err != nil {
 				if errors.Is(err, context.DeadlineExceeded) {
 					l.recordToolCall(audit.Entry{Tool: c.Name, Args: redact.Redact(string(c.Args)), Policy: "ask", Decision: "timeout", Status: "denied"})

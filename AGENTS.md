@@ -64,9 +64,16 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   nemotron/NIM → `toolbox_mode: run` com ask (D-2026-09-16-34); `plan` para modelos que
   planejam (validado em M6/OpenRouter). Ver
   `docs/session-2026-09-16-inspiron-nvidia.md`.
-- **Próximo**: opcional `sudo install` do binário validado para `/opt/ancientai/bin` (atual: em
-  `/home/ancientai/ancientai-0.6.0-m6`), reenceno `--resume` conversa real na NIM — e, quando
-  fechar, **avaliar M7 — Skills** (`specs/milestones/07-m7-skills.md`).
+- **Pós-commit (indicadores de progresso no REPL)**: gancho `Loop.SetStatus` + render TTY-only
+  no REPL (`isCharDevice`): fases `modelo: aguardando o primeiro token...` →
+  `modelo: recebendo tokens...` (SSE onEvent) → `gate humano: aguardando sua aprovacao...`,
+  com limpeza `""` (D-2026-09-16-35). Teto de turno alinhado ao provider (5 min). Tests:
+  `TestStatusHookStreamsPhases`/`TestStatusHookReportsHumanGate`. Binário Linux `0.6.0-m6-ind`
+  (`GOAMD64=v1`) em `/home/ancientai/ancientai-0.6.0-m6-ind` no Inspiron (o `m6` estava em
+  uso por sessão aberta). Ver `docs/session-2026-09-16-indicadores.md`.
+- **Próximo**: conferir indicadores em sessão NIM real; opcional `sudo install` do binário em
+  `/opt/ancientai/bin`; reenceno `--resume` conversa real na NIM — e, quando fechar,
+  **avaliar M7 — Skills** (`specs/milestones/07-m7-skills.md`).
 - M7/M8 são "futuro" — **não iniciar** antes do gate dos anteriores e da validação no Inspiron
   como usuário dedicado (validação de efeito de ferramentas na NIM **concluída** nesta sessão).
 

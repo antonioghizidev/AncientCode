@@ -66,7 +66,7 @@ func runConfig() *config.Config {
 	}
 }
 
-func newTestLoop(t *testing.T, fp *scriptedProvider, cfg *config.Config, appr func(ctx context.Context, name, summary string) (bool, error), root string) *Loop {
+func newTestLoop(t *testing.T, fp provider.Provider, cfg *config.Config, appr func(ctx context.Context, name, summary string) (bool, error), root string) *Loop {
 	t.Helper()
 	st, err := model.Open(filepath.Join(t.TempDir(), "s", "session.jsonl"))
 	if err != nil {
@@ -96,7 +96,7 @@ func testRegistry(t *testing.T, root string) *tools.Registry {
 
 // newTestLoopA builds a loop with an approver supplied directly (interface),
 // used by tests that need Vetoed.
-func newTestLoopA(t *testing.T, fp *scriptedProvider, cfg *config.Config, appr Approver, root string) *Loop {
+func newTestLoopA(t *testing.T, fp provider.Provider, cfg *config.Config, appr Approver, root string) *Loop {
 	t.Helper()
 	st, err := model.Open(filepath.Join(t.TempDir(), "s", "session.jsonl"))
 	if err != nil {
@@ -176,10 +176,65 @@ func TestTurnAppendsAndReturns(t *testing.T) {
 	}
 }
 
+func TestStatusHookStreamsPhases(t *testing.T) {
+	fp := &eventfulProvider{
+		scriptedProvider: scriptedProvider{script: []provider.ChatResult{{FinalContent: "ok", FinishReason: "stop"}}},
+		events:           []provider.StreamEvent{{DeltaContent: "o"}, {DeltaContent: "k"}},
+	}
+	var phases []string
+	l := newTestLoop(t, fp, nil, nil, "")
+	l.SetStatus(func(p string) { phases = append(phases, p) })
+	if _, err := l.Turn(context.Background(), "oi"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(phases, "|")
+	if !strings.Contains(joined, "aguardando") {
+		t.Fatalf("missing wait phase in %q", joined)
+	}
+	if !strings.Contains(joined, "recebendo") {
+		t.Fatalf("missing streaming phase in %q", joined)
+	}
+}
+
+func TestStatusHookReportsHumanGate(t *testing.T) {
+	root := t.TempDir()
+	fp := &scriptedProvider{script: []provider.ChatResult{
+		{FinalContent: "vou escrever", ToolCalls: []provider.CompletedToolCall{
+			{ID: "c1", Name: "write_file", Args: `{"path":"a.txt","content":"x"}`},
+		}},
+		{FinalContent: "feito", FinishReason: "stop"},
+	}, repeat: 1}
+	var phases []string
+	l := newTestLoop(t, fp, &config.Config{ToolboxMode: "run", Approval: config.Approval{WriteFile: "ask"}}, alwaysApprove, root)
+	l.SetStatus(func(p string) { phases = append(phases, p) })
+	if _, err := l.Turn(context.Background(), "escreva a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(phases, "|")
+	if !strings.Contains(joined, "gate humano") {
+		t.Fatalf("missing human-gate phase in %q", joined)
+	}
+}
+
+// eventfulProvider replays SSE-like deltas into onEvent before answering, so
+// the loop's "aguardando -> recebendo" transition can be observed.
+type eventfulProvider struct {
+	scriptedProvider
+	events []provider.StreamEvent
+}
+
+func (e *eventfulProvider) Chat(ctx context.Context, msgs []provider.ChatMessage, defs []provider.ToolDef, onEvent func(provider.StreamEvent)) (provider.ChatResult, error) {
+	for _, ev := range e.events {
+		if onEvent != nil {
+			onEvent(ev)
+		}
+	}
+	return e.scriptedProvider.Chat(ctx, msgs, defs, onEvent)
+}
+
 func TestTurnRedactsUserInputBeforeProvider(t *testing.T) {
 	fp := &scriptedProvider{script: []provider.ChatResult{{FinalContent: "ok"}}}
 	l := newTestLoop(t, fp, nil, nil, "")
-
 	if _, err := l.Turn(context.Background(), "segredo "+testSecret); err != nil {
 		t.Fatal(err)
 	}

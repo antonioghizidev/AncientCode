@@ -45,7 +45,13 @@ var (
 	flagCleanup = flag.Int("cleanup", 0, "remove session files under sessions/ older than N days (0=off)")
 )
 
-const version = "0.6.0-m6"
+// turnTimeout caps one agent turn (the whole loop, including any tool rounds).
+// It is aligned with the provider HTTP ceiling (D-2026-09-16-32): on a cold
+// NVIDIA NIM the first token can take several minutes, so a tighter turn budget
+// would abort before the provider itself gives up.
+const turnTimeout = 5 * time.Minute
+
+const version = "0.6.0-m6-ind"
 
 // terminalApprover is the human gate (SPEC §5.6.6). It shows the exact command
 // before deciding. Answering "d" registers a veto for the tool: from then on
@@ -260,6 +266,12 @@ func main() {
 
 	agent := loop.New(client, store, cfg, reg, appr)
 	agent.SetAudit(rec)
+	// TTY-only progress indicators (D-2026-09-16-35): when stdout is a pipe
+	// (scripts, tests, --run smoke) the loop stays silent and output stays clean.
+	tty := isCharDevice(os.Stdout)
+	if tty {
+		agent.SetStatus(renderStatus)
+	}
 
 	fmt.Fprintf(os.Stderr, "ancientai %s — provider=%s model=%s session=%s\n",
 		version, cfg.Provider, cfg.Model, filepath.Base(sessionPath))
@@ -290,7 +302,7 @@ func main() {
 			continue
 		}
 
-		tctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		tctx, cancel := context.WithTimeout(ctx, turnTimeout)
 		resp, err := agent.Turn(tctx, strings.TrimSpace(line))
 		cancel()
 		if err != nil {
@@ -322,7 +334,7 @@ func runPlanFlow(ctx context.Context, agent *loop.Loop, in *bufio.Reader, plan s
 		case ans == "" || strings.EqualFold(ans, "n") || strings.EqualFold(ans, "no"):
 			return false
 		case strings.EqualFold(ans, "y") || strings.EqualFold(ans, "yes"):
-			tctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+			tctx, cancel := context.WithTimeout(ctx, turnTimeout)
 			err := agent.SetToolboxMode("run")
 			var out string
 			if err == nil {
@@ -337,7 +349,7 @@ func runPlanFlow(ctx context.Context, agent *loop.Loop, in *bufio.Reader, plan s
 			return true
 		case strings.HasPrefix(ans, "feedback:"):
 			msg := strings.TrimSpace(strings.TrimPrefix(ans, "feedback:"))
-			tctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+			tctx, cancel := context.WithTimeout(ctx, turnTimeout)
 			newPlan, err := agent.Continue(tctx, "Feedback do operador sobre o plano: "+msg)
 			cancel()
 			if err != nil {
@@ -358,4 +370,25 @@ func readLine(r *bufio.Reader, prompt string) string {
 	s, err := r.ReadString('\n')
 	lastErr = err
 	return strings.TrimSpace(s)
+}
+
+// isCharDevice reports whether f is a terminal-class device (console on
+// Windows, tty on Unix). Pipes, files and captures return false.
+func isCharDevice(f *os.File) bool {
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+// renderStatus writes a single status line over the current terminal line and
+// clears it when phase == "". Errors are ignored: a dead terminal must never
+// break the agent loop.
+func renderStatus(phase string) {
+	if phase == "" {
+		fmt.Print("\r" + strings.Repeat(" ", 70) + "\r")
+		return
+	}
+	fmt.Printf("\r>>> %-50s", phase)
 }
