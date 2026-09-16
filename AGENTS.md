@@ -46,10 +46,20 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `code_root` strict-child validado; política `code_scaffold`/`edit_file`=ask; injeção indireta
   etiquetada untrusted). Host: 178 pass / 14 skip, 0 falhas; suíte Linux real verde no WSL
   (incl. `TestM6*`). Ver `docs/session-2026-09-15-m6.md`.
-- **Próximo**: **validação/tuning no Inspiron** (smoke M1–M6 via SSH: binário 0.6.0-m6,
-  docker/apt reais, scaffold/review/edit reais, --resume/--cleanup, run_user, auditoria) —
-  **depois** avaliar **M7 — Skills** (`specs/milestones/07-m7-skills.md`).
-- M7/M8 são "futuro" — **não iniciar** antes do gate dos anteriores e da validação no Inspiron.
+- **M6 pós-commit (validação no Inspiron)**: smoke M1–M6 real no Dell via SSH (session
+  `docs/session-2026-09-16-inspiron-m6.md`): config fail-closed, scaffold real com gate,
+  review read-only + strict-child, edit_file com aprovação, docker real, apt real (exit 100
+  sem root, propagado), `--cleanup`/`--resume`/`--reset`/`--run` verificados. Defeito do
+  preview `edit_file` corrigido (diff LCS stdlib, D-2026-09-16-29, teste de regressão).
+  Ajustes de implantação: `run_user` exige harness no usuário dedicado `ancientai` ou
+  privilégio (D-2026-09-16-30); apt não-root sem efeito, docker ok via grupo
+  (D-2026-09-16-31). Quota free do OpenRouter esgotou (429) durante o smoke — revalidar
+  `shell`/`apt` com efeito no usuário dedicado.
+- **Próximo**: **finalizar a validação/tuning no Inspiron como usuário dedicado** (shell/apt
+  com efeito, `--resume` conversa real, quota renovada/outro modelo) — **depois** avaliar
+  **M7 — Skills** (`specs/milestones/07-m7-skills.md`).
+- M7/M8 são "futuro" — **não iniciar** antes do gate dos anteriores e da validação no Inspiron
+  como usuário dedicado.
 
 ## Como trabalhar (resumo da metodologia)
 

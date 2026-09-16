@@ -385,3 +385,55 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   gera finding `prompt-injection` e não dispara execução; correções exigem nova aprovação.
   Políticas: `code_scaffold`/`edit_file` → `ask`; `code_review` → política read-only (allow),
   disponível também no plano.
+
+---
+
+## 2026-09-16 — Validação Inspiron + tunings de M6
+
+### D-2026-09-16-29 — `edit_file` diff preview com linhas de contexto reais (LCS)
+
+- **Contexto**: no smoke real (Inspiron) o preview de `edit_file` mostrava `newContent`
+  inteiro com prefixo `+` — incluindo linhas de contexto repetidas pelo modelo no payload
+  (`+package internal` duplicado), distorcendo a leitura do humano. O patch aplicado estava
+  correto; o preview é que enganava.
+- **Decisão**: `editDiff` agora constrói o preview como diff de linhas (LCS stdlib) entre o
+  bloco removido (`-`) e o bloco adicionado (`+`), com 2 linhas de contexto para cima/para
+  baixo (` `). Linhas compartilhadas ficam como contexto. Antes disso, corrigi o backup de
+  contexto para trás: a versão original era idempotente (sempre parava no início da linha).
+  Acima de `diffMaxCells=65536` células do grid LCS há fallback para a listagem `+` íntegra
+  (limite de memória).
+- **Alternativa**: continuar exibindo `newContent` inteiro (deixa o gate humano cego à
+  duplicação); usar `diff` externo (viola a regra de stdlib).
+- **Consequência**: preview `--- before/+++ after` mais honesto; teste de regressão
+  `TestEditFileDiffShowsUnchangedPrefixAsContext` garante que prefixo/sufixo inalterados
+  saem como contexto, nunca como `+`.
+
+### D-2026-09-16-30 — `run_user` exige harness com privilégio ou implantação "usuário dedicado"
+
+- **Contexto**: no Inspiron o harness rodou como `USUARIO` (non-root). O executor usa
+  `su - <run_user> -c ...` para trocar de usuário, e `su` pede senha → falhou
+  (`Authentication failure`, exit 1), mantendo o **fail-secure** (o comando nunca rodou no
+  usuário errado). Um modelo "free" chegou a *inventar* a saída `uid=1000(admin)` na narração
+  (ótima demonstração do princípio "output do modelo é untrusted").
+- **Decisão**: confirmado o modelo de implantação: o harness roda **como o próprio usuário
+  dedicado** `ancientai` (SPEC: o processo principal nunca roda como root), com
+  `run_user == usuário atual` para execução direta contida (workdir/timeout/output/root de
+  arquivos `code_root`). `root` continua hard-block; `su` segue para operações onde o processo
+  detém privilégio legítimo (CI/root administrada).
+- **Alternativa**: permitir `run_user` vazio no harness não-root (silencioso downgrade — vetado,
+  contraria SPEC §5.2); alimentar senha para `su` (segredo em args — vetado, M6 scan).
+- **Consequência**: o cloud-surfing de permissão isolada é de responsabilidade do deployment
+  (systemd/`sudo -u ancientai` / usuário dedicado); o sandbox mantém isolamento por
+  workdir/timeout/output + whitelist; execução efetiva como usuário indevido é impossível
+  (fail-closed).
+
+### D-2026-09-16-31 — Implantações não-root: apt exige root; docker funciona sem privilégio
+
+- **Contexto**: smoke no Inspiron — `docker ps` real rodou via tool (USUARIO no grupo docker);
+  `apt update` real rodou e retornou exit 100 (lock de `/var/lib/apt/lists` sem root), erro
+  propagado com honestidade ao gate humano e registrado no audit.
+- **Decisão**: documentar no deployment que `apt_tool` só tem efeito com privilégio (usuário
+  com sudo/root), enquanto `docker_tool` opera sem raiz via grupo docker. O harness não muda:
+  continua fail-closed e auditando qualquer exit_code.
+- **Consequência**: guia de validação do Inspiron passa a separar "prova do chain" (ok sem
+  root) de "efeito de sistema" (apt precisa de permissão).
