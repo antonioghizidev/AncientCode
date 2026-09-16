@@ -40,8 +40,16 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `--cleanup` explícito, `session_context_bytes` + `Store.Reduce` por turnos; bug M4 latente
   corrigido — timeout default do shell era 30ns). Host: 157 pass / 14 skip, 0 falhas; suíte
   Linux real verde no WSL. Ver `docs/session-2026-09-15-m5.md`.
-- **Próximo**: **M6 — agente de codificação** (`specs/milestones/06-m6-agente-codificacao.md`).
-- M7/M8 são "futuro" — **não iniciar** antes do gate dos anteriores.
+- **M6 concluído** (agente de codificação §10: `internal/tools/code` com `code_scaffold`
+  (templates embed validados, nunca executa `.sh`), `edit_file` (diff + `ask`), `code_review`
+  read-only com heurísticas locais e relatório estruturado; filesystem tools enraizadas no
+  `code_root` strict-child validado; política `code_scaffold`/`edit_file`=ask; injeção indireta
+  etiquetada untrusted). Host: 178 pass / 14 skip, 0 falhas; suíte Linux real verde no WSL
+  (incl. `TestM6*`). Ver `docs/session-2026-09-15-m6.md`.
+- **Próximo**: **validação/tuning no Inspiron** (smoke M1–M6 via SSH: binário 0.6.0-m6,
+  docker/apt reais, scaffold/review/edit reais, --resume/--cleanup, run_user, auditoria) —
+  **depois** avaliar **M7 — Skills** (`specs/milestones/07-m7-skills.md`).
+- M7/M8 são "futuro" — **não iniciar** antes do gate dos anteriores e da validação no Inspiron.
 
 ## Como trabalhar (resumo da metodologia)
 

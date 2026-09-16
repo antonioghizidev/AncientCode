@@ -1,0 +1,28 @@
+name: go-module
+description: "Modulo Go com cmd/ e internal/"
+files:
+  - path: go.mod
+    content: |
+      module {{module}}
+
+      go 1.27
+  - path: cmd/{{name}}/main.go
+    content: |
+      package main
+
+      import "fmt"
+
+      func main() {
+        fmt.Println("{{Name}}")
+      }
+  - path: internal/answer.go
+    content: |
+      package internal
+
+      const Answer = 42
+  - path: .gitignore
+    content: |
+      /dist/
+      /bin/
+  - path: README.md
+    src: README.md.tmpl

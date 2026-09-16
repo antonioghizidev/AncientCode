@@ -372,13 +372,13 @@ func (l *Loop) toolEnabled(name string) bool {
 }
 
 // enabledTools derives the toolbox from the mode. Plan mode exposes only
-// read-only tools (SPEC §6); run mode adds write_file and, only when enabled
-// in config, shell, docker and apt (SPEC §5.2, M5).
+// read-only tools (SPEC §6); run mode adds the mutating code-agent tools and,
+// only when enabled in config, shell, docker and apt (SPEC §5.2, §10, M5/M6).
 func (l *Loop) enabledTools() []string {
 	mode := l.toolboxMode()
 	var names []string
 	if mode == "run" {
-		names = append(names, "write_file")
+		names = append(names, "write_file", "code_scaffold", "edit_file")
 		if l.cfg.ShellTool == "enabled" {
 			names = append(names, "shell")
 		}
@@ -389,7 +389,8 @@ func (l *Loop) enabledTools() []string {
 			names = append(names, "apt")
 		}
 	}
-	return append(names, "read_file", "list_dir")
+	// code_review is read-only (§10.4) and therefore available in plan too.
+	return append(names, "read_file", "list_dir", "code_review")
 }
 
 func (l *Loop) defs() []provider.ToolDef {
@@ -408,16 +409,17 @@ func (l *Loop) defs() []provider.ToolDef {
 // policyFor maps a tool to its approval policy (SPEC §5.2 item 3). Unknown
 // tools are denied by default. docker and apt always ask — even read-only
 // subcommands go through the human gate (M5 aceite: "com aprovações").
+// code_scaffold and edit_file always ask: they mutate the code_root (SPEC §10.2).
 func (l *Loop) policyFor(name string) string {
 	switch name {
-	case "shell", "docker", "apt":
+	case "shell", "docker", "apt", "code_scaffold", "edit_file":
 		return policyAsk
 	case "write_file":
 		if p := l.cfg.Approval.WriteFile; p != "" {
 			return p
 		}
 		return policyAsk
-	case "read_file", "list_dir":
+	case "read_file", "list_dir", "code_review":
 		if p := l.cfg.Approval.ReadOnly; p != "" {
 			return p
 		}

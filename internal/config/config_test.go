@@ -172,6 +172,41 @@ func TestValidateRejectsBadApprovalValue(t *testing.T) {
 	}
 }
 
+func TestValidateCodeRootInsideWorkdir(t *testing.T) {
+	base, err := os.MkdirTemp("", "aai-code-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(base)
+	wd := filepath.Join(base, "wd")
+	out := filepath.Join(base, "outside")
+	if err := os.MkdirAll(wd, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadWithKey(t, "model: x/y\nworkdir: "+wd+"\ncode_root: "+wd); err == nil || !strings.Contains(err.Error(), "code_root") {
+		t.Fatalf("code_root == workdir deveria falhar (SPEC §10.3), got %v", err)
+	}
+	if _, err := loadWithKey(t, "model: x/y\nworkdir: "+wd+"\ncode_root: "+out); err == nil || !strings.Contains(err.Error(), "code_root") {
+		t.Fatalf("code_root fora do workdir deveria falhar (SPEC §10.3), got %v", err)
+	}
+	// Descendente estrito passa e dispara o default workdir/code.
+	cfg, err := loadWithKey(t, "model: x/y\nworkdir: "+wd+"\ncode_root: "+filepath.Join(wd, "code"))
+	if err != nil {
+		t.Fatalf("code_root dentro do workdir rejeitado: %v", err)
+	}
+	if cfg.CodeRoot != filepath.Join(wd, "code") {
+		t.Errorf("code_root = %q", cfg.CodeRoot)
+	}
+	// Default segue o workdir.
+	cfg2, err := loadWithKey(t, "model: x/y\nworkdir: "+wd)
+	if err != nil {
+		t.Fatalf("default config rejeitada: %v", err)
+	}
+	if cfg2.CodeRoot != filepath.Join(wd, "code") {
+		t.Errorf("default code_root = %q, want %q", cfg2.CodeRoot, filepath.Join(wd, "code"))
+	}
+}
+
 func TestValidateRejectsBadTimeout(t *testing.T) {
 	_, err := loadWithKey(t, "model: x/y\ntool_timeouts:\n  docker: banana")
 	if err == nil || !strings.Contains(err.Error(), "docker") {

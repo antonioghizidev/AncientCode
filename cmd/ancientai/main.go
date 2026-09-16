@@ -29,6 +29,7 @@ import (
 	"ancientai/internal/sandbox"
 	"ancientai/internal/tools"
 	"ancientai/internal/tools/apttools"
+	"ancientai/internal/tools/code"
 	"ancientai/internal/tools/docker"
 	"ancientai/internal/tools/files"
 	"ancientai/internal/tools/shell"
@@ -44,7 +45,7 @@ var (
 	flagCleanup = flag.Int("cleanup", 0, "remove session files under sessions/ older than N days (0=off)")
 )
 
-const version = "0.5.0-m5"
+const version = "0.6.0-m6"
 
 // terminalApprover is the human gate (SPEC §5.6.6). It shows the exact command
 // before deciding. Answering "d" registers a veto for the tool: from then on
@@ -188,9 +189,20 @@ func main() {
 
 	client := provider.NewOpenAICompatible(cfg.BaseURL, cfg.Model, cfg.APIKeyEnv, nil)
 
-	fs := files.NewFiles(cfg.Workdir, cfg.OutputMaxBytes)
+	// The filesystem tools are rooted at code_root (SPEC §10.3): every
+	// read/write for the coding agent stays inside the dedicated code tree.
+	fs := files.NewFiles(cfg.CodeRoot, cfg.OutputMaxBytes)
 	reg := tools.NewRegistry()
 	for _, t := range []tools.Tool{fs.ToolReadFile(), fs.ToolWriteFile(), fs.ToolListDir()} {
+		if err := reg.Register(t); err != nil {
+			fmt.Fprintln(os.Stderr, "tools:", err)
+			os.Exit(1)
+		}
+	}
+	// M6: coding-agent tools (SPEC §10). code_review is read-only; scaffold and
+	// edit always require human approval. Generated code is never executed.
+	codeTools := code.NewToolset(cfg.CodeRoot, cfg.OutputMaxBytes)
+	for _, t := range []tools.Tool{codeTools.ToolCodeScaffold(), codeTools.ToolEditFile(), codeTools.ToolCodeReview()} {
 		if err := reg.Register(t); err != nil {
 			fmt.Fprintln(os.Stderr, "tools:", err)
 			os.Exit(1)

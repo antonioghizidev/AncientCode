@@ -25,7 +25,9 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
 - **M3 — Modo plano + gate**: ✅ concluído em 2026-09-15. Ver `milestones/03-m3-modo-plano-gate.md`.
 - **M4 — Sandbox completo**: ✅ concluído em 2026-09-15. Ver `milestones/04-m4-sandbox-completo.md`.
 - **M5 — Docker/apt tools + sessão persistente**: ✅ concluído em 2026-09-15. Ver `milestones/05-m5-docker-apt-sessao.md`.
-- **Próximo**: M6 — Agente de codificação.
+- **M6 — Agente de codificação**: ✅ concluído em 2026-09-15. Ver `milestones/06-m6-agente-codificacao.md`.
+- **Próximo**: validação/tuning real no Inspiron (smoke M1–M6 via SSH); **depois** avaliar
+  M7 — Skills (`milestones/07-m7-skills.md`).
 
 ## Fluxo entre sessões
 

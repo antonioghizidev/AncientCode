@@ -91,6 +91,19 @@ func nilSafe(norm string) []string {
 	return strings.Split(norm, "/")
 }
 
+// Resolve validates and resolves a user-supplied relative path against the
+// root for read-only operations, following symlinks and refusing escapes
+// (SPEC §7.1). Exported so the code-agent toolset reuses the same confinement.
+func (f *Files) Resolve(rel string) (string, error) { return f.resolve(rel) }
+
+// ResolveWrite resolves a path for write operations: the parent directory is
+// created (inside the root) and then re-checked against symlink escapes.
+// Exported so the code-agent toolset reuses the same confinement.
+func (f *Files) ResolveWrite(rel string) (string, error) { return f.resolveWrite(rel) }
+
+// CheckSensitive rejects paths located in sensitive locations (SPEC §5.6.3).
+func (f *Files) CheckSensitive(rel string) error { return f.checkSensitive(rel) }
+
 // resolve validates and resolves a user-supplied path against the root for
 // read-only operations. The final resolved path (after symlinks) must stay
 // inside the root.
@@ -112,8 +125,7 @@ func (f *Files) resolve(rel string) (string, error) {
 	return resolved, nil
 }
 
-// resolveWrite is resolve for write operations: the parent directory is
-// created (inside the root) and then re-checked against symlink escapes.
+// resolveWrite is the private body of ResolveWrite.
 func (f *Files) resolveWrite(rel string) (string, error) {
 	if strings.TrimSpace(rel) == "" {
 		return "", errors.New("files: path is required")

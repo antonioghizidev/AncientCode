@@ -219,6 +219,12 @@ func (c *Config) Validate() error {
 		return errors.New("config: run_user must be a non-root, non-empty account")
 	}
 
+	// M6 (SPEC §10.3): code_root must live inside workdir. The code-agent tools
+	// are rooted there; an escape would widen the filesystem confine silently.
+	if !withinDir(c.Workdir, c.CodeRoot) {
+		return errors.New("config: code_root must be inside workdir (SPEC §10.3)")
+	}
+
 	if c.ShellTool != "disabled" && c.ShellTool != "enabled" {
 		return fmt.Errorf("config: shell_tool must be disabled or enabled, got %q", c.ShellTool)
 	}
@@ -286,6 +292,16 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// withinDir reports whether p is a strict descendant of base (prefix check
+// after Clean, mirroring the filesystem tools' confinement, SPEC §7.1/§10.3).
+func withinDir(base, p string) bool {
+	rel, err := filepath.Rel(base, p)
+	if err != nil {
+		return false
+	}
+	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
 // ToolTimeout returns the configured timeout for a tool name as a duration.
