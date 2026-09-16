@@ -169,6 +169,35 @@ func TestEditFileAppliesExactPatch(t *testing.T) {
 	}
 }
 
+func TestEditFileDiffShowsUnchangedPrefixAsContext(t *testing.T) {
+	ts := newTestToolset(t)
+	rel := "main.go"
+	orig := "a\nb\nc\n"
+	dest, err := ts.fs.ResolveWrite(rel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dest, []byte(orig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res, err := ts.ToolEditFile().Execute(context.Background(), json.RawMessage(`{"path":"main.go","old":"b","new":"x"}`))
+	if err != nil {
+		t.Fatalf("edit_file: %v", err)
+	}
+	// Prefixo e sufixo inalterados devem sair como contexto (" a"/" c"),
+	// nunca como "+a"/"+c" (que esconderiam a duplicacao do bloqueio novo).
+	for _, want := range []string{" a\n", "-b\n", "+x\n", " c\n"} {
+		if !strings.Contains(res.Output, want) {
+			t.Errorf("diff eta falta %q: %s", want, res.Output)
+		}
+	}
+	for _, bad := range []string{"+a\n", "+c\n"} {
+		if strings.Contains(res.Output, bad) {
+			t.Errorf("diff marca linha inalterada como adicionada (%q): %s", bad, res.Output)
+		}
+	}
+}
+
 func TestEditFileRequiresUniqueOccurrence(t *testing.T) {
 	ts := newTestToolset(t)
 	dest, err := ts.fs.ResolveWrite("a.txt")

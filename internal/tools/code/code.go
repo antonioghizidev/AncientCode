@@ -393,16 +393,38 @@ func (e editFile) Execute(_ context.Context, args json.RawMessage) (tools.Result
 	return tools.Result{Output: diff + fmt.Sprintf("wrote %d bytes (was %d)\n", len(after), len(before))}, nil
 }
 
-// editDiff renders a small line diff preview with two context lines around
-// the replaced region.
+// editDiff renders a line diff preview with two context lines around the
+// replaced region. The removed block is marked "-" and the replacement block
+// "+": shared lines stay as context, so a "new" payload that repeats the
+// surrounding text does not fool the human reviewer into seeing a duplicate.
 func editDiff(before string, idx int, oldLen int, newContent string) string {
+	head, tail := diffContext(before, idx, oldLen)
+	oldBlock := strings.Split(before[idx:idx+oldLen], "\n")
+	oldLines := append(append([]string{}, head...), append(oldBlock, tail...)...)
+	newLines := append(append([]string{}, head...), append(strings.Split(newContent, "\n"), tail...)...)
+	var sb strings.Builder
+	sb.WriteString("--- before\n+++ after\n")
+	if len(oldLines)*len(newLines) > diffMaxCells {
+		for _, ln := range strings.Split(newContent, "\n") {
+			sb.WriteString("+" + ln + "\n")
+		}
+		return sb.String()
+	}
+	for _, ln := range lcsDiffMarkers(oldLines, newLines) {
+		sb.WriteString(ln + "\n")
+	}
+	return sb.String()
+}
+
+// diffContext returns the head and tail context lines (up to two each) around
+// the region being replaced in before.
+func diffContext(before string, idx int, oldLen int) ([]string, []string) {
 	start := idx
 	for n := 0; n < 2; n++ {
-		if p := strings.LastIndex(before[:start], "\n"); p >= 0 {
-			start = p + 1
-		} else {
+		if start == 0 {
 			break
 		}
+		start = lineStart(before, start-1)
 	}
 	lineEnd := idx + oldLen
 	for n := 0; n < 2; n++ {
@@ -412,15 +434,61 @@ func editDiff(before string, idx int, oldLen int, newContent string) string {
 			break
 		}
 	}
-	var sb strings.Builder
-	sb.WriteString("--- before\n+++ after\n")
-	for _, ln := range strings.Split(before[start:lineEnd], "\n") {
-		sb.WriteString(" " + ln + "\n")
+	head := strings.Split(before[start:idx], "\n")
+	if len(head) > 0 && head[len(head)-1] == "" {
+		head = head[:len(head)-1]
 	}
-	for _, ln := range strings.Split(newContent, "\n") {
-		sb.WriteString("+" + ln + "\n")
+	return head, strings.Split(before[idx+oldLen:lineEnd], "\n")
+}
+
+// diffMaxCells bounds the LCS grid for the diff preview so huge replacement
+// payloads fall back to the whole-content "+" listing instead of O(n*m) memory.
+const diffMaxCells = 65536
+
+// lineStart returns the byte index where the line containing pos begins.
+func lineStart(s string, pos int) int {
+	if pos <= 0 {
+		return 0
 	}
-	return sb.String()
+	return strings.LastIndex(s[:pos], "\n") + 1
+}
+
+// lcsDiffMarkers returns the line diff (old vs new) with per-line prefixes,
+// aligned by longest common subsequence. y markers: " "+line (shared context),
+// "-"+line (present only in old), "+"+line (present only in new).
+func lcsDiffMarkers(oldLines, newLines []string) []string {
+	n, m := len(oldLines), len(newLines)
+	dp := make([][]int, n+1)
+	for i := range dp {
+		dp[i] = make([]int, m+1)
+	}
+	for i := n - 1; i >= 0; i-- {
+		for j := m - 1; j >= 0; j-- {
+			if oldLines[i] == newLines[j] {
+				dp[i][j] = dp[i+1][j+1] + 1
+			} else if dp[i+1][j] >= dp[i][j+1] {
+				dp[i][j] = dp[i+1][j]
+			} else {
+				dp[i][j] = dp[i][j+1]
+			}
+		}
+	}
+	var out []string
+	for i, j := 0, 0; i < n || j < m; {
+		switch {
+		case i < n && j < m && oldLines[i] == newLines[j]:
+			out = append(out, " "+oldLines[i])
+			i++
+			j++
+		case j < m && (i == n || dp[i][j+1] >= dp[i+1][j]):
+			out = append(out, "+"+newLines[j])
+			j++
+		default:
+			out = append(out, "-"+oldLines[i])
+			i++
+		}
+	}
+	return out
 }
 
 type codeReview struct{ ts *Toolset }
