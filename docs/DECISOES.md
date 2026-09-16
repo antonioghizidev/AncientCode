@@ -510,5 +510,61 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   Validado ao vivo em pty (WSL, util-linux `script`) com provider loopback recusando
   conexão: `>>> modelo: aguardando o primeiro token...` → limpeza → `erro:` com o motivo. Novos
   testes: `TestStatusHookStreamsPhases` e `TestStatusHookReportsHumanGate` (loop).
-  Binário Linux `0.6.0-m6-ind` cruzado (`GOAMD64=v1`) e implantado em
+  Binário Linux `0.6.0-m6-ind` (`GOAMD64=v1`) cruzado e implantado em
   `/home/ancientai/ancientai-0.6.0-m6-ind` no Inspiron.
+
+## 2026-09-16 — TUI + recursos de interação (backlog, pós-M7)
+
+### D-2026-09-16-36 — TUI com Bubble Tea (render/input somente; loop permanece stdlib)
+
+- **Contexto**: pedido de UX no estilo lazydocker/lazygit — prompt numa janela própria, footer
+  com estado (versão/modelo/provedor/modo/sessão), painéis de atividade (aguardando modelo,
+  chamadas de tool, gate humano) e, futuramente, painel de agentes ativos. O loop já é
+  UI-agnostic (SetStatus D-35 + Approver), então a TUI é um consumidor novo, não uma refatoração.
+- **Decisão**: adotar `charmbracelet/bubbletea` (+ `x/term`, transitivo) **somente na camada de
+  render/input** do `cmd/ancientai` (`--tui` opcional; o REPL de texto continua default e
+  compartilha o mesmo observador de eventos). Justificativa da dependência em atendimento à
+  constituição: interação terminal (raw mode, mouse, redraw, resolução de colunas) é domínio
+  maduro; ANSI manual stdlib seria manutenção nossa permanente e bugado em dispositivos
+  variados. Viabilidade **no Inspiron no-AVX confirmada**: Bubble Tea é Go puro rodando bem
+  acima de SSE2, o build continua `GOAMD64=v1`, não exige term mim X/GPU (console linux tty
+  basta) e o consumo típico de uma UI < 10 MB é irrelevante para os 4 GB. OpenRouter delegate no
+  provider (modelo no footer) vem de call futura.
+- **Alternativa**: TUI ANSI na mão (zero dep — mas war de scrollback/resize/input é nosso);
+  tcell/tview (mais pesado, API antiga, menos comunidade).
+- **Consequência**: `go.mod` ganha bubbletea pinado (decisão registrada nos motivos acima); o
+  núcleo (loop/provider/sandbox/audit/redact) continua 100% stdlib; TUI é cosmética por cima e
+  nunca altera política de aprovação/redação.
+
+### D-2026-09-16-37 — Paridade prompt ↔ TUI; troca de modelo/provedor por sessão; interrupção; medidor de contexto
+
+- **Contexto**: cinco recursos de interação pedidos explicitamente que valem **nas duas
+  superfícies** (prompt e UI): histórico de prompts (≥10), recuperação pós-falha (retry/
+  continue), escolha de modelo/provedor, interromper+instruir+continuar, e visualização do
+  tamanho/% do contexto.
+- **Decisão**:
+  - **Implementação em camadas**: cada recurso ganha uma semântica **no domínio** (comando da
+    CLI `/...` + método do loop), e os dois frontends (REPL de texto, TUI) apenas renderizam
+    essa semântica. Testes de segurança cobrem o domínio — nunca o render.
+  - **Troca de modelo/provedor é por sessão** (não persiste no YAML; o config segue sendo a
+    fonte de verdade do fail-closed). O provider ganha mutadores (`Client.SetModel/
+    SetBaseURL`); o runtime vence env-overrides daquele ponto em diante; estado ativo sempre
+    visível (footer/`/model`). Troca **auditável como evento marcado no futuro** (sem efeito
+    de ferramentas).
+  - **Interrupção**: Ctrl+C cancela o turno corrente (ctx com teto 5 min continua valendo),
+    mantém o histórico persistido e devolve o prompt para o usuário acrescentar
+    informação/nova instrução; "continuar" = nova mensagem (ou `/continue`, que re-roda sem
+    duplicar). Nada de tool é executado sem o gate: turno cancelado aborta planCalls antes de
+    qualquer excução aprovada pendente (continuidade de execução após aprovação explícita já
+    existente não é afetada).
+  - **Medidor de contexto**: `Loop.ContextUsage()` = mensagens carregadas, bytes do histórico
+    do arquivo vs `session_context_bytes`, bytes do trecho realmente enviado ao modelo (pós
+    `ReduceMessages`) e tokens estimados heurística `chars/4`. Grau `%` = enviado/orçamento.
+    Comando `/context` (prompt) e barra/percentual no footer (UI). O teto real do provedor
+    entra depois como campo opcional de config (`context_window_tokens`).
+- **Alternativa**: persistir troca de modelo no YAML (aceitaram a diferença? rejeitado: rompe
+  "config é fonte de verdade" sem flag explícita; pode vir depois). Medidor aproximado por
+  bytes sem tokens (menos informativo).
+- **Consequência**: uma semântica única e testável por recurso + dois renderers; plano de
+  implementação e layout em `docs/design-tui-prompt-features.md`; entrada de backlog em
+  `AGENTS.md` para execução após M7.

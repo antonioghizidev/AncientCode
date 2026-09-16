@@ -74,8 +74,18 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
 - **Próximo**: conferir indicadores em sessão NIM real; opcional `sudo install` do binário em
   `/opt/ancientai/bin`; reenceno `--resume` conversa real na NIM — e, quando fechar,
   **avaliar M7 — Skills** (`specs/milestones/07-m7-skills.md`).
+- **Backlog documentado (pós-M7) — TUI + recursos de interação prompt/UI**: `--tui` Bubble Tea
+  no estilo lazydocker (painel sessão + painel atividade + prompt + footer com modelo/
+  provider/ctx%) e paridade com o prompt para: histórico de prompts (↑/↓, ≥10), retry/
+  continue pós-falha, troca de modelo/provedor por sessão (`/model`, `/provider`), interromper
+  (C-c) + instruir + continuar, e medidor de contexto (`/context`, barra no footer). Decisões:
+  D-2026-09-16-36 (Bubble Tea só na camada de render/input; núcleo segue stdlib) e
+  D-2026-09-16-37 (paridade prompt↔UI; troca de provider por sessão, sem persistir no YAML;
+  interrupção não executa tool após cancelamento; `Loop.ContextUsage()` com % vs
+  `session_context_bytes`). Contrato completo: `docs/design-tui-prompt-features.md`.
 - M7/M8 são "futuro" — **não iniciar** antes do gate dos anteriores e da validação no Inspiron
   como usuário dedicado (validação de efeito de ferramentas na NIM **concluída** nesta sessão).
+  O backlog TUI (± M7) só roda quando D-36/D-37 forem convertidas em milestone.
 
 ## Como trabalhar (resumo da metodologia)
 
