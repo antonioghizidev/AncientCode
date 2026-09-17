@@ -43,9 +43,10 @@ var defaultAPIKeyEnv = map[string]string{
 }
 
 var defaultToolTimeouts = map[string]string{
-	"docker": "60s",
-	"apt":    "180s",
-	"shell":  "30s",
+	"docker":    "60s",
+	"apt":       "180s",
+	"shell":     "30s",
+	"skill_run": "60s",
 }
 
 type Approval struct {
@@ -63,6 +64,7 @@ type Config struct {
 
 	Workdir         string            `yaml:"workdir"`
 	CodeRoot        string            `yaml:"code_root"`
+	SkillsDir       string            `yaml:"skills_dir"` // M7: local skills (SPEC §11.1)
 	RunUser         string            `yaml:"run_user"`
 	ShellTool       string            `yaml:"shell_tool"`
 	DockerTool      string            `yaml:"docker_tool"`
@@ -125,6 +127,13 @@ func applyDefaults(c *Config) {
 	}
 	if c.CodeRoot == "" {
 		c.CodeRoot = filepath.Join(c.Workdir, "code")
+	}
+	if c.SkillsDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = filepath.Dir(c.Workdir)
+		}
+		c.SkillsDir = filepath.Join(home, ".config", "ancientai", "skills")
 	}
 	if c.RunUser == "" {
 		c.RunUser = "ancientai"

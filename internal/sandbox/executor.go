@@ -70,7 +70,38 @@ func (e *Executor) Exec(ctx context.Context, cmd string, approvedArgs string) (*
 	if e.workdir != "" {
 		proc.Dir = e.workdir
 	}
+	return e.run(proc, approvedArgs)
+}
 
+// ExecVector runs an executable directly as an argument vector, WITHOUT any
+// shell. This is the deliberate, non-injectable path used by skill_run
+// (D-2026-09-16-39): the model-supplied argv never becomes a shell line. A
+// run_user privilege drop is refused here (a vector cannot compose `su -c`
+// without rejoining the argv into text); skill scripts run as the harness
+// user — a run_user mismatch is a hard denial, never a silent downgrade.
+func (e *Executor) ExecVector(ctx context.Context, prog string, argv []string, approvedArgs string) (*Result, error) {
+	if runtime.GOOS == "linux" && e.runUser == "root" {
+		return nil, &DeniedError{Reason: "run_user=root is not allowed"}
+	}
+	if runtime.GOOS == "linux" && e.runUser != "" && !e.isCurrentUser(e.runUser) {
+		return nil, &DeniedError{
+			Reason: "script de skill exige troca de run_user; execucao por vetor nao compoe 'su'; recusado (sem downgrade silencioso)",
+		}
+	}
+	if e.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, e.timeout)
+		defer cancel()
+	}
+	proc := execCommand(ctx, prog, argv...)
+	if e.workdir != "" {
+		proc.Dir = e.workdir
+	}
+	return e.run(proc, approvedArgs)
+}
+
+// run executes a prepared process with the output limit and result plumbing.
+func (e *Executor) run(proc *exec.Cmd, approvedArgs string) (*Result, error) {
 	buf := &limitedBuffer{limit: e.maxOut}
 	proc.Stdout = buf
 	proc.Stderr = buf

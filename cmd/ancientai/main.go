@@ -27,23 +27,36 @@ import (
 	"ancientai/internal/model"
 	"ancientai/internal/provider"
 	"ancientai/internal/sandbox"
+	"ancientai/internal/skills"
 	"ancientai/internal/tools"
 	"ancientai/internal/tools/apttools"
 	"ancientai/internal/tools/code"
 	"ancientai/internal/tools/docker"
 	"ancientai/internal/tools/files"
 	"ancientai/internal/tools/shell"
+	skillstool "ancientai/internal/tools/skills"
 )
 
 var (
-	flagConfig  = flag.String("config", "ancientai.yaml", "path to the YAML configuration (may not exist)")
-	flagSession = flag.String("session", "default", "session id -> <workdir>/sessions/<id>.jsonl")
-	flagResume  = flag.String("resume", "", "resume session <id>: reutiliza sessions/<id>.jsonl sem reset (M5 §9)")
-	flagReset   = flag.Bool("reset", false, "truncate the session file before starting")
-	flagRun     = flag.Bool("run", false, "non-interactive execution: requires approval.write_file=allow in config")
-	flagVersion = flag.Bool("version", false, "print version and exit")
-	flagCleanup = flag.Int("cleanup", 0, "remove session files under sessions/ older than N days (0=off)")
+	flagConfig      = flag.String("config", "ancientai.yaml", "path to the YAML configuration (may not exist)")
+	flagSession     = flag.String("session", "default", "session id -> <workdir>/sessions/<id>.jsonl")
+	flagResume      = flag.String("resume", "", "resume session <id>: reutiliza sessions/<id>.jsonl sem reset (M5 §9)")
+	flagReset       = flag.Bool("reset", false, "truncate the session file before starting")
+	flagRun         = flag.Bool("run", false, "non-interactive execution: requires approval.write_file=allow in config")
+	flagVersion     = flag.Bool("version", false, "print version and exit")
+	flagCleanup     = flag.Int("cleanup", 0, "remove session files under sessions/ older than N days (0=off)")
+	flagVerifySkill = flag.String("verify-skill", "", "verify a downloaded skill <name> (stamp + origin_hash) and exit")
 )
+
+func init() {
+	flag.Func("skill", "activate skill <name> from skills_dir (repeatable; M7)", func(v string) error {
+		skillFlags = append(skillFlags, v)
+		return nil
+	})
+}
+
+// skillFlags accumulates every --skill occurrence (flag.Func style).
+var skillFlags []string
 
 // turnTimeout caps one agent turn (the whole loop, including any tool rounds).
 // It is aligned with the provider HTTP ceiling (D-2026-09-16-32): on a cold
@@ -51,7 +64,7 @@ var (
 // would abort before the provider itself gives up.
 const turnTimeout = 5 * time.Minute
 
-const version = "0.6.0-m6-ind"
+const version = "0.7.0-m7-ind"
 
 // terminalApprover is the human gate (SPEC §5.6.6). It shows the exact command
 // before deciding. Answering "d" registers a veto for the tool: from then on
@@ -146,6 +159,17 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "config:", err)
 		os.Exit(1)
+	}
+	// M7: explicit operator verification of a downloaded skill (SPEC §11.1).
+	// Runs BEFORE anything else, writes the stamp and exits.
+	if *flagVerifySkill != "" {
+		if err := skills.Verify(cfg.SkillsDir, *flagVerifySkill); err != nil {
+			fmt.Fprintln(os.Stderr, "verify-skill:", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "verify-skill: %q verificada (stamp .ancientai-verified escrito em %s)\n",
+			*flagVerifySkill, cfg.SkillsDir)
+		os.Exit(0)
 	}
 	// M5: explicit session cleanup. Nothing is ever deleted automatically; the
 	// operator must ask for it by day-age (SPEC M5 "limpeza sem auto-executar").
@@ -252,6 +276,32 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	// M7: skills (SPEC §11.1). One shared skills.Set bonds the loop and the
+	// skill_run tool; --skill loads are validated against the registry before
+	// any turn (fail-closed activation). skill_run is always registered but the
+	// loop only exposes it when a scripted skill is active in run mode.
+	set := skills.NewSet()
+	exec := sandbox.NewExecutor(cfg.Workdir, cfg.RunUser, 60*time.Second, cfg.OutputMaxBytes)
+	if err := reg.Register(skillstool.New(set, exec, cfg.OutputMaxBytes)); err != nil {
+		fmt.Fprintln(os.Stderr, "tools:", err)
+		os.Exit(1)
+	}
+	loaded := make([]*skills.Skill, 0, len(skillFlags))
+	for _, name := range skillFlags {
+		s, err := skills.Load(cfg.SkillsDir, name)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "skills:", err)
+			os.Exit(1)
+		}
+		loaded = append(loaded, s)
+	}
+	// --run is non-interactive: a scripted skill would demand the human gate
+	// and hang/deny; refuse startup instead of a silent partial run (mirrors
+	// the shell/docker/apt restrictions above).
+	if *flagRun && setHasScripts(loaded) {
+		fmt.Fprintln(os.Stderr, "erro: --run e incompativel com skills que possuem scripts (skill_run exige aprovacao humana)")
+		os.Exit(1)
+	}
 
 	// M4: append-only audit (SPEC §5.7). Fail-closed: only the hash of the
 	// output and the redacted args go to disk; never the model's secrets.
@@ -266,6 +316,17 @@ func main() {
 
 	agent := loop.New(client, store, cfg, reg, appr)
 	agent.SetAudit(rec)
+	// M7: adopt the shared skill set and activate every requested skill.
+	if err := agent.SetSkills(set); err != nil {
+		fmt.Fprintln(os.Stderr, "skills:", err)
+		os.Exit(1)
+	}
+	for _, s := range loaded {
+		if err := agent.SetSkill(s); err != nil {
+			fmt.Fprintln(os.Stderr, "skills:", err)
+			os.Exit(1)
+		}
+	}
 	// TTY-only progress indicators (D-2026-09-16-35): when stdout is a pipe
 	// (scripts, tests, --run smoke) the loop stays silent and output stays clean.
 	tty := isCharDevice(os.Stdout)
@@ -320,6 +381,17 @@ func main() {
 		}
 		fmt.Println(resp)
 	}
+}
+
+// setHasScripts reports whether any loaded skill ships scripts/ (a scripted
+// skill would expose skill_run, which --run cannot approve non-interactively).
+func setHasScripts(loaded []*skills.Skill) bool {
+	for _, s := range loaded {
+		if len(s.ScriptNames) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // runPlanFlow presents the plan and resolves it against the operator: y runs

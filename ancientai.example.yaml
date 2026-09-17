@@ -17,6 +17,7 @@ model: anthropic/claude-sonnet-4-5
 # execution
 workdir: /home/ancientai/tasks
 code_root: /home/ancientai/code
+skills_dir: /home/ancientai/.config/ancientai/skills   # M7 (SPEC §11.1)
 run_user: ancientai          # nunca root
 shell_tool: disabled         # disabled | enabled (enabled exige approval.default=ask)
 toolbox_mode: plan           # plan (default) | run
@@ -24,6 +25,7 @@ tool_timeouts:
   docker: 60s
   apt: 180s
   shell: 30s
+  skill_run: 60s
 output_max_bytes: 65536
 
 # policies

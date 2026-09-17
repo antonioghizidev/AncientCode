@@ -1,9 +1,10 @@
 # Design — TUI (estilo lazydocker) + recursos de interação prompt/UI
 
-> **Status**: backlog definido em 2026-09-16 — **não implementar antes do gate do M7**
-> (`specs/milestones/07-m7-skills.md`) e da validação no Inspiron como usuário dedicado.
-> Decisões: D-2026-09-16-36 (Bubble Tea) e D-2026-09-16-37 (paridade prompt↔UI + semânticas).
-> Este arquivo é o contrato de implementação; ao executar, virar spec de milestone.
+> **Status**: convertido em specs `specs/milestones/08-m8-interacao-prompt.md` (domínio + REPL,
+> stdlib) e `specs/milestones/09-m9-tui.md` (TUI Bubble Tea como frontend delivery). M7 fechado;
+> M8 é o próximo candidato. Decisões: D-2026-09-16-36 (Bubble Tea) e D-2026-09-16-37 (paridade
+> prompt↔UI + semânticas). A fronteira UI↔core (Observer + comandos + Approver) é transport-
+> agnóstica: REPL/TUI/Web futura são apenas adaptadores.
 
 ## 1. Objetivo
 
