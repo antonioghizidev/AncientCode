@@ -88,7 +88,11 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   carga recusada até re-verify; `skill_run` em sessão NIM real com ask→allow→executed (93 ms,
   efeito gravado, audit `status=executed policy=ask`); `--run` recusa skill scriptada. Binário
   `0.7.0-m7-ind` em `/home/ancientai/ancientai-0.7.0-m7-ind`.
-- **Próximo**: push do branch `m7-skills`; M7 fechado → **avaliar backlog TUI** (D-36/D-37).
+- **Próximo**: M7 fechado e push de `m7-skills` feito → backlog TUI **avaliado e convertido em specs**
+  M8 (`specs/milestones/08-m8-interacao-prompt.md`, domínio + REPL, stdlib) e M9
+  (`specs/milestones/09-m9-tui.md`, TUI Bubble Tea como frontend delivery sobre o mesmo core).
+  Iniciar **M8** (o gate do M7 — validação Inspiron — foi cumprido), exceto se o usuário decidir
+  priorizar outra coisa.
 - **Backlog documentado (pós-M7) — TUI + recursos de interação prompt/UI**: `--tui` Bubble Tea
   no estilo lazydocker (painel sessão + painel atividade + prompt + footer com modelo/
   provider/ctx%) e paridade com o prompt para: histórico de prompts (↑/↓, ≥10), retry/
@@ -98,9 +102,12 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   D-2026-09-16-37 (paridade prompt↔UI; troca de provider por sessão, sem persistir no YAML;
   interrupção não executa tool após cancelamento; `Loop.ContextUsage()` com % vs
   `session_context_bytes`). Contrato completo: `docs/design-tui-prompt-features.md`.
-- ~~M7~~ **M8** é "futuro" — **não iniciar** antes do gate do M7 e da validação real no Inspiron
-  como usuário dedicado (smoke de skill pendente). O backlog TUI (D-36/D-37) só roda quando
-  convertido em milestone e D-36/D-37 aprovadas.
+  **Dividido em M8** (domínio + comandos REPL, stdlib, fronteira UI↔core transport-agnóstica) e
+  **M9** (TUI Bubble Tea delivery sobre o mesmo core). Web futura (acesso no navegador de outras
+  máquinas) = milestone posterior que reusa o contrato (Event JSON + comandos puros + `Approver`
+  por canal), sem tocar em `internal/loop`.
+- **M8** (agora próximo candidato): iniciar quando o usuário decidir; manter a ordem **M8 → M9**,
+  pois a TUI consome o contrato de eventos/comandos que o M8 estabiliza.
 
 ## Como trabalhar (resumo da metodologia)
 
