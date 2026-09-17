@@ -207,6 +207,40 @@ func TestValidateCodeRootInsideWorkdir(t *testing.T) {
 	}
 }
 
+// TestDefaultSkillsDir: M7 skills_dir defaults to <home>/.config/ancientai/skills
+// (SPEC §11.1) and honors an explicit override.
+func TestDefaultSkillsDir(t *testing.T) {
+	base, err := os.MkdirTemp("", "aai-skills-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(base)
+	wd := filepath.Join(base, "wd")
+	if err := os.MkdirAll(wd, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadWithKey(t, "model: x/y\nworkdir: "+wd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, ".config", "ancientai", "skills")
+	if cfg.SkillsDir != want {
+		t.Errorf("default skills_dir = %q, want %q", cfg.SkillsDir, want)
+	}
+	custom := filepath.Join(wd, "skills-custom")
+	cfg2, err := loadWithKey(t, "model: x/y\nworkdir: "+wd+"\nskills_dir: "+custom)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.SkillsDir != custom {
+		t.Errorf("explicit skills_dir = %q, want %q", cfg2.SkillsDir, custom)
+	}
+}
+
 func TestValidateRejectsBadTimeout(t *testing.T) {
 	_, err := loadWithKey(t, "model: x/y\ntool_timeouts:\n  docker: banana")
 	if err == nil || !strings.Contains(err.Error(), "docker") {

@@ -71,9 +71,20 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `TestStatusHookStreamsPhases`/`TestStatusHookReportsHumanGate`. Binário Linux `0.6.0-m6-ind`
   (`GOAMD64=v1`) em `/home/ancientai/ancientai-0.6.0-m6-ind` no Inspiron (o `m6` estava em
   uso por sessão aberta). Ver `docs/session-2026-09-16-indicadores.md`.
-- **Próximo**: conferir indicadores em sessão NIM real; opcional `sudo install` do binário em
-  `/opt/ancientai/bin`; reenceno `--resume` conversa real na NIM — e, quando fechar,
-  **avaliar M7 — Skills** (`specs/milestones/07-m7-skills.md`).
+- **M7 concluído (Skills, §11.1)** — branch `m7-skills` (D-2026-09-16-38..41): pacote
+  `internal/skills` (frontmatter YAML estrito KnownFields, `name`==dir, limites 256 KiB/64 KiB,
+  nome `^[a-z0-9]+(?:-[a-z0-9]+)*$`, scripts strict-child, `--verify-skill` com stamp
+  `.ancientai-verified` + `origin_hash`); tool `skill_run` via `sandbox.ExecVector` (vetor puro,
+  sem shell; recusa `run_user`≠atual/root; ask; argv ≤64/16 KiB); loop: `SetSkills`+`SetSkill`
+  (allowed_tools validado no registry, fail-closed), `enabledTools` **intersect** com a união
+  (skill restringe, nunca concede), `policyFor(skill_run)=ask`, injeção no system prompt com
+  marcadores untrusted; config `skills_dir` (default `~/.config/ancientai/skills`) +
+  `tool_timeouts.skill_run` (60s). Binário `0.7.0-m7-ind` (`dist/ancientai`, GOAMD64=v1).
+  Host serial 16/16 e Linux WSL `-race` 16/16; 5 testes de segurança do milestone obrigatórios.
+  Ver `docs/session-2026-09-16-m7.md`.
+- **Próximo**: smoke M7 real no Inspiron como `ancientai` (skill com script → skill_run
+  ask→allow→executed + auditoria; `--verify-skill`; `--run` recusa skill scriptada); commit/push do
+  branch `m7-skills`; fechado o M7, **avaliar backlog TUI** (D-36/D-37).
 - **Backlog documentado (pós-M7) — TUI + recursos de interação prompt/UI**: `--tui` Bubble Tea
   no estilo lazydocker (painel sessão + painel atividade + prompt + footer com modelo/
   provider/ctx%) e paridade com o prompt para: histórico de prompts (↑/↓, ≥10), retry/
@@ -83,9 +94,9 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   D-2026-09-16-37 (paridade prompt↔UI; troca de provider por sessão, sem persistir no YAML;
   interrupção não executa tool após cancelamento; `Loop.ContextUsage()` com % vs
   `session_context_bytes`). Contrato completo: `docs/design-tui-prompt-features.md`.
-- M7/M8 são "futuro" — **não iniciar** antes do gate dos anteriores e da validação no Inspiron
-  como usuário dedicado (validação de efeito de ferramentas na NIM **concluída** nesta sessão).
-  O backlog TUI (± M7) só roda quando D-36/D-37 forem convertidas em milestone.
+- ~~M7~~ **M8** é "futuro" — **não iniciar** antes do gate do M7 e da validação real no Inspiron
+  como usuário dedicado (smoke de skill pendente). O backlog TUI (D-36/D-37) só roda quando
+  convertido em milestone e D-36/D-37 aprovadas.
 
 ## Como trabalhar (resumo da metodologia)
 

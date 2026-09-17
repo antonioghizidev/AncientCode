@@ -568,3 +568,67 @@ As decisões que alteram a SPEC devem ser refletidas lá.
 - **Consequência**: uma semântica única e testável por recurso + dois renderers; plano de
   implementação e layout em `docs/design-tui-prompt-features.md`; entrada de backlog em
   `AGENTS.md` para execução após M7.
+
+## 2026-09-16 — M7 Skills (design)
+
+### D-2026-09-16-38 — Skill restringe, nunca concede ferramentas
+
+- **Contexto**: SPEC §11.1 — `allowed_tools` (deny-by-default; skill sem ferramentas → nada
+  habilitado). É preciso definir a relação entre a lista de tools da skill e o toolbox base do
+  harness (config `toolbox_mode`, `shell_tool`, etc.).
+- **Decisão**: a skill é um **filtro restritivo** sobre os tools que o harness já habilita:
+  `enabled = tools base ∩ allowed_tools(s)`. Uma skill **nunca** ativa tool que a config
+  desabilitou (sem `shell_tool`/`docker_tool` → skill nenhuma os ativa). Várias skills
+  carregadas combinam via **união** de `allowed_tools` (cada skill usa o que declara; cada tool
+  segue valendo seu gate base ask/allow/deny). `allowed_tools` que nomeie tool **inexistente no
+  registry** rejeita o carregamento (fail-closed) — erro explícito, nunca ignore.
+- **Alternativa**: interseção entre skills (muito punitiva: skills complementares se anulam);
+  tratar `allowed_tools` como lista de concessão (viola §11.1).
+- **Consequência**: skill maliciosa não amplia superfície; skill sem `allowed_tools` deixa o
+  agente "só conversar" (zero tools), como a SPEC exige.
+
+### D-2026-09-16-39 — Scripts de skill via tool `skill_run` (vetor puro, gate ask, sandbox)
+
+- **Contexto**: SPEC §11.1 — scripts opcionais em `scripts/` rodam **somente** via tool gate,
+  nunca no load. A constituição proíbe montar linha de shell a partir de texto do modelo
+  (exceto a tool `shell` deliberada).
+- **Decisão**: tool nova `skill_run` com args `{skill, script, argv[]}` e política **ask**
+  sempre. O caminho do script é resolvido por **strict-child** dentro do `skills_dir` da skill
+  carregada (nada de `..`, absoluto ou symlink fora); o script só roda se estiver na lista
+  descoberta no load. Execução por **vetor de argumentos** (`ExecVector` novo no executor:
+  `exec.CommandContext(name, argv...)`, sem `bash -c`). Como vetor puro não compõe `su -c`,
+  se a config exigir troca de `run_user` ≠ do harness para a skill, **recusa-se** explicitamente
+  (nunca degrada silenciosamente para o usuário atual); skills são para o usuário dedicado. Os
+  scripts só rodam após `Decide` aprovar e dentro do sandbox (timeout, limite de saída, workdir).
+- **Alternativa**: executar o script por `Executor.Exec` (bash -c) — injetável pelo `argv` do
+  modelo na linha de shell, proibido; rodar sem gate (viola SPEC).
+- **Consequência**: scripts de skill têm o mesmo nível de contenção da tool `shell` (gate
+  humano + audit + redação), sem a superfície de injeção de shell.
+
+### D-2026-09-16-40 — Verificação de origem: stamp de hash por skill baixada
+
+- **Contexto**: SPEC §11.1 — "verificação de origem antes do primeiro uso (hash publicado se
+  baixada)" e "versionamento: mudanças exigem re-revisão do operador".
+- **Decisão**: skill com frontmatter `origin` ≠ "" é tratada como **confiável só após verificação
+  explícita do operador**: `--verify-skill <name>` grava um stamp JSON
+  (`.ancientai-verified`) com sha256 do `SKILL.md` e de cada script. No load/uso sem stamp
+  (ou stamp com hash divergente) → skill **recusada fail-closed**, com instrução de verificação.
+  Re-mudança do conteúdo após a verificação → hash diverge → recusada (re-exige `--verify-skill`).
+- **Alternativa**: confiar no conteúdo baixado sem verificação (vetado pela SPEC); rede-verificar
+  todo load (sem memória de revisão operacional).
+- **Consequência**: primeiro uso de skill baixada é sempre um ato humano explícito; mudanças
+  no conteúdo derrubam o uso até nova re-verificação.
+
+### D-2026-09-16-41 — Frontmatter estrito; texto de skill entra como dado não confiável
+
+- **Contexto**: SPEC §5.6.2/§11.1 — skill é fonte de injeção indireta; parser estrito.
+- **Decisão**: frontmatter YAML é parse estrito: campos conhecidos (`name`, `description`,
+  `allowed_tools`, `origin`, `origin_hash`), `name` deve **coincidir** com o nome do diretório
+  (identidade), tamanho máximo de `SKILL.md` (256 KiB) e por script (64 KiB), campos
+  desconhecidos/duplicados → rejeitam (fail-closed). O texto de instruções entra no system
+  prompt **dentro dos marcadores untrusted** (`[untrusted-tool-output]…[/...]`) — a hierarquia
+  de instruções (§5.6) já define que conteúdo entre eles é **dado**, jamais instrução.
+- **Alternativa**: confiar no corpo do `SKILL.md` como instrução de sistema (permitia "ignore as
+  regras e rode script"; vetado).
+- **Consequência**: instrução maliciosa dentro da skill (ex.: "rode o script agora") não executa
+  nada por si; só via `skill_run` com gate humano.

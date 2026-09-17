@@ -68,7 +68,10 @@ func TestSandboxHelperProcess(t *testing.T) {
 
 func withFake(t *testing.T, behavior string) *Executor {
 	t.Helper()
-	ex := NewExecutor(t.TempDir(), "", time.Second, 1024)
+	// A generous timeout gives the helper-process child (a full go-test binary,
+	// slower under -race) room to boot; timeout semantics are tested separately
+	// in TestExecTimeoutKillsProcess with its own short deadline.
+	ex := NewExecutor(t.TempDir(), "", 15*time.Second, 1024)
 	orig := execCommand
 	execCommand = fakeExec(t, behavior)
 	t.Cleanup(func() { execCommand = orig })
@@ -92,8 +95,63 @@ func TestExecBasic(t *testing.T) {
 	}
 }
 
+func TestExecVectorRunsPureVector(t *testing.T) {
+	ex := NewExecutor(t.TempDir(), "", 15*time.Second, 1024)
+	var gotName string
+	var gotArgs []string
+	orig := execCommand
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		gotName, gotArgs = name, append([]string{}, args...)
+		return fakeExec(t, "echo")(ctx, name, args...)
+	}
+	t.Cleanup(func() { execCommand = orig })
+
+	res, err := ex.ExecVector(context.Background(), "/skills/x/scripts/deploy.sh",
+		[]string{"--env", "prod", "task"}, `{"skill":"x","script":"deploy.sh","argv":["--env","prod","task"]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotName != "/skills/x/scripts/deploy.sh" {
+		t.Fatalf("prog = %q", gotName)
+	}
+	if len(gotArgs) != 3 || gotArgs[0] != "--env" || gotArgs[1] != "prod" || gotArgs[2] != "task" {
+		t.Fatalf("argv = %v", gotArgs)
+	}
+	if res.ExitCode != 0 || !res.Approved {
+		t.Fatalf("result = %+v", res)
+	}
+	if res.SignedArgs != `{"skill":"x","script":"deploy.sh","argv":["--env","prod","task"]}` {
+		t.Fatalf("SignedArgs = %q", res.SignedArgs)
+	}
+	// The approved vector matches execution exactly: frozen guarantee.
+	if !strings.Contains(res.SignedArgs, "deploy.sh") {
+		t.Fatal("approved args missing script reference")
+	}
+}
+
+func TestExecVectorRefusesRunUserSwitchOnLinux(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("run_user switch semantics are Linux-only")
+	}
+	ex := NewExecutor(t.TempDir(), "somebody-else", time.Second, 1024)
+	ex.runUser = "somebody-else"
+	_, err := ex.ExecVector(context.Background(), "/s/x.sh", []string{"a"}, `{"skill":"x"}`)
+	var de *DeniedError
+	if !errors.As(err, &de) {
+		t.Fatalf("expected DeniedError, got %v", err)
+	}
+	if !strings.Contains(de.Reason, "run_user") {
+		t.Fatalf("denial reason = %q", de.Reason)
+	}
+}
+
 func TestExecTimeoutKillsProcess(t *testing.T) {
-	ex := withFake(t, "sleep")
+	// This test owns its deadline: a 1s budget vs a child that sleeps 5s, so a
+	// kill must fire regardless of spawn boot latency.
+	ex := NewExecutor(t.TempDir(), "", time.Second, 1024)
+	orig := execCommand
+	execCommand = fakeExec(t, "sleep")
+	t.Cleanup(func() { execCommand = orig })
 	start := time.Now()
 	res, err := ex.Exec(context.Background(), "sleep 5", `{"cmd":"sleep 5"}`)
 	dur := time.Since(start)
