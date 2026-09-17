@@ -102,7 +102,11 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `os.Exit(130)` no prompt; `raw_other.go` cooked), gate humano via `confirmRaw(ctx)`, observer
   → `Phase.Label()` no REPL, versão `0.8.0-m8`. Host: 16/16 (38 novos testes) 0 falhas; WSL
   `-race` 16/16; `gofmt` LF-clean. Ver `docs/session-2026-09-17-m8.md`. **Smoke Inspiron
-  pendente** (raw/pty, `/model`/`/provider`/`/context`, `!N`, Ctrl+C cancel).
+  concluído** (raw/pty real: echo do editor com cursor exato, status `aguardando`→`recebendo
+  tokens`→resposta NIM, histórico ↑↑ + `!N` com inválido fail-closed `erro: sem prompt !9`,
+  Ctrl+C cancel em voo → `turno cancelado (Ctrl+C)` e loop vivo após, `/context`/`/model`/
+  `/provider` em raw, `/exit` limpo). Defeito do cursor no emit pty corrigido + teste de
+  regressão (D-2026-09-17-48, `cf57fa9`). Ver `docs/session-2026-09-17-inspiron-m8.md`.
 - **Próximo**: M8 fechado → **M9** (TUI Bubble Tea como frontend delivery sobre o mesmo core,
   consumindo o contrato de eventos/comandos que o M8 estabilizou). Spec pronta:
   `specs/milestones/09-m9-tui.md`. Ordem **M8 → M9** preservada.

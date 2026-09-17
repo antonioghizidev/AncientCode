@@ -718,3 +718,17 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   reduzido); mostrar bytes crus (não comunica folga restante).
 - **Consequência**: a UI mostra "ctx: 63% (12.3K/20K)" e o REPL o mesmo número; nenhum conceito
   novo no loop além do que o gate já usa.
+
+### D-2026-09-17-48 — Editor: cursor movido 4 colunas por echo (defeito pós-commit, Inspiron PTY)
+
+- **Contexto**: smoke M8 no Inspiron via `pty.fork` mostrou echo do editor com `\x1b[4D`
+  em excesso: o render contava `\r` e `\x1b[K` como colunas de tela
+  (`moveLeft = len([]rune(render)) - len([]rune(prompt)) - e.pos`).
+- **Decisão**: corrigir para `moveLeft := len(e.buf) - e.pos` (só o conteúdo visível) e cobrir
+  com `TestEditorRenderCursor` (empty/end/middle/home) comparando strings byte a byte. O
+  harness de smoke PTY (script Python fora do repo) sincroniza por marcadores de bytes
+  (`\r> \x1b[K`, `recebendo tokens`), não por timing — evita falso positivo de "pronto".
+- **Alternativa**: mandar ANSI de posicionamento absoluto (mais frágil no pty), ou dormir fixo
+  por passo (instável com NIM fria).
+- **Consequência**: cursor exato no tty real; teste de regressão no host (`cmd/ancientai`,
+  determinístico).
