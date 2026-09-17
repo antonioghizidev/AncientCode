@@ -147,8 +147,7 @@ func (e *editor) historyStep(delta int) {
 // never break the agent loop.
 func (e *editor) render(w io.Writer, prompt string) {
 	s := "\r" + prompt + string(e.buf) + "\x1b[K"
-	l := len([]rune(s))
-	moveLeft := l - len([]rune(prompt)) - e.pos
+	moveLeft := len(e.buf) - e.pos
 	if moveLeft > 0 {
 		s += "\x1b[" + itoa(moveLeft) + "D"
 	}

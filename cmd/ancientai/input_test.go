@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func feedLine(t *testing.T, hist []string, keys ...rune) (string, lineDoneKind) {
 	t.Helper()
@@ -111,6 +114,31 @@ func TestEditorCtrlUAndMovement(t *testing.T) {
 	ed.handle(runeCtrlU)
 	if got := ed.current(); got != "" {
 		t.Fatalf("Ctrl+U = %q, want empty", got)
+	}
+}
+
+func TestEditorRenderCursor(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		keys []rune
+		want string
+	}{
+		{"empty", nil, "\r> \x1b[K"},
+		{"end", []rune{'a', 'b'}, "\r> ab\x1b[K"},
+		{"middle", []rune{'a', 'b', runeLeft}, "\r> ab\x1b[K\x1b[1D"},
+		{"home", []rune{'a', 'b', runeHome}, "\r> ab\x1b[K\x1b[2D"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ed := newEditor(nil)
+			for _, key := range tc.keys {
+				ed.handle(key)
+			}
+			var out bytes.Buffer
+			ed.render(&out, "> ")
+			if got := out.String(); got != tc.want {
+				t.Fatalf("render = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
