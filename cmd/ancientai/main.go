@@ -17,8 +17,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"ancientai/internal/audit"
@@ -64,24 +66,38 @@ var skillFlags []string
 // would abort before the provider itself gives up.
 const turnTimeout = 5 * time.Minute
 
-const version = "0.7.0-m7-ind"
+const version = "0.8.0-m8"
 
 // terminalApprover is the human gate (SPEC §5.6.6). It shows the exact command
 // before deciding. Answering "d" registers a veto for the tool: from then on
 // the tool is refused even on ask/allow paths — the operator is the last word.
+// On a raw TTY the confirmation reads keystrokes through confirmRaw (M8), so a
+// Ctrl+C or an approval timeout cancels the gate cleanly instead of blocking.
 type terminalApprover struct {
-	in     *bufio.Reader
-	vetoed map[string]bool
+	vetoed  map[string]bool
+	in      *bufio.Reader                                            // cooked path
+	confirm func(ctx context.Context, prompt string) (string, error) // raw path (nil = cooked)
 }
 
-func (a *terminalApprover) Decide(_ context.Context, toolName, summary string) (loop.Decision, error) {
+func (a *terminalApprover) Decide(ctx context.Context, toolName, summary string) (loop.Decision, error) {
 	if a.vetoed[toolName] {
 		return loop.DecisionDeny, nil
 	}
-	fmt.Fprintf(os.Stderr, "\n[aprovacao] tool %q\n  %s\nexecutar? [y/N, d = negar sempre] ", toolName, summary)
-	line, err := a.in.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return loop.DecisionDeny, err
+	prompt := fmt.Sprintf("\n[aprovacao] tool %q\n  %s\nexecutar? [y/N, d = negar sempre] ", toolName, summary)
+	var line string
+	if a.confirm != nil {
+		l, err := a.confirm(ctx, prompt)
+		if err != nil {
+			return loop.DecisionDeny, err
+		}
+		line = l
+	} else {
+		fmt.Fprint(os.Stderr, prompt)
+		l, err := a.in.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return loop.DecisionDeny, err
+		}
+		line = l
 	}
 	switch strings.ToLower(strings.TrimSpace(line)) {
 	case "y", "yes":
@@ -312,7 +328,30 @@ func main() {
 	}
 
 	in := bufio.NewReader(os.Stdin)
+
+	// M8: raw-mode line editing (↑/↓ history, per-D-37) is enabled only when
+	// stdin is a char device AND the raw driver is available (linux). Pipes,
+	// files and --run keep the byte-stable cooked path.
+	var rt *rawTerm
+	var rr *rawReader
+	if isCharDevice(os.Stdin) {
+		if t, err := enableRawInput(); err == nil {
+			rt = t
+			defer rt.restore()
+			rr = &rawReader{in: in, fd: os.Stdin, tty: true}
+		}
+	}
+
 	appr := &terminalApprover{in: in, vetoed: make(map[string]bool)}
+	if rr != nil {
+		appr.confirm = func(ctx context.Context, prompt string) (string, error) {
+			line, kind := confirmRaw(ctx, rr, prompt)
+			if kind == lineCtrlC {
+				return "", context.Canceled
+			}
+			return strings.TrimSpace(line), nil
+		}
+	}
 
 	agent := loop.New(client, store, cfg, reg, appr)
 	agent.SetAudit(rec)
@@ -327,52 +366,174 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	// TTY-only progress indicators (D-2026-09-16-35): when stdout is a pipe
-	// (scripts, tests, --run smoke) the loop stays silent and output stays clean.
-	tty := isCharDevice(os.Stdout)
-	if tty {
-		agent.SetStatus(renderStatus)
+	// M8: structured observer replaces the D-35 status string on TTYs — the
+	// Phase labels keep the same vocabulary; pipes stay silent and clean.
+	if ttyOut := isCharDevice(os.Stdout); ttyOut {
+		agent.SetObserver(func(ev loop.Event) { renderStatus(ev.Phase.Label()) })
 	}
 
 	fmt.Fprintf(os.Stderr, "ancientai %s — provider=%s model=%s session=%s\n",
 		version, cfg.Provider, cfg.Model, filepath.Base(sessionPath))
-	fmt.Fprintf(os.Stderr, "toolbox_mode=%s (plan: nada mutante executa sem o seu 'y')\ntipo /exit para sair\n",
-		cfg.ToolboxMode)
+	fmt.Fprintf(os.Stderr, "toolbox_mode=%s (plan: nada mutante executa sem o seu 'y')\n%s\n",
+		cfg.ToolboxMode, helpText)
+
+	// Ctrl+C semantics (M8, D-37): a signal during a turn cancels the turn
+	// context (tools never run post-cancel, loop-level guarantee); a signal at
+	// the prompt exits. ISIG stays enabled in raw mode so this is the only
+	// Ctrl+C path — the editor never sees the byte.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	defer signal.Stop(sigCh)
+	var (
+		inTurn  int32
+		turnCxl atomic.Value // holds context.CancelFunc while a turn is running
+	)
+	go func() {
+		for range sigCh {
+			if atomic.LoadInt32(&inTurn) == 1 {
+				if f, _ := turnCxl.Load().(context.CancelFunc); f != nil {
+					f()
+				}
+				continue
+			}
+			os.Exit(130)
+		}
+	}()
 
 	ctx := context.Background()
+
+	// withTurn runs one bounded agent interaction under the signal guard and
+	// returns the model answer.
+	withTurn := func(fn func(context.Context) (string, error)) (string, error) {
+		tctx, cancel := context.WithTimeout(ctx, turnTimeout)
+		turnCxl.Store(cancel)
+		atomic.StoreInt32(&inTurn, 1)
+		resp, err := fn(tctx)
+		atomic.StoreInt32(&inTurn, 0)
+		turnCxl.Store((context.CancelFunc)(nil))
+		cancel()
+		return resp, err
+	}
+	handleTurnErr := func(err error) {
+		if errors.Is(err, context.Canceled) {
+			fmt.Fprintln(os.Stderr, "turno cancelado (Ctrl+C) — voce pode dar /retry ou /continue")
+			return
+		}
+		fmt.Fprintln(os.Stderr, "erro:", err)
+	}
+
+	// askLine reads a short answer (plan flow) honouring the input mode.
+	askLine := func(prompt string) (string, error) {
+		if rr != nil {
+			line, kind := promptLineRaw(rr, prompt, nil)
+			if kind == lineCtrlC || kind == lineCtrlD {
+				return "", io.EOF
+			}
+			return line, nil
+		}
+		line := readLine(in, prompt)
+		if lastErr == io.EOF {
+			return "", io.EOF
+		}
+		return line, nil
+	}
+
 	for {
-		line := readLine(in, "> ")
-		if line == "" && errors.Is(lastErr, io.EOF) {
+		var line string
+		var kind lineDoneKind
+		var readErr error
+		if rr != nil {
+			line, kind = promptLineRaw(rr, "> ", agent.PromptList())
+		} else {
+			line = readLine(in, "> ")
+			kind, readErr = lineEnter, lastErr
+		}
+		if kind == lineCtrlD || (readErr != nil && errors.Is(readErr, io.EOF)) {
 			break
+		}
+		if kind == lineCtrlC {
+			return // Ctrl+C at the prompt exits the REPL
 		}
 		if line == "" {
 			continue
 		}
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "/exit", "/quit":
-			return
-		case "/reset":
-			if err := store.Reset(); err != nil {
-				fmt.Fprintln(os.Stderr, "model:", err)
-			} else {
-				fmt.Fprintln(os.Stderr, "session reset")
+
+		if cmd, isCmd := parseCommand(line); isCmd {
+			switch cmd.kind {
+			case cmdExit:
+				return
+			case cmdReset:
+				if err := store.Reset(); err != nil {
+					fmt.Fprintln(os.Stderr, "model:", err)
+				} else {
+					fmt.Fprintln(os.Stderr, "session reset")
+				}
+				continue
+			case cmdHelp:
+				fmt.Println(helpText)
+				continue
+			case cmdHistory:
+				for i, p := range agent.PromptList() {
+					fmt.Printf("%2d: %s\n", i+1, p) // redacted by the domain (M8 §4)
+				}
+				continue
+			case cmdContext:
+				u := agent.ContextUsage()
+				if u.Pct < 0 {
+					fmt.Printf("ctx: off (%d bytes; session_context_bytes=0)\n", u.SentBytes)
+				} else {
+					fmt.Printf("ctx: %d%% (%d/%d bytes)\n", u.Pct, u.SentBytes, u.Budget)
+				}
+				continue
+			case cmdRetry, cmdContinue:
+				resp, err := withTurn(func(tctx context.Context) (string, error) { return agent.Continue(tctx, "") })
+				if err != nil {
+					handleTurnErr(err)
+				} else {
+					fmt.Println(resp)
+				}
+				continue
+			case cmdModel:
+				if cmd.arg == "" {
+					fmt.Println("model:", agent.CurrentModel())
+				} else if err := agent.SwitchModel(cmd.arg); err != nil {
+					fmt.Fprintln(os.Stderr, "erro:", err)
+				} else {
+					fmt.Println("model:", agent.CurrentModel(), "(vale nesta sessao — nao persiste no yaml)")
+				}
+				continue
+			case cmdProvider:
+				if cmd.arg == "" {
+					fmt.Println("provider base_url:", agent.CurrentProviderBaseURL())
+					fmt.Println("opcoes:", strings.Join(agent.ProviderNames(), ", "))
+				} else if err := agent.SwitchProvider(cmd.arg); err != nil {
+					fmt.Fprintln(os.Stderr, "erro:", err)
+				} else {
+					fmt.Println("provider:", strings.ToLower(strings.TrimSpace(cmd.arg)), "ativo (vale nesta sessao)")
+				}
+				continue
+			case cmdResend:
+				if cmd.index < 0 {
+					fmt.Fprintln(os.Stderr, "erro: !N exige numero positivo (ex.: !1 = mais recente)")
+					continue
+				}
+				p, ok := agent.PromptAt(cmd.index - 1)
+				if !ok {
+					fmt.Fprintf(os.Stderr, "erro: sem prompt !%d (historico tem %d entradas)\n", cmd.index, len(agent.PromptList()))
+					continue
+				}
+				line = p // resend below
 			}
-			continue
-		case "/help":
-			fmt.Println("comandos: /exit /quit /reset /help | para 'y' no plano: aprova e executa com toolbox completo")
-			continue
 		}
 
-		tctx, cancel := context.WithTimeout(ctx, turnTimeout)
-		resp, err := agent.Turn(tctx, strings.TrimSpace(line))
-		cancel()
+		agent.AddPrompt(line) // redacted at the domain boundary (M8 §4)
+		resp, err := withTurn(func(tctx context.Context) (string, error) { return agent.Turn(tctx, line) })
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "erro:", err)
+			handleTurnErr(err)
 			continue
 		}
-
 		if cfg.ToolboxMode == "plan" {
-			decided := runPlanFlow(ctx, agent, in, resp)
+			decided := runPlanFlow(ctx, agent, askLine, resp)
 			if !decided {
 				continue
 			}
@@ -397,14 +558,16 @@ func setHasScripts(loaded []*skills.Skill) bool {
 // runPlanFlow presents the plan and resolves it against the operator: y runs
 // it (switching the session to run mode), n discards, feedback:<msg> feeds the
 // model back and replans. Returns true when the session should keep the turn.
-func runPlanFlow(ctx context.Context, agent *loop.Loop, in *bufio.Reader, plan string) bool {
+// ask reads one answer line honouring the input mode (raw TTY or cooked).
+func runPlanFlow(ctx context.Context, agent *loop.Loop, ask func(prompt string) (string, error), plan string) bool {
 	for {
 		fmt.Println(plan)
-		ans := readLine(in, "[plano] executar? [y/N, feedback:<msg>] ")
+		ans, err := ask("[plano] executar? [y/N, feedback:<msg>] ")
+		if err != nil || ans == "" {
+			return false // EOF or Ctrl+D/C at the plan gate discards
+		}
 		ans = strings.TrimSpace(ans)
 		switch {
-		case ans == "" || strings.EqualFold(ans, "n") || strings.EqualFold(ans, "no"):
-			return false
 		case strings.EqualFold(ans, "y") || strings.EqualFold(ans, "yes"):
 			tctx, cancel := context.WithTimeout(ctx, turnTimeout)
 			err := agent.SetToolboxMode("run")
@@ -430,7 +593,8 @@ func runPlanFlow(ctx context.Context, agent *loop.Loop, in *bufio.Reader, plan s
 			}
 			plan = newPlan
 		default:
-			continue
+			// "n"/"no"/garbage: discard the plan.
+			return false
 		}
 	}
 }

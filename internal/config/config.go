@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -293,6 +294,30 @@ func (a Approval) approvalMap() map[string]string {
 }
 
 func (c *Config) apiKey() string { return os.Getenv(c.APIKeyEnv) }
+
+// ProviderDefault resolves a built-in named provider (openrouter|nvidia|
+// litellm) to its default base URL and API key env var (M8, /provider). An
+// unknown name returns ok=false — the session switch fails closed.
+func (c *Config) ProviderDefault(name string) (baseURL, apiKeyEnv string, ok bool) {
+	key := strings.ToLower(strings.TrimSpace(name))
+	base, baseOK := defaultBaseURLs[key]
+	env, envOK := defaultAPIKeyEnv[key]
+	if !baseOK || !envOK {
+		return "", "", false
+	}
+	return base, env, true
+}
+
+// ProviderNames lists the built-in named providers, sorted, for /provider
+// help and error messages.
+func (c *Config) ProviderNames() []string {
+	names := make([]string, 0, len(defaultBaseURLs))
+	for name := range defaultBaseURLs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
 
 func isLoopbackHost(host string) bool {
 	switch strings.ToLower(host) {
