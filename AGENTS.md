@@ -82,9 +82,13 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `tool_timeouts.skill_run` (60s). Binário `0.7.0-m7-ind` (`dist/ancientai`, GOAMD64=v1).
   Host serial 16/16 e Linux WSL `-race` 16/16; 5 testes de segurança do milestone obrigatórios.
   Ver `docs/session-2026-09-16-m7.md`.
-- **Próximo**: smoke M7 real no Inspiron como `ancientai` (skill com script → skill_run
-  ask→allow→executed + auditoria; `--verify-skill`; `--run` recusa skill scriptada); commit/push do
-  branch `m7-skills`; fechado o M7, **avaliar backlog TUI** (D-36/D-37).
+- **M7 pós-commit (validação no Inspiron)**: smoke real como `ancientai` com NVIDIA NIM
+  (`docs/session-2026-09-16-inspiron-m7.md`): skill `smoke` com `origin` + `scripts/status.sh`;
+  load sem stamp recusado; `--verify-skill` grava `.ancientai-verified`; tamper no SKILL.md →
+  carga recusada até re-verify; `skill_run` em sessão NIM real com ask→allow→executed (93 ms,
+  efeito gravado, audit `status=executed policy=ask`); `--run` recusa skill scriptada. Binário
+  `0.7.0-m7-ind` em `/home/ancientai/ancientai-0.7.0-m7-ind`.
+- **Próximo**: push do branch `m7-skills`; M7 fechado → **avaliar backlog TUI** (D-36/D-37).
 - **Backlog documentado (pós-M7) — TUI + recursos de interação prompt/UI**: `--tui` Bubble Tea
   no estilo lazydocker (painel sessão + painel atividade + prompt + footer com modelo/
   provider/ctx%) e paridade com o prompt para: histórico de prompts (↑/↓, ≥10), retry/
