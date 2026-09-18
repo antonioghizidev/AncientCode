@@ -632,3 +632,103 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   regras e rode script"; vetado).
 - **Consequência**: instrução maliciosa dentro da skill (ex.: "rode o script agora") não executa
   nada por si; só via `skill_run` com gate humano.
+
+---
+
+## 2026-09-17 — Sessão M8
+
+### D-2026-09-17-42 — Fronteira UI↔core: observer de eventos estruturados, transport-agnóstica
+
+- **Contexto**: D-36/D-37 (backlog TUI) exigem paridade prompt↔UI sem acoplar `internal/loop` a
+  frontend. O status string (D-35) só cobria fase; a UI precisa de fase + tool + duração + erro.
+- **Decisão**: o loop expõe `SetObserver(func(Event))` com `Event` JSON-serializável e campos
+  estáveis (`phase`, `tool`, `detail`, `dur`, `at`). `Phase` é enum **append-only** (adicionar
+  fase nunca renomeia/remove as existentes). O `emit` é nil-safe e **redige `detail`** no ponto de
+  emissão (a UI nunca toca segredo). `Phase.Label()` mantém o vocabulário do D-35 ("modelo:
+  aguardando o primeiro token...", gate, etc.). Nenhum import de `cmd/*` ou de lib de UI entra no
+  loop (teste arquitetural `imports_test.go`).
+- **Alternativa**: callback por tipo de tool (infla a API); channel interno (força concorrência
+  no core sem necessidade); JSON em stdout (polui pipes).
+- **Consequência**: REPL hoje, TUI (M9) amanhã e web depois consomem o mesmo contrato sem tocar
+  no loop; o status string D-35 é mantido na API mas o REPL passa a usar o observer.
+
+### D-2026-09-17-43 — ModelController: troca de modelo/base_url por sessão, fail-closed
+
+- **Contexto**: D-37 — `/model` e `/provider` por sessão, sem persistir no YAML. O provider hoje
+  é construído uma vez com config fixa; trocar exige mutadores thread-safe e identidade explícita.
+- **Decisão**: o provider ganha `ModelController` (sub-interface: `Model`/`SetModel`/
+  `BaseURL`/`SetBaseURL`) em `internal/provider`; `Client` usa mutex (leitura protegida no chat).
+  Toda troca é **fail-closed**: nome em branco → recusado e estado intacto; `SetBaseURL` só se a
+  env da chave do provider **já estiver setada** (sem re-leitura da config) e rejeita scheme `http`
+  fora de loopback (mantém postura TLS da SPEC §7). `SetModel` valida nome não-vazio no client.
+- **Alternativa**: recriar o client do zero na troca (perde cancel/estado e duplica segredos);
+  troca sem validação de env (podia deixar a sessão sem chave).
+- **Consequência**: `/model`/`/provider` são efeitos de sessão apenas; erro de troca não corrompe
+  o estado atual; o padrão é reaproveitado pela TUI.
+
+### D-2026-09-17-44 — ProviderDefault: lookup estático para /provider mostrar/trocar provider
+
+- **Contexto**: `/provider` precisa enumerar providers conhecidos e validar o nome digitado.
+- **Decisão**: `config.ProviderDefault(name)` retorna o provider padrão para
+  `openrouter|nvidia|litellm` (fail-closed: unknown → erro, sem valor padrão); `ProviderNames()`
+  lista os nomes ordenados para a UI. A troca não altera o YAML (D-37) e depende da env já
+  setada (D-43).
+- **Alternativa**: manter tabela no loop (duplica conhecimento de config); aceitar qualquer
+  string e tentar montar client (superfície de erro maior, sem validade conhecida).
+- **Consequência**: a UI responde `provider base_url: ...` e valida o alvo antes do primeiro chat.
+
+### D-2026-09-17-45 — Histórico de prompts redigido no domínio (não na UI)
+
+- **Contexto**: D-37 — histórico de prompts (↑/↓ e `/historico`, !N repete). Se a UI guardasse o
+  texto cru, um segredo digitado vazaria para a memória do processo além do necessário.
+- **Decisão**: o anel de histórico com cap (20) vive **no loop** (`AddPrompt`/`PromptList`/
+  `PromptAt`), com redação **no Add** (reusa `internal/redact`, idempotente). A UI só recebe
+  texto já redigido; `/historico` imprime o texto redigido; `!N` re-envia o prompt redigido de
+  volta ao modelo (proxy do texto original). `!N` inválido ou fora do alcance é recusado
+  fail-closed (índice -1).
+- **Alternativa**: guardar cru no REPL e redigir só na impressão (segredo vivo mais tempo);
+  re-enviar o original (vazaria para o modelo).
+- **Consequência**: segredo digitado vira `sk-abc***3456` imediatamente no Add; `/retry`/
+  `/continue` seguem alimentando o mesmo turno sem duplicação (teste idempotência).
+
+### D-2026-09-17-46 — Raw-mode linux-only, TTY-only; Ctrl+C = sinal (ISIG mantido)
+
+- **Contexto**: D-37 — ↑/↓/home/end no prompt com stdlib. `os/exec` e I/O de terminal não são
+  "dependência"; a barreira é não puxar bubbletea para o REPL (só M9, em `cmd`).
+- **Decisão**: editor de linha puro (`editor`) + drivers com build tag: `raw_linux.go` usa ioctl
+  termios (VMIN=1, VTIME=0, sem echo/ICANON/IEXTEN/IXON) e `raw_other.go` cai no caminho cooked.
+  Raw só é habilitado quando **stdin é char device** (TTY); pipes/files/`--run` usam o caminho
+  ReadString estável. **ISIG não é limpo**: Ctrl+C **não** vira byte para o editor — continua
+  SIGINT; o handler do main cancela o turno em voo (ctx.Canceled → "turno cancelado (Ctrl+C)") e,
+  no prompt, sai (`os.Exit(130)`); o gate humano lê via `confirmRaw(ctx, ...)` (cancelável).
+- **Alternativa**: limpar ISIG e tratar Ctrl+C como byte no editor (perde o cancelamento do turno
+  — não há leitor de teclas durante `Turn`); raw em pipe (quebraria scripts).
+- **Consequência**: turno em execução sempre pode ser interrompido (loop-level: nada executa após
+  cancelamento — teste de segurança); REPL em rede/pipe permanece byte-estável.
+
+### D-2026-09-17-47 — ContextUsage: % reaproveitando o reducer, cap e "off" explícito
+
+- **Contexto**: D-37 — medidor de contexto (`/context`, barra no footer). `session_context_bytes=0`
+  desliga o gate de contexto; precisamos de um número honesto para a UI.
+- **Decisão**: `Loop.ContextUsage()` reaproveita o `Reducer`/`ReduceMessages` do histórico: calcula
+  bytes da última mensagem síncrona e funções de turno; `Budget=0` → `Pct=-1` ("off"), senão
+  `Pct=min(100, bytes/budget)`. O reducer **sempre mantém o turno mais novo**: um único turno
+  maior que o budget satura em 100 (inevitável) — comportamento documentado e testado.
+- **Alternativa**: medir o payload do último chat (custo de parse e divergente do que será
+  reduzido); mostrar bytes crus (não comunica folga restante).
+- **Consequência**: a UI mostra "ctx: 63% (12.3K/20K)" e o REPL o mesmo número; nenhum conceito
+  novo no loop além do que o gate já usa.
+
+### D-2026-09-17-48 — Editor: cursor movido 4 colunas por echo (defeito pós-commit, Inspiron PTY)
+
+- **Contexto**: smoke M8 no Inspiron via `pty.fork` mostrou echo do editor com `\x1b[4D`
+  em excesso: o render contava `\r` e `\x1b[K` como colunas de tela
+  (`moveLeft = len([]rune(render)) - len([]rune(prompt)) - e.pos`).
+- **Decisão**: corrigir para `moveLeft := len(e.buf) - e.pos` (só o conteúdo visível) e cobrir
+  com `TestEditorRenderCursor` (empty/end/middle/home) comparando strings byte a byte. O
+  harness de smoke PTY (script Python fora do repo) sincroniza por marcadores de bytes
+  (`\r> \x1b[K`, `recebendo tokens`), não por timing — evita falso positivo de "pronto".
+- **Alternativa**: mandar ANSI de posicionamento absoluto (mais frágil no pty), ou dormir fixo
+  por passo (instável com NIM fria).
+- **Consequência**: cursor exato no tty real; teste de regressão no host (`cmd/ancientai`,
+  determinístico).

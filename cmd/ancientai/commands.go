@@ -1,0 +1,95 @@
+// Command parsing for the REPL (M8, D-2026-09-16-37). This is a PURE module:
+// it only classifies a line into an intent — it never touches the loop, the
+// store or any I/O. Every frontend (REPL today, TUI tomorrow, web later)
+// shares this same parser so prompt↔UI parity is a build-time property.
+package main
+
+import (
+	"strconv"
+	"strings"
+)
+
+// cmdKind enumerates every slash-command and shortcut the REPL understands.
+type cmdKind int
+
+const (
+	cmdNone cmdKind = iota // plain text: a normal prompt
+	cmdExit
+	cmdReset
+	cmdHelp
+	cmdHistory // /historico
+	cmdResend  // !N
+	cmdRetry   // /retry
+	cmdContinue
+	cmdModel    // /model [nome]
+	cmdProvider // /provider [nome]
+	cmdContext  // /context
+)
+
+// command is the parsed form of one REPL line.
+type command struct {
+	kind  cmdKind
+	arg   string // /model X, /provider Y
+	index int    // !N → 1-based prompt index
+}
+
+// parseCommand interprets a single trimmed REPL line. Plain text returns
+// (command{}, false); commands return (command{kind: ...}, true). Parsing is
+// strict: an unknown slash-command is still a command (cmdNone not used for it
+// only for unambiguous dispatch below) — see /parse unknown in tests.
+func parseCommand(line string) (command, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return command{}, false
+	}
+	head, rest, _ := strings.Cut(line, " ")
+	rest = strings.TrimSpace(rest)
+
+	switch strings.ToLower(head) {
+	case "/exit", "/quit":
+		return command{kind: cmdExit}, true
+	case "/reset":
+		return command{kind: cmdReset}, true
+	case "/help":
+		return command{kind: cmdHelp}, true
+	case "/historico", "/history":
+		return command{kind: cmdHistory}, true
+	case "/retry":
+		return command{kind: cmdRetry}, true
+	case "/continue", "/continuar":
+		return command{kind: cmdContinue}, true
+	case "/context":
+		return command{kind: cmdContext}, true
+	case "/model":
+		return command{kind: cmdModel, arg: rest}, true
+	case "/provider":
+		return command{kind: cmdProvider, arg: rest}, true
+	}
+
+	// !N re-enqueues the N-th newest prompt (1 = most recent). Numbers that do
+	// not parse or are non-positive are refused (fail-closed); the caller still
+	// validates against the actual history depth.
+	if strings.HasPrefix(line, "!") {
+		n, err := strconv.Atoi(strings.TrimPrefix(line, "!"))
+		if err != nil || n <= 0 {
+			return command{kind: cmdResend, arg: line, index: -1}, true
+		}
+		return command{kind: cmdResend, index: n}, true
+	}
+
+	// Any other slash-prefixed token is an unknown command. It is refused by
+	// the caller; this classifies it so the REPL can give one clear message.
+	if strings.HasPrefix(line, "/") {
+		return command{kind: cmdHelp, arg: line}, true
+	}
+
+	return command{}, false
+}
+
+// isPrompt reports whether a parsed line should be treated as a normal prompt
+// (no command semantics).
+func (c command) isPrompt() bool { return c.kind == cmdNone }
+
+// helpText lists the REPL commands (shared by /help and banner).
+const helpText = "comandos: /exit /quit /reset /help /historico (!N repete) /retry /continue " +
+	"/model [nome] /provider [nome] /context | no plano: y aprova e executa, feedback:<msg> replaneja"

@@ -141,16 +141,21 @@ func ReduceMessages(hist []provider.ChatMessage, maxBytes int) []provider.ChatMe
 	return out
 }
 
-// turnBytes estimates the on-disk footprint of a full turn (JSON line each).
-func turnBytes(turn []provider.ChatMessage) int {
+// EstimateBytes approximates the serialized footprint of messages (one JSON
+// line per message), mirroring what the provider actually receives for a
+// history slice. It backs the M8 context meter (Loop.ContextUsage).
+func EstimateBytes(msgs []provider.ChatMessage) int {
 	n := 0
-	for _, m := range turn {
+	for _, m := range msgs {
 		if b, err := json.Marshal(m); err == nil {
 			n += len(b) + 1 // newline
 		}
 	}
 	return n
 }
+
+// turnBytes estimates the on-disk footprint of a full turn (JSON line each).
+func turnBytes(turn []provider.ChatMessage) int { return EstimateBytes(turn) }
 
 // Reduce returns a copy of the history trimmed by ReduceMessages.
 func (s *Store) Reduce(maxBytes int) ([]provider.ChatMessage, error) {

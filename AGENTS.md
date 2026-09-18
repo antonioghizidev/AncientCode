@@ -88,26 +88,35 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   carga recusada até re-verify; `skill_run` em sessão NIM real com ask→allow→executed (93 ms,
   efeito gravado, audit `status=executed policy=ask`); `--run` recusa skill scriptada. Binário
   `0.7.0-m7-ind` em `/home/ancientai/ancientai-0.7.0-m7-ind`.
-- **Próximo**: M7 fechado e push de `m7-skills` feito → backlog TUI **avaliado e convertido em specs**
-  M8 (`specs/milestones/08-m8-interacao-prompt.md`, domínio + REPL, stdlib) e M9
-  (`specs/milestones/09-m9-tui.md`, TUI Bubble Tea como frontend delivery sobre o mesmo core).
-  Iniciar **M8** (o gate do M7 — validação Inspiron — foi cumprido), exceto se o usuário decidir
-  priorizar outra coisa.
-- **Backlog documentado (pós-M7) — TUI + recursos de interação prompt/UI**: `--tui` Bubble Tea
-  no estilo lazydocker (painel sessão + painel atividade + prompt + footer com modelo/
-  provider/ctx%) e paridade com o prompt para: histórico de prompts (↑/↓, ≥10), retry/
-  continue pós-falha, troca de modelo/provedor por sessão (`/model`, `/provider`), interromper
-  (C-c) + instruir + continuar, e medidor de contexto (`/context`, barra no footer). Decisões:
-  D-2026-09-16-36 (Bubble Tea só na camada de render/input; núcleo segue stdlib) e
-  D-2026-09-16-37 (paridade prompt↔UI; troca de provider por sessão, sem persistir no YAML;
-  interrupção não executa tool após cancelamento; `Loop.ContextUsage()` com % vs
-  `session_context_bytes`). Contrato completo: `docs/design-tui-prompt-features.md`.
-  **Dividido em M8** (domínio + comandos REPL, stdlib, fronteira UI↔core transport-agnóstica) e
-  **M9** (TUI Bubble Tea delivery sobre o mesmo core). Web futura (acesso no navegador de outras
-  máquinas) = milestone posterior que reusa o contrato (Event JSON + comandos puros + `Approver`
-  por canal), sem tocar em `internal/loop`.
-- **M8** (agora próximo candidato): iniciar quando o usuário decidir; manter a ordem **M8 → M9**,
-  pois a TUI consome o contrato de eventos/comandos que o M8 estabiliza.
+- **M8 concluído (interação prompt, branch `m8-interacao-prompt`)**: domínio stdlib
+  (D-2026-09-17-42..47): observer de eventos transport-agnóstico (`SetObserver`, `Phase`
+  append-only, `Event` JSON estável `phase/tool/detail/dur/at`, `detail` redigido no emit,
+  `Phase.Label()` = vocabulário D-35); `provider.ModelController` (`Model/SetModel/BaseURL/
+  SetBaseURL`, mutex, fail-closed — blank recusado, `SetBaseURL` só com env já setada e http só
+  loopback); `config.ProviderDefault`/`ProviderNames`; histórico de prompts redigido **no Add**
+  (cap 20, `PromptList`/`PromptAt`, `!N` re-envia redigido); `ContextUsage` reaproveitando o
+  reducer (budget 0 → off; pct cap 100); `SwitchModel`/`SwitchProvider` por sessão sem persistir
+  no YAML. Entrega REPL stdlib: parser puro `commands.go` (`/exit /quit /reset /help /historico
+  !N /retry /continue /model /provider /context`), editor de linha puro + raw-mode **linux+TTY**
+  (`raw_linux.go` termios com **ISIG mantido** — Ctrl+C = SIGINT cancela turno em voo /
+  `os.Exit(130)` no prompt; `raw_other.go` cooked), gate humano via `confirmRaw(ctx)`, observer
+  → `Phase.Label()` no REPL, versão `0.8.0-m8`. Host: 16/16 (38 novos testes) 0 falhas; WSL
+  `-race` 16/16; `gofmt` LF-clean. Ver `docs/session-2026-09-17-m8.md`. **Smoke Inspiron
+  concluído** (raw/pty real: echo do editor com cursor exato, status `aguardando`→`recebendo
+  tokens`→resposta NIM, histórico ↑↑ + `!N` com inválido fail-closed `erro: sem prompt !9`,
+  Ctrl+C cancel em voo → `turno cancelado (Ctrl+C)` e loop vivo após, `/context`/`/model`/
+  `/provider` em raw, `/exit` limpo). Defeito do cursor no emit pty corrigido + teste de
+  regressão (D-2026-09-17-48, `cf57fa9`). Ver `docs/session-2026-09-17-inspiron-m8.md`.
+- **Próximo**: M8 fechado → **M9** (TUI Bubble Tea como frontend delivery sobre o mesmo core,
+  consumindo o contrato de eventos/comandos que o M8 estabilizou). Spec pronta:
+  `specs/milestones/09-m9-tui.md`. Ordem **M8 → M9** preservada.
+- **Backlog documentado — Web futura**: acesso no navegador de outras máquinas = milestone
+  posterior que reusa o contrato do M8 (Event JSON + comandos puros + `Approver` por canal,
+  SSE + shell-HTTP + auth/TLS/CSRF), sem tocar em `internal/loop`. Registrada como futuro em
+  `specs/milestones/09-m9-tui.md` (DoD) e no backlog deste arquivo; **agendamento depende do M9**.
+- **M9**: abrir quando o usuário decidir. Spec pronta: `specs/milestones/09-m9-tui.md`.
+  O M8 já estabilizou o contrato que a TUI consome (Event JSON, comandos puros, `ContextUsage`,
+  raw-mode); M9 adiciona Bubble Tea **somente** em `cmd/ancientai`.
 
 ## Como trabalhar (resumo da metodologia)
 

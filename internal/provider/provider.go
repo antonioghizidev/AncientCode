@@ -93,3 +93,15 @@ type ChatResult struct {
 type Provider interface {
 	Chat(ctx context.Context, msgs []ChatMessage, tools []ToolDef, onEvent func(StreamEvent)) (ChatResult, error)
 }
+
+// ModelController extends Provider with session-lifetime runtime switching
+// (M8, D-2026-09-16-37). It is the sub-contract the REPL (and later the TUI)
+// drives through Loop.SwitchModel / Loop.SwitchProvider. Providers that do not
+// implement it keep working — switches then fail closed with a clear error.
+type ModelController interface {
+	Provider
+	Model() string
+	SetModel(model string) error
+	BaseURL() string
+	SetBaseURL(baseURL, apiKeyEnv string) error
+}

@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"ancientai/internal/redact"
@@ -23,8 +27,10 @@ const maxResponseBytesDefault = 16 << 20 // 16 MiB
 const maxErrorResponseBytes = 64 << 10 // 64 KiB
 
 // Client is a streaming OpenAI-compatible chat client. It is the single
-// adapter that covers OpenRouter, NVIDIA NIM and LiteLLM (SPEC §4.1).
+// adapter that covers OpenRouter, NVIDIA NIM and LiteLLM (SPEC §4.1). M8:
+// base URL, model and API key env are session-switchable via ModelController.
 type Client struct {
+	mu           sync.RWMutex
 	baseURL      string
 	model        string
 	apiKeyEnv    string
@@ -62,11 +68,86 @@ type redactedError struct {
 func (e *redactedError) Error() string { return e.msg }
 func (e *redactedError) Unwrap() error { return e.cause }
 
+// Model returns the active model name (M8 runtime switch).
+func (c *Client) Model() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.model
+}
+
+// SetModel switches the model for subsequent requests. The switch is per
+// session (D-37) and never persists to any YAML. A blank name is refused.
+func (c *Client) SetModel(model string) error {
+	if strings.TrimSpace(model) == "" {
+		return errors.New("provider: model vazio; switch recusado (fail-closed)")
+	}
+	c.mu.Lock()
+	c.model = model
+	c.mu.Unlock()
+	return nil
+}
+
+// BaseURL returns the active base URL (M8 runtime switch).
+func (c *Client) BaseURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.baseURL
+}
+
+// SetBaseURL switches the endpoint and its API key env var for subsequent
+// requests. Mirroring config.Validate and the security contract (SPEC §8):
+//   - the env var must ALREADY be set, else the switch is refused before any
+//     state changes (fail-closed, state unchanged);
+//   - TLS posture is never relaxed: plain http is allowed only for loopback
+//     hosts (self-hosted LiteLLM), exactly like the startup validation.
+func (c *Client) SetBaseURL(baseURL, apiKeyEnv string) error {
+	baseURL = strings.TrimSpace(baseURL)
+	apiKeyEnv = strings.TrimSpace(apiKeyEnv)
+	if baseURL == "" || apiKeyEnv == "" {
+		return errors.New("provider: base_url e api_key_env sao obrigatorios; switch recusado")
+	}
+	if os.Getenv(apiKeyEnv) == "" {
+		return fmt.Errorf("provider: API key env %q nao definida; switch recusado (fail-closed)", apiKeyEnv)
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return fmt.Errorf("provider: base_url invalida: %w", err)
+	}
+	switch u.Scheme {
+	case "https":
+	case "http":
+		if !isLoopbackHost(u.Hostname()) {
+			return errors.New("provider: base_url http nao-loopback e insegura; switch recusado")
+		}
+	default:
+		return fmt.Errorf("provider: schema %q deve ser http(s)", u.Scheme)
+	}
+	c.mu.Lock()
+	c.baseURL = strings.TrimRight(baseURL, "/")
+	c.apiKeyEnv = apiKeyEnv
+	c.mu.Unlock()
+	return nil
+}
+
+func isLoopbackHost(host string) bool {
+	switch strings.ToLower(host) {
+	case "localhost":
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func (c *Client) Chat(ctx context.Context, msgs []ChatMessage, tools []ToolDef, onEvent func(StreamEvent)) (ChatResult, error) {
-	key := os.Getenv(c.apiKeyEnv)
+	var baseURL, model, apiKeyEnv string
+	c.mu.RLock()
+	baseURL, model, apiKeyEnv = c.baseURL, c.model, c.apiKeyEnv
+	c.mu.RUnlock()
+
+	key := os.Getenv(apiKeyEnv)
 	if key == "" {
 		// Report the variable NAME, never anything derived from its value.
-		return ChatResult{}, fmt.Errorf("provider: API key env %q is not set", c.apiKeyEnv)
+		return ChatResult{}, fmt.Errorf("provider: API key env %q is not set", apiKeyEnv)
 	}
 
 	payload := struct {
@@ -75,7 +156,7 @@ func (c *Client) Chat(ctx context.Context, msgs []ChatMessage, tools []ToolDef, 
 		Tools    []ToolDef     `json:"tools,omitempty"`
 		Stream   bool          `json:"stream"`
 	}{
-		Model:    c.model,
+		Model:    model,
 		Messages: msgs,
 		Tools:    tools,
 		Stream:   true,
@@ -85,7 +166,7 @@ func (c *Client) Chat(ctx context.Context, msgs []ChatMessage, tools []ToolDef, 
 		return ChatResult{}, fmt.Errorf("provider: encode request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return ChatResult{}, fmt.Errorf("provider: create request: %w", err)
 	}

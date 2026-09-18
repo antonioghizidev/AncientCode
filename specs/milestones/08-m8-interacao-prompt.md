@@ -80,33 +80,33 @@ troca de modelo/provedor (ProviderSwitch). Mantém `SetStatus(string)` para cons
 
 ## 5. Requisitos de segurança deste milestone
 
-- [ ] Nenhuma mudança em: ask/allow/deny, `redact`, audit append-only, tetos (turno/tool/SSE).
-- [ ] `SwitchProvider` **nunca** desativa TLS nem troca redação; recusa switch com `api_key_env`
+- [x] Nenhuma mudança em: ask/allow/deny, `redact`, audit append-only, tetos (turno/tool/SSE).
+- [x] `SwitchProvider` **nunca** desativa TLS nem troca redação; recusa switch com `api_key_env`
       ausente (fail-closed: erro antes de mudar estado, estado inalterado).
-- [ ] Histórico de prompts e `/historico` exibem apenas texto **redigido**.
-- [ ] Turno cancelado por Ctrl+C não dispara tool pendente: `planCalls` exige `Decide` **no curso
+- [x] Histórico de prompts e `/historico` exibem apenas texto **redigido**.
+- [x] Turno cancelado por Ctrl+C não dispara tool pendente: `planCalls` exige `Decide` **no curso
       do turno**; `execOne` herda o ctx cancelado → nada roda pós-cancelamento sem novo gate.
-- [ ] Raw mode é **TTY-only** (`isCharDevice`); pipe e `--run` permanecem cooked/byte-estável
+- [x] Raw mode é **TTY-only** (`isCharDevice`); pipe e `--run` permanecem cooked/byte-estável
       (smoke/CI intactos).
 
 ## 6. Testes obrigatórios
 
 > Regra: testes de segurança atacam o **domínio** (loop/provider/model), nunca o render.
 
-- [ ] `ContextUsage`: `sentBytes ≤ budget` com e sem `session_context_bytes`; `pct` = 100% no teto.
-- [ ] `SwitchModel`/`SwitchProvider` mudam a próxima `Chat` (defs/base_url); switch com env ausente →
+- [x] `ContextUsage`: `sentBytes ≤ budget` com e sem `session_context_bytes`; `pct` = 100% no teto.
+- [x] `SwitchModel`/`SwitchProvider` mudam a próxima `Chat` (defs/base_url); switch com env ausente →
       erro e estado inalterado.
-- [ ] `Continue("")` não duplica a última user message (idempotência de retry).
-- [ ] Event stream: ordenação de fases; `ToolRunning` com início+fim+dur; `TurnError` redigido.
-- [ ] `Event` JSON roundtrip estável.
-- [ ] Parsing de comandos: `!N` só índices válidos, `/model` sem arg = show, `/historico` redigido.
-- [ ] Cancelamento via ctx (loop-level, sem tty): turno cancelado → erro limpo e nada executado.
+- [x] `Continue("")` não duplica a última user message (idempotência de retry).
+- [x] Event stream: ordenação de fases; `ToolRunning` com início+fim+dur; `TurnError` redigido.
+- [x] `Event` JSON roundtrip estável.
+- [x] Parsing de comandos: `!N` só índices válidos, `/model` sem arg = show, `/historico` redigido.
+- [x] Cancelamento via ctx (loop-level, sem tty): turno cancelado → erro limpo e nada executado.
 
 ## 7. Critérios de aceite (DoD)
 
-- [ ] **Suíte completa verde** (`go test -count=1 ./...` host serial + Linux WSL `-race`).
-- [ ] `gofmt -l .` vazio; `go vet ./...` e `go build ./...` limpos.
-- [ ] Teste arquitetural de importação: `internal/loop` não importa `cmd/*`.
-- [ ] `docs/DECISOES.md` atualizado com as decisões de execução deste milestone.
-- [ ] Nota de sessão criada e status de SPEC/M8 atualizados.
-- [ ] TUI (M9) ainda NÃO iniciada — M8 fecha com REPL rico e contrato de eventos estável.
+- [x] **Suíte completa verde** (`go test -count=1 ./...` host serial + Linux WSL `-race`).
+- [x] `gofmt -l .` vazio; `go vet ./...` e `go build ./...` limpos.
+- [x] Teste arquitetural de importação: `internal/loop` não importa `cmd/*`.
+- [x] `docs/DECISOES.md` atualizado com as decisões de execução deste milestone.
+- [x] Nota de sessão criada e status de SPEC/M8 atualizados.
+- [x] TUI (M9) ainda NÃO iniciada — M8 fecha com REPL rico e contrato de eventos estável.

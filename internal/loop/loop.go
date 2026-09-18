@@ -69,8 +69,10 @@ type Loop struct {
 	rec       *audit.Recorder // M4: append-only JSONL audit (nil = disabled)
 	toolbox   string          // plan (default) | run — mutable per session via SetToolboxMode
 	toolboxMu sync.RWMutex
-	skills    *skills.Set  // M7: active skills (nil = none loaded)
-	status    func(string) // optional UI hook: phase events (nil = silent)
+	skills    *skills.Set   // M7: active skills (nil = none loaded)
+	status    func(string)  // optional UI hook: phase events (nil = silent)
+	obs       func(Event)   // M8: structured observer (nil = silent, fail-closed)
+	ph        promptHistory // M8: redacted in-memory prompt ring
 }
 
 // New builds a loop. reg may be nil (no tools) and appr may be nil (ask
@@ -146,6 +148,12 @@ func (l *Loop) SetSkill(s *skills.Skill) error {
 // TTY UI can clear its status line). Nil (the default) keeps the loop silent.
 func (l *Loop) SetStatus(fn func(string)) { l.status = fn }
 
+// SetObserver attaches the M8 structured event stream (transport-agnostic UI
+// contract; SPEC M8 §3). The callback receives redacted Events only; a nil
+// observer is the fail-closed silent default. Consumers never block feedback:
+// keep the callback fast and non-blocking.
+func (l *Loop) SetObserver(fn func(Event)) { l.obs = fn }
+
 func (l *Loop) notify(phase string) {
 	if l.status != nil {
 		l.status(phase)
@@ -201,16 +209,19 @@ func (l *Loop) Turn(ctx context.Context, user string) (string, error) {
 func (l *Loop) run(ctx context.Context, hist []provider.ChatMessage) (string, error) {
 	for iter := 0; iter < maxToolIterations; iter++ {
 		l.notify("modelo: aguardando o primeiro token...")
+		l.emit(Event{Phase: PhaseModelWaiting})
 		streaming := false
 		onEvent := func(ev provider.StreamEvent) {
 			if !streaming && (ev.DeltaContent != "" || len(ev.ToolCallDeltas) > 0) {
 				streaming = true
 				l.notify("modelo: recebendo tokens...")
+				l.emit(Event{Phase: PhaseModelStreaming})
 			}
 		}
 		res, err := l.p.Chat(ctx, appendSystem(l.systemPrompt(), hist), l.defs(), onEvent)
 		l.notify("")
 		if err != nil {
+			l.emit(Event{Phase: PhaseTurnError, Detail: err.Error()})
 			return "", fmt.Errorf("loop: chat: %w", err)
 		}
 
@@ -323,6 +334,7 @@ func (l *Loop) planCalls(ctx context.Context, calls []provider.CompletedToolCall
 				defer cancel()
 			}
 			l.notify("gate humano: aguardando sua aprovacao...")
+			l.emit(Event{Phase: PhaseGateWaiting, Tool: c.Name})
 			dec, err := l.appr.Decide(dctx, c.Name, summaryFor(c))
 			l.notify("")
 			if err != nil {
@@ -357,9 +369,16 @@ func (l *Loop) execOne(ctx context.Context, a action) error {
 		return errors.New("loop: config de timeout da tool invalida; nao executado")
 	}
 	start := time.Now()
+	l.emit(Event{Phase: PhaseToolRunning, Tool: a.call.Name})
 	tctx, cancel := context.WithTimeout(ctx, dur)
 	res, err := a.tool.Execute(tctx, json.RawMessage(a.call.Args))
 	cancel()
+
+	if err != nil {
+		l.emit(Event{Phase: PhaseTurnError, Tool: a.call.Name, Detail: err.Error(), Dur: time.Since(start)})
+	} else {
+		l.emit(Event{Phase: PhaseTurnOK, Tool: a.call.Name, Dur: time.Since(start)})
+	}
 
 	status, decision := "executed", "allow"
 	if err != nil {
