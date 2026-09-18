@@ -1,12 +1,12 @@
 # Design — TUI (estilo lazydocker) + recursos de interação prompt/UI
 
-> **Status**: M8 **concluído** (`specs/milestones/08-m8-interacao-prompt.md`, branch
-> `m8-interacao-prompt`; REPL com raw-mode linux+TTY, observer de eventos, troca modelo/provedor,
-> histórico redigido, `ContextUsage`). Fronteira UI↔core entregue e estável. **Próximo: M9**
-> (`specs/milestones/09-m9-tui.md`), TUI Bubble Tea como frontend delivery sobre o mesmo contrato.
-> Decisões: D-2026-09-16-36 (Bubble Tea) e D-2026-09-16-37 (paridade prompt↔UI + semânticas).
-> A fronteira UI↔core (Observer + comandos + Approver) é transport-agnóstica: REPL/TUI/Web futura
-> são apenas adaptadores.
+> **Status**: **M9 concluído** (`specs/milestones/09-m9-tui.md`, branch `m9-tui`; TUI Bubble Tea
+> `--tui` TTY-only em `cmd/ancientai` consumindo o contrato do M8 — parser comandos compartilhado,
+> `tuiGate`/`loop.Approver` como única via de aprovação, observer de eventos no painel de
+> atividade, footer com ctx/status). O REPL de texto continua default e byte-estável. Web futura
+> reusa o mesmo contrato (backlog em `09-m9-tui.md` DoD). Decisões: D-2026-09-16-36 (Bubble Tea),
+> D-2026-09-16-37 (paridade prompt↔UI + semânticas), D-2026-09-17-49 (pin v1.3.10, render ASCII
+> puro, sem lipgloss em View por ora).
 
 ## 1. Objetivo
 
