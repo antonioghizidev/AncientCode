@@ -78,7 +78,7 @@ internal/loop  → NÃO muda por causa da TUI; consumido, nunca possuído (DIP/O
 - [x] Parser de `/comandos` compartilhado: mesmas entradas → mesmas intents do REPL (`commands.go`
       único — teste de unificação).
 - [x] `ContextUsage` no footer: `pct` correto com `session_context_bytes` setado e 0 (off → `--`).
-- [ ] Smoke pty (WSL/Inspiron): gate ask `y`→executed (audit `policy=ask`), `d`→veto, cancelamento
+- [x] Smoke pty (WSL/Inspiron): gate ask `y`→executed (audit `policy=ask`), `d`→veto, cancelamento
       de turno não executa tool, troca `/provider` refletida no footer.
 - [x] Regressão: suíte serial do M8 passa inteira (REPL default intacto).
 
@@ -93,7 +93,7 @@ internal/loop  → NÃO muda por causa da TUI; consumido, nunca possuído (DIP/O
 
 - [x] **Suíte completa verde** (host serial + WSL `-race`), `gofmt -l .` vazio, `go vet`/`go build` limpos.
 - [x] Teste arquitetural: `internal/*` continua sem imports de Bubble Tea / `cmd/*`.
-- [ ] `--tui` não altera política nem os formatos de pipe/`--run`; smoke real no Inspiron com NIM.
+- [x] `--tui` não altera política nem os formatos de pipe/`--run`; smoke real no Inspiron com NIM.
 - [x] `docs/DECISOES.md` e `docs/design-tui-prompt-features.md` atualizados; nota de sessão criada.
 - [x] Backlog **Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) registrado como
       milestone futuro — TUI prova o contrato, não fecha a porta para web.

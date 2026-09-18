@@ -117,10 +117,23 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   → eventos + bridge do gate. REPL default e formatos de pipe/`--run` inalterados; núcleo
   `internal/*` continua stdlib (enforcement `TestLoopMustNotImportCmdOrUI`). Host 16/16, WSL
   `-race` 16/16, vet/build `GOAMD64=v1` limpos. Ver `docs/session-2026-09-18-m9-tui.md`.
-- **Próximo**: M9 entregue no host/gate; **smoke Inspiron com NIM pendente** (pty real: gate ask
-  y→executed auditado, `d`→veto, C-c cancel, `/provider` no footer). Depois, **backlog Web**
-  (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) — reusa o contrato M8/M9, sem tocar
-  em `internal/loop`; registrado como futuro no DoD do M9; **agendamento depende do usuário**.
+- **M9 pós-commit (validação no Inspiron)**: smoke real como `ancientai` com NVIDIA NIM via pty
+  Python (`tui_drv.py`) numa sessão SSH: respondendo as queries do terminal Bubble Tea (OSC11 +
+  DSR) destrava o modelo de input no pty cru (defeito do cenário de teste descoberto — não do
+  produto); Enter = `\r`. Validações: **gate ask `y`** → audit `write_file status=executed
+  policy=ask decision=allow`, arquivo `smoke-m9.txt` criado com conteúdo exato, painel de
+  atividade mostrou `modelo: aguardando... → recebendo tokens → gate: write_file → tool ok
+  0.00s` e footer `erro`→`ok`; **veto `d`** → audit `status=denied decision=denied`, arquivo
+  NÃO criado, diálogo `[aprovar] write_file | y aprova, n nega, d nega sempre` renderizado;
+  **C-c em voo** → `erro: provider: SSE read: context canceled`, 0 registros de tool no audit,
+  arquivo NÃO criado, loop vivo após; **`/provider`** → `base_url: https://integrate.api.
+  nvidia.c…` no painel; **`/model`** → modelo NIM ativo; **`/exit`** → saída limpa (restaura
+  alt-screen). Guarda de pipe: `echo ola | ancientai --tui` → `erro: --tui exige stdin E stdout
+  TTY (pipes/arquivos recusados)` RC=2. Artefatos de teste removidos. Ver
+  `docs/session-2026-09-18-inspiron-m9.md`.
+- **Próximo**: M9 fechado no host e no Inspiron. **Backlog Web** (SSE + shell-HTTP + `Approver`
+  por canal + auth/TLS/CSRF) — reusa o contrato M8/M9, sem tocar em `internal/loop`; registrado
+  como futuro no DoD do M9; **agendamento depende do usuário**.
 
 ## Como trabalhar (resumo da metodologia)
 
