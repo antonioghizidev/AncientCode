@@ -732,3 +732,21 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   por passo (instável com NIM fria).
 - **Consequência**: cursor exato no tty real; teste de regressão no host (`cmd/ancientai`,
   determinístico).
+
+### D-2026-09-17-49 — Bubble Tea v1.3.10 pinado para a TUI M9 (delivery-only)
+
+- **Contexto**: M9 entrega `--tui` estilo lazydocker (spec `09-m9-tui.md`). D-36 já decidiu
+  Bubble Tea; a constituição §8 exige dependência mínima/justificada e revisão manual do diff de
+  versão — registrar o pin e o escopo aqui.
+- **Decisão**: adicionar `github.com/charmbracelet/bubbletea v1.3.10` (mais recente estável no
+  momento, 2026-09) **somente em `cmd/ancientai`** (`tui.go`/`tui_gate.go`/`tui_panels.go`). O
+  núcleo (`internal/*`) continua 100% stdlib — enforcement pelo teste arquitetural do M8
+  (`TestLoopMustNotImportCmdOrUI`). Transitives trazidos (`x/term`, `lipgloss`, `ansi`,
+  `termenv`, `go-isatty`, etc.) são Go puro, compatíveis com `GOAMD64=v1`/`CGO_ENABLED=0` —
+  viabilidade no Inspiron confirmada em D-36 (console linux tty basta; +~2–3 MB no binário).
+  Não usar `lipgloss` em `View` por ora: render ASCII puro (padrão do design, D-37), cor/estilo
+  irão depois.
+- **Alternativa**: TUI ANSI manual (zero dep — manutenção permanente de raw/redraw/resize);
+  tcell/tview (mais pesado, evitado em D-36).
+- **Consequência**: `go.mod`/`go.sum` ganham o grafo pinado (versões acima); UI é delivery-only;
+  o REPL de texto continua default e byte-estável (sem `--tui` → caminho M8 inalterado).

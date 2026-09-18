@@ -48,6 +48,7 @@ var (
 	flagVersion     = flag.Bool("version", false, "print version and exit")
 	flagCleanup     = flag.Int("cleanup", 0, "remove session files under sessions/ older than N days (0=off)")
 	flagVerifySkill = flag.String("verify-skill", "", "verify a downloaded skill <name> (stamp + origin_hash) and exit")
+	flagTUI         = flag.Bool("tui", false, "interactive TUI (Bubble Tea, M9): requires stdin+stdout TTY; incompatible with --run")
 )
 
 func init() {
@@ -66,7 +67,7 @@ var skillFlags []string
 // would abort before the provider itself gives up.
 const turnTimeout = 5 * time.Minute
 
-const version = "0.8.0-m8"
+const version = "0.9.0-m9"
 
 // terminalApprover is the human gate (SPEC §5.6.6). It shows the exact command
 // before deciding. Answering "d" registers a veto for the tool: from then on
@@ -207,6 +208,18 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	// M9: --tui is the interactive Bubble Tea frontend. It is refused for
+	// non-interactive paths (--run) and whenever either stdin or stdout is not
+	// a real char device (pipes/files/captures get the byte-stable REPL or
+	// --run path, spec 09 §4).
+	if *flagTUI && *flagRun {
+		fmt.Fprintln(os.Stderr, "erro: --tui e incompativel com --run (TUI e a entrega interativa)")
+		os.Exit(2)
+	}
+	if *flagTUI && !canUseTUI(isCharDevice(os.Stdin), isCharDevice(os.Stdout)) {
+		fmt.Fprintln(os.Stderr, "erro: --tui exige stdin E stdout TTY (pipes/arquivos recusados)")
+		os.Exit(2)
+	}
 
 	// resume wins over --session: --resume is the explicit "reuse, never reset" id.
 	// Combining it with --reset is refused — it would wipe the history being
@@ -331,10 +344,11 @@ func main() {
 
 	// M8: raw-mode line editing (↑/↓ history, per-D-37) is enabled only when
 	// stdin is a char device AND the raw driver is available (linux). Pipes,
-	// files and --run keep the byte-stable cooked path.
+	// files and --run keep the byte-stable cooked path. M9: the TUI manages its
+	// own terminal through Bubble Tea, so the REPL raw mode is skipped for it.
 	var rt *rawTerm
 	var rr *rawReader
-	if isCharDevice(os.Stdin) {
+	if isCharDevice(os.Stdin) && !*flagTUI {
 		if t, err := enableRawInput(); err == nil {
 			rt = t
 			defer rt.restore()
@@ -342,15 +356,26 @@ func main() {
 		}
 	}
 
-	appr := &terminalApprover{in: in, vetoed: make(map[string]bool)}
-	if rr != nil {
-		appr.confirm = func(ctx context.Context, prompt string) (string, error) {
-			line, kind := confirmRaw(ctx, rr, prompt)
-			if kind == lineCtrlC {
-				return "", context.Canceled
+	// The approver is the frontend boundary: the TUI answers through tuiGate
+	// (dialog rendered on screen), the REPL through terminalApprover. Both
+	// implement the same loop.Approver — the core never knows which one.
+	var appr loop.Approver
+	var gate *tuiGate
+	if *flagTUI {
+		gate = newTuiGate()
+		appr = gate
+	} else {
+		ta := &terminalApprover{in: in, vetoed: make(map[string]bool)}
+		if rr != nil {
+			ta.confirm = func(ctx context.Context, prompt string) (string, error) {
+				line, kind := confirmRaw(ctx, rr, prompt)
+				if kind == lineCtrlC {
+					return "", context.Canceled
+				}
+				return strings.TrimSpace(line), nil
 			}
-			return strings.TrimSpace(line), nil
 		}
+		appr = ta
 	}
 
 	agent := loop.New(client, store, cfg, reg, appr)
@@ -365,6 +390,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, "skills:", err)
 			os.Exit(1)
 		}
+	}
+	// M9: the TUI frontend owns the terminal; everything above (config, tools,
+	// audit, approver) is shared with the REPL. runTUI blocks until exit.
+	if *flagTUI {
+		runTUI(agent, gate, cfg, version, filepath.Base(sessionPath))
+		return
 	}
 	// M8: structured observer replaces the D-35 status string on TTYs — the
 	// Phase labels keep the same vocabulary; pipes stay silent and clean.

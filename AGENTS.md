@@ -107,16 +107,33 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   Ctrl+C cancel em voo → `turno cancelado (Ctrl+C)` e loop vivo após, `/context`/`/model`/
   `/provider` em raw, `/exit` limpo). Defeito do cursor no emit pty corrigido + teste de
   regressão (D-2026-09-17-48, `cf57fa9`). Ver `docs/session-2026-09-17-inspiron-m8.md`.
-- **Próximo**: M8 fechado → **M9** (TUI Bubble Tea como frontend delivery sobre o mesmo core,
-  consumindo o contrato de eventos/comandos que o M8 estabilizou). Spec pronta:
-  `specs/milestones/09-m9-tui.md`. Ordem **M8 → M9** preservada.
-- **Backlog documentado — Web futura**: acesso no navegador de outras máquinas = milestone
-  posterior que reusa o contrato do M8 (Event JSON + comandos puros + `Approver` por canal,
-  SSE + shell-HTTP + auth/TLS/CSRF), sem tocar em `internal/loop`. Registrada como futuro em
-  `specs/milestones/09-m9-tui.md` (DoD) e no backlog deste arquivo; **agendamento depende do M9**.
-- **M9**: abrir quando o usuário decidir. Spec pronta: `specs/milestones/09-m9-tui.md`.
-  O M8 já estabilizou o contrato que a TUI consome (Event JSON, comandos puros, `ContextUsage`,
-  raw-mode); M9 adiciona Bubble Tea **somente** em `cmd/ancientai`.
+- **M9 concluído (TUI, branch `m9-tui`)** (D-2026-09-17-49): Bubble Tea **v1.3.10 pinado,
+  delivery-only** em `cmd/ancientai` (flag `--tui`, TTY-only: stdin+stdout char device; recusa
+  pipe/`--run`; versão `0.9.0-m9`). `tui_panels.go` stdlib-puro (ctxBar 5 células, buildFooter
+  2 linhas `>80% → !`, activityFromEvent re-reda, readAuditTail, buildView, canUseTUI);
+  `tui_gate.go` = `loop.Approver` com diálogo único serializado + veto `d` + fail-closed em ctx
+  cancelado; `tui.go` = Model/Update/View (Enter submit, `r`/`c` retry/clear, ↑/↓, y/n/d, C-c
+  cancela/sai, `/...` via parser compartilhado, View re-redige sessão); `runTUI` wiring observer
+  → eventos + bridge do gate. REPL default e formatos de pipe/`--run` inalterados; núcleo
+  `internal/*` continua stdlib (enforcement `TestLoopMustNotImportCmdOrUI`). Host 16/16, WSL
+  `-race` 16/16, vet/build `GOAMD64=v1` limpos. Ver `docs/session-2026-09-18-m9-tui.md`.
+- **M9 pós-commit (validação no Inspiron)**: smoke real como `ancientai` com NVIDIA NIM via pty
+  Python (`tui_drv.py`) numa sessão SSH: respondendo as queries do terminal Bubble Tea (OSC11 +
+  DSR) destrava o modelo de input no pty cru (defeito do cenário de teste descoberto — não do
+  produto); Enter = `\r`. Validações: **gate ask `y`** → audit `write_file status=executed
+  policy=ask decision=allow`, arquivo `smoke-m9.txt` criado com conteúdo exato, painel de
+  atividade mostrou `modelo: aguardando... → recebendo tokens → gate: write_file → tool ok
+  0.00s` e footer `erro`→`ok`; **veto `d`** → audit `status=denied decision=denied`, arquivo
+  NÃO criado, diálogo `[aprovar] write_file | y aprova, n nega, d nega sempre` renderizado;
+  **C-c em voo** → `erro: provider: SSE read: context canceled`, 0 registros de tool no audit,
+  arquivo NÃO criado, loop vivo após; **`/provider`** → `base_url: https://integrate.api.
+  nvidia.c…` no painel; **`/model`** → modelo NIM ativo; **`/exit`** → saída limpa (restaura
+  alt-screen). Guarda de pipe: `echo ola | ancientai --tui` → `erro: --tui exige stdin E stdout
+  TTY (pipes/arquivos recusados)` RC=2. Artefatos de teste removidos. Ver
+  `docs/session-2026-09-18-inspiron-m9.md`.
+- **Próximo**: M9 fechado no host e no Inspiron. **Backlog Web** (SSE + shell-HTTP + `Approver`
+  por canal + auth/TLS/CSRF) — reusa o contrato M8/M9, sem tocar em `internal/loop`; registrado
+  como futuro no DoD do M9; **agendamento depende do usuário**.
 
 ## Como trabalhar (resumo da metodologia)
 

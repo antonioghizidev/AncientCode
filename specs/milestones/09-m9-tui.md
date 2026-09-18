@@ -58,29 +58,29 @@ internal/loop  → NÃO muda por causa da TUI; consumido, nunca possuído (DIP/O
 
 ## 4. Segurança deste milestone
 
-- [ ] Nenhuma mudança em: fail-closed do loop, aprovação (mesmo `Approver`), redação (`redact`),
+- [x] Nenhuma mudança em: fail-closed do loop, aprovação (mesmo `Approver`), redação (`redact`),
       audit append-only, tetos, `GOAMD64=v1`, build `CGO_ENABLED=0`.
-- [ ] TUI **nunca** executa tool por atalho: só o `Decide` humano aprova; erros de tecla são
+- [x] TUI **nunca** executa tool por atalho: só o `Decide` humano aprova; erros de tecla são
       inócuos no domínio.
-- [ ] Painel Atividade exibe apenas texto redigido (audit já redigido; eventos já redigidos).
-- [ ] Sem `--tui` → REPL inalterado byte-a-byte (regressão guardada pela suíte).
-- [ ] `tui` só roda TTY; pipe/`--run` rejeitam `--tui` com erro claro (sem degradação silenciosa).
+- [x] Painel Atividade exibe apenas texto redigido (audit já redigido; eventos já redigidos).
+- [x] Sem `--tui` → REPL inalterado byte-a-byte (regressão guardada pela suíte).
+- [x] `tui` só roda TTY; pipe/`--run` rejeitam `--tui` com erro claro (sem degradação silenciosa).
 
 ## 5. Testes obrigatórios
 
 > No host, testar o que é Go puro e determinístico; render de terminal valida-se em pty real
 > (WSL `script -qec`) e no Inspiron. Regra do M8 continua: **segurança ataca o domínio**.
 
-- [ ] `Model.Update` com mensagens sintéticas: cada tecla mapeada → comando do core correto
+- [x] `Model.Update` com mensagens sintéticas: cada tecla mapeada → comando do core correto
       (↓ submit, `r`→Continue, `c`→limpa banner, C-c→cancel, `y`/`d`→Allow/Veto).
-- [ ] Projeção eventos→painéis: snapshot determinístico (View strings) por fase/estado.
-- [ ] Footer: montagem determinística (versão|provider model|modo|sessão|ctx%|status; cor > 80%).
-- [ ] Parser de `/comandos` compartilhado: mesmas entradas → mesmas intents do REPL (`commands.go`
+- [x] Projeção eventos→painéis: snapshot determinístico (View strings) por fase/estado.
+- [x] Footer: montagem determinística (versão|provider model|modo|sessão|ctx%|status; cor > 80%).
+- [x] Parser de `/comandos` compartilhado: mesmas entradas → mesmas intents do REPL (`commands.go`
       único — teste de unificação).
-- [ ] `ContextUsage` no footer: `pct` correto com `session_context_bytes` setado e 0 (off → `--`).
-- [ ] Smoke pty (WSL/Inspiron): gate ask `y`→executed (audit `policy=ask`), `d`→veto, cancelamento
+- [x] `ContextUsage` no footer: `pct` correto com `session_context_bytes` setado e 0 (off → `--`).
+- [x] Smoke pty (WSL/Inspiron): gate ask `y`→executed (audit `policy=ask`), `d`→veto, cancelamento
       de turno não executa tool, troca `/provider` refletida no footer.
-- [ ] Regressão: suíte serial do M8 passa inteira (REPL default intacto).
+- [x] Regressão: suíte serial do M8 passa inteira (REPL default intacto).
 
 ## 6. Dependência Bubble Tea (D-36, pinada)
 
@@ -91,9 +91,9 @@ internal/loop  → NÃO muda por causa da TUI; consumido, nunca possuído (DIP/O
 
 ## 7. Critérios de aceite (DoD)
 
-- [ ] **Suíte completa verde** (host serial + WSL `-race`), `gofmt -l .` vazio, `go vet`/`go build` limpos.
-- [ ] Teste arquitetural: `internal/*` continua sem imports de Bubble Tea / `cmd/*`.
-- [ ] `--tui` não altera política nem os formatos de pipe/`--run`; smoke real no Inspiron com NIM.
-- [ ] `docs/DECISOES.md` e `docs/design-tui-prompt-features.md` atualizados; nota de sessão criada.
-- [ ] Backlog **Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) registrado como
+- [x] **Suíte completa verde** (host serial + WSL `-race`), `gofmt -l .` vazio, `go vet`/`go build` limpos.
+- [x] Teste arquitetural: `internal/*` continua sem imports de Bubble Tea / `cmd/*`.
+- [x] `--tui` não altera política nem os formatos de pipe/`--run`; smoke real no Inspiron com NIM.
+- [x] `docs/DECISOES.md` e `docs/design-tui-prompt-features.md` atualizados; nota de sessão criada.
+- [x] Backlog **Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) registrado como
       milestone futuro — TUI prova o contrato, não fecha a porta para web.
