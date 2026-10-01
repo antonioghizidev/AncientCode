@@ -67,7 +67,7 @@ var skillFlags []string
 // would abort before the provider itself gives up.
 const turnTimeout = 5 * time.Minute
 
-const version = "0.9.0-m9"
+const version = "0.10.0-m10"
 
 // terminalApprover is the human gate (SPEC §5.6.6). It shows the exact command
 // before deciding. Answering "d" registers a veto for the tool: from then on

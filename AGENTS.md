@@ -131,9 +131,25 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   alt-screen). Guarda de pipe: `echo ola | ancientai --tui` → `erro: --tui exige stdin E stdout
   TTY (pipes/arquivos recusados)` RC=2. Artefatos de teste removidos. Ver
   `docs/session-2026-09-18-inspiron-m9.md`.
-- **Próximo**: M9 fechado no host e no Inspiron. **Backlog Web** (SSE + shell-HTTP + `Approver`
-  por canal + auth/TLS/CSRF) — reusa o contrato M8/M9, sem tocar em `internal/loop`; registrado
-  como futuro no DoD do M9; **agendamento depende do usuário**.
+- **M10 em andamento (branch `m10-tui-paineis`)** (D-2026-09-30-50): o M9 foi aceito no design
+  mas delivery quedó aquém do esperado — faltavam bordas desenhadas, scrollbar e navegação entre
+  painéis. `tui_panels.go` ganhou a projeção lazydocker real (**sessão ~60% à esquerda /
+  atividade ~40% à direita**, moldura dupla box-drawing com borda vertical compartilhada `┬`/`┴`,
+  títulos no topo): `renderPanels`, `panelWidths`/`panelInnerWidths` (60/40 com soma exata),
+  `viewportFor` (offset clampado), `scrollThumb`+`scrollbarCol` (trilha `░` + thumb `█`
+  proporcional; coluna em branco quando não rola), `panelTitle` (marcador `▸` + ciano no foco),
+  `promptLine` (cursor in-band reverse video). `tui.go` ganhou `height`/`focus`/`sessionOff`/
+  `activityOff`: `Tab`/`Shift+Tab`/`←→` ciclam foco, `↑↓`/PgUp/PgDn/Home/End rolam o painel
+  focado, digitar devolve o foco ao prompt, `followSessionBottom` mantém o rodapé. **Sem
+  dependência nova** (rejeitado `lipgloss`: borda Unicode + ANSI stdlib bastam). Corrigido no
+  caminho o cursor do M9, que acrescentava espaços ao fim e quebrava edição no meio da linha.
+  Gate/observer/parser/redação intactos; `tuiGate` segue o único `Approver`. Versão `0.10.0-m10`.
+  Host serial 16/16 0 falhas, `gofmt`/`vet` limpos, `GOAMD64=v1` build ok. Ver
+  `docs/session-2026-09-30-m10-tui-paineis.md`.
+- **Próximo**: fechar M10 — `go test -race` no WSL e smoke no Inspiron (pty real, NIM:
+  bordas/scrollbar, `Tab`/setas, gate `y`/`d` auditado, `/comandos`); depois commit
+  `feat(M10)`. **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) —
+  reusa o contrato M8/M9, sem tocar em `internal/loop`; **agendamento depende do usuário**.
 
 ## Como trabalhar (resumo da metodologia)
 

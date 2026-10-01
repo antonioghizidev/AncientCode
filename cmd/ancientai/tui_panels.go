@@ -25,6 +25,25 @@ const (
 	statusErr                    // erro de turno
 )
 
+// panelID selects which of the two viewport panels owns the ↑↓/PgUp/PgDn/
+// scroll keys. The prompt keeps keyboard focus for typing regardless; the
+// "focus" here only routes the viewport navigation (M10, D-2026-09-30-50).
+type panelID int
+
+const (
+	panelPrompt   panelID = iota // arrow keys edit the line (history)
+	panelSession                 // ↑↓ scroll the session viewport
+	panelActivity                // ↑↓ scroll the activity viewport
+)
+
+const (
+	focusCyan = "\x1b[36m" // focused panel title highlight (ANSI SGR 36)
+	focusEnd  = "\x1b[0m"
+	focusMark = "▸"       // focus marker, visible without color support
+	cursorOn  = "\x1b[7m" // reverse video on the caret cell
+	cursorOff = "\x1b[27m"
+)
+
 // footerInfo is everything the footer projection needs (deterministic).
 type footerInfo struct {
 	Version  string
@@ -165,49 +184,288 @@ func readAuditTail(path string, n int) ([]audit.Entry, error) {
 
 // viewData is the deterministic render input (View projection).
 type viewData struct {
-	Session  []string
-	Activity []string
-	Prompt   string
-	Cursor   int
-	Footer   []string
-	Width    int
-	GateText string
+	Session     []string
+	Activity    []string
+	Prompt      string
+	Cursor      int
+	Footer      []string
+	Width       int
+	Height      int
+	Focus       panelID
+	SessionOff  int // viewport top offset for the session panel
+	ActivityOff int // viewport top offset for the activity panel
+	GateText    string
 }
 
-// buildView lays out the TUI: session panel, activity panel, prompt window,
-// divider, and footer. Pure string projection — deterministic for a given
-// input (tested host-side); Bubble Tea only calls it from View.
+// panelWidths splits the total width into the two panel allocations: session
+// gets ~60%, activity the rest. The two allocations always sum back to width
+// (both frames share the middle vertical border). Minimums keep the frames
+// legible on tiny terminals.
+func panelWidths(width int) (sess, act int) {
+	sess = width * 6 / 10
+	min := 12
+	if sess < min {
+		sess = min
+	}
+	act = width - sess
+	if act < min {
+		act = min
+		sess = width - act
+	}
+	if sess < 1 {
+		sess = 1
+	}
+	return sess, act
+}
+
+// panelInnerWidths returns the content widths for session and activity panels
+// given the frame allocations from panelWidths. Layout: left border (1) +
+// session inner + shared border (1) + activity inner + right border (1) ==
+// width. The shared border is already counted in the session allocation, so
+// the activity inner absorbs the extra cell.
+func panelInnerWidths(width int) (sess, act int) {
+	sessFrame, actFrame := panelWidths(width)
+	sess = sessFrame - 2
+	act = actFrame - 1 // shared border lives in the session allocation
+	return sess, act
+}
+
+// viewportFor clamps a suggested offset into the scrollable range of a panel
+// of `total` lines shown in `visible` rows. Content that fits entirely keeps
+// offset 0 (nothing to scroll).
+func viewportFor(off, total, visible, delta int) int {
+	if total <= visible || visible <= 0 {
+		return 0
+	}
+	maxOff := total - visible
+	if delta < 0 {
+		off += delta
+		if off < 0 {
+			return 0
+		}
+		return off
+	}
+	off += delta
+	if off > maxOff {
+		return maxOff
+	}
+	return off
+}
+
+// scrollThumb maps an offset into the visible row that should carry the thumb
+// (0 = top ... visible-1 = bottom). It reports false when the panel does not
+// scroll (content fits). The thumb is a proportional indicator: a panel loaded
+// to the end puts the thumb on the last visible row.
+func scrollThumb(off, total, visible int) (row int, scrollable bool) {
+	if total <= visible || visible <= 0 {
+		return 0, false
+	}
+	maxOff := total - visible
+	row = 0
+	if maxOff > 0 {
+		row = off * (visible - 1) / maxOff
+	}
+	return row, true
+}
+
+// scrollbarCol renders the scrollbar column for one panel: a `░` track with
+// the `█` thumb on the row given by scrollThumb. A panel whose content fits
+// gets a blank column (no track, no thumb) so the text width never jumps.
+func scrollbarCol(visible, thumbRow int, scrollable bool) []rune {
+	col := make([]rune, visible)
+	for i := range col {
+		col[i] = ' '
+	}
+	if !scrollable {
+		return col
+	}
+	for i := range col {
+		col[i] = '░'
+	}
+	if thumbRow >= 0 && thumbRow < visible {
+		col[thumbRow] = '█'
+	}
+	return col
+}
+
+// centered returns a title segment of exactly `n` cells with `─` fill and the
+// title centered, e.g. centered("sessão", 14) → "─── sessão ─────".
+func centered(title string, n int) string {
+	t := []rune(title)
+	if n < 0 {
+		n = 0
+	}
+	if len(t) >= n {
+		return string(t[:n])
+	}
+	fill := n - len(t)
+	left := fill / 2
+	right := fill - left
+	return strings.Repeat("─", left) + string(t) + strings.Repeat("─", right)
+}
+
+// runeCap truncates s to at most n runes.
+func runeCap(s string, n int) string {
+	if n < 0 {
+		n = 0
+	}
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
+
+// padRight pads s with trailing spaces to exactly n cells (truncating if
+// longer).
+func padRight(s string, n int) string {
+	s = runeCap(s, n)
+	r := []rune(s)
+	return s + strings.Repeat(" ", n-len(r))
+}
+
+// renderPanels draws the lazydocker-style double panel (M10): session on the
+// left (~60%), activity on the right, sharing one vertical border, each with
+// a box-drawing frame and a scrollbar column on its inner right edge. It
+// returns `rows` lines: top border + content rows + bottom border. The
+// focused panel's title is rendered in the highlight color.
+//
+//	┌── sessão ───────────┬── atividade ────────┐
+//	│ > oi               │ │ ● modelo: recebendo │
+//	│ < vou executar     │ │ tool: shell ok 0.0  │
+//	│                    █│                   ░ │
+//	└────────────────────┴──────────────────────┘
+func renderPanels(sess, act []string, sessOff, actOff, width, rows int, focus panelID) []string {
+	if width < 8 {
+		width = 8
+	}
+	if rows < 3 {
+		rows = 3
+	}
+	sessInner, actInner := panelInnerWidths(width)
+
+	// Top border: title segments joined by the shared vertical border ┬. The
+	// focused panel gets a ▸ marker plus the highlight color so the scroll
+	// target is obvious even without color.
+	sessTerm := panelTitle("sessão", sessInner, focus == panelSession)
+	actTerm := panelTitle("atividade", actInner, focus == panelActivity)
+	top := "┌" + sessTerm + "┬" + actTerm + "┐"
+
+	bottom := "└" + strings.Repeat("─", sessInner) + "┴" + strings.Repeat("─", actInner) + "┘"
+
+	visible := rows - 2
+	sessBody, actBody := sessInner-1, actInner-1
+	sThumb, sScroll := scrollThumb(sessOff, len(sess), visible)
+	aThumb, aScroll := scrollThumb(actOff, len(act), visible)
+	sBar := scrollbarCol(visible, sThumb, sScroll)
+	aBar := scrollbarCol(visible, aThumb, aScroll)
+
+	lines := make([]string, 0, rows)
+	lines = append(lines, top)
+	for i := 0; i < visible; i++ {
+		sCell := runeCap(lineAt(sess, sessOff+i), sessBody)
+		aCell := runeCap(lineAt(act, actOff+i), actBody)
+		lines = append(lines,
+			"│"+padRight(sCell, sessBody)+string(sBar[i])+"│"+
+				padRight(aCell, actBody)+string(aBar[i])+"│")
+	}
+	lines = append(lines, bottom)
+	return lines
+}
+
+// panelTitle renders one panel's top-border segment: an optional ▸ marker for
+// the focused panel, the title centered over a `─` fill, wrapped in the
+// highlight color when focused.
+func panelTitle(title string, n int, focused bool) string {
+	label := title
+	if focused {
+		label = focusMark + " " + title
+	}
+	seg := centered(label, n)
+	if focused {
+		return focusCyan + seg + focusEnd
+	}
+	return seg
+}
+
+// lineAt returns lines[i] or "" for out-of-range indexes.
+func lineAt(lines []string, i int) string {
+	if i < 0 || i >= len(lines) {
+		return ""
+	}
+	return lines[i]
+}
+
+// buildView lays out the TUI (M10): the two lazydocker-style panels on top
+// (session left, activity right, box-drawing frames + scrollbars), a divider,
+// the gate line when a dialog is open, the prompt window, and the footer.
+// Pure string projection — deterministic for a given input (tested host-side);
+// Bubble Tea only calls it from View.
 func buildView(v viewData) string {
 	if v.Width <= 0 {
 		v.Width = 120
 	}
+	if v.Height <= 0 {
+		v.Height = 30
+	}
+	// Fixed rows below the panels: divider(1) + prompt(1) + footer(2); the
+	// gate consumes one more row when a dialog is open.
+	extra := 4
+	if v.GateText != "" {
+		extra++
+	}
+	panelRows := v.Height - extra
+	if panelRows < 3 {
+		panelRows = 3 // top border + 1 content row + bottom border
+	}
+
+	panels := renderPanels(v.Session, v.Activity, v.SessionOff, v.ActivityOff, v.Width, panelRows, v.Focus)
+
 	var b strings.Builder
-	if len(v.Session) > 0 {
-		b.WriteString("== sessao ==")
-	}
-	for _, l := range truncated(v.Session, v.Width/2) {
-		b.WriteString("\n" + l)
-	}
-	if len(v.Activity) > 0 {
-		if b.Len() > 0 {
+	for i, l := range panels {
+		if i > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString("== atividade ==")
-		for _, l := range truncated(v.Activity, v.Width/2) {
-			b.WriteString("\n" + l)
-		}
+		b.WriteString(l)
 	}
-	b.WriteString("\n" + strings.Repeat("-", v.Width))
+	b.WriteString("\n" + strings.Repeat("─", v.Width))
 	if v.GateText != "" {
 		b.WriteString("\n" + v.GateText)
 	}
-	b.WriteString("\n> " + v.Prompt)
-	for i := 0; i < v.Cursor; i++ {
-		b.WriteString(" ")
-	}
-	b.WriteString("\xA0")
+	b.WriteString("\n" + promptLine(v.Prompt, v.Cursor))
 	for _, l := range v.Footer {
 		b.WriteString("\n" + l)
+	}
+	return b.String()
+}
+
+// promptLine renders the input row: "> " + the full typed text with the cursor
+// cell highlighted (ANSI reverse video). Bubble Tea hides the real cursor in
+// altscreen, so the block is drawn in-band: the character under the cursor
+// stays visible and the text is never truncated.
+func promptLine(text string, cursor int) string {
+	r := []rune(text)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(r) {
+		cursor = len(r)
+	}
+	var b strings.Builder
+	b.WriteString("> ")
+	for i, ch := range r {
+		if i == cursor {
+			b.WriteString(cursorOn)
+			b.WriteRune(ch)
+			b.WriteString(cursorOff)
+			continue
+		}
+		b.WriteRune(ch)
+	}
+	if cursor == len(r) {
+		b.WriteString(cursorOn)
+		b.WriteRune('\xA0') // trailing block when the caret is past the text
+		b.WriteString(cursorOff)
 	}
 	return b.String()
 }

@@ -102,32 +102,42 @@ Modo gráfico em terminal, no estilo lazydocker/lazygit. Tudo o que vale no REPL
 mesmas políticas, mesma auditoria, mesmo `Approver` — só muda a cara.
 
 ```
-== sessao ==
-> liste os arquivos em code
-< Aqui está a lista...
-
-== atividade ==
-* modelo: aguardando o primeiro token...
-* modelo: recebendo tokens...
-* gate: read_file
-* tool: read_file ok 0.00s
-
-----------------------------------------------------------------------------------------------------
+┌─────────────────────────▸ sessão─────────────────────────┬───────────────atividade───────────────┐
+│> liste os arquivos em code                             ░│* modelo: aguardando o primeiro toke.. ░│
+│< Aqui está a lista: 3 arquivos                         █│* modelo: recebendo tokens...        █│
+│                                                        ░│* gate: write_file                  ░│
+│                                                        ░│* tool: write_file ok 0.01s         ░│
+└────────────────────────────────────────────────────────┴──────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────────────────────────
 [aprovar] write_file | y aprova, n nega, d nega sempre
-> escreva o arquivo relatorio.txt          <-- linha de input (cursor ^)
-ancientai 0.9.0-m9 | https://integrate.api.nvidia.com/v1 | nvidia/nemotron-3.5-lightning-30b-a3b | run | default.jsonl
-ctx ░░░░░ | ◎ ok
+> escreva o arquivo relatorio.txt▏
+ancientai 0.10.0-m10 | nvidia | nvidia/nemotron-3.5-lightning-30b-a3b | run | default.jsonl
+ctx ▓░░░░ 20% | ◎ ok
 ```
 
-Estrutura da tela: **painel de sessão** (histórico da conversa), **painel de atividade**
-(fases do loop), linha divisória, **gate** quando há aprovação pendente, linha de **input** e o
-**rodapé** com 2 linhas de estado.
+**Estrutura da tela**
+
+| Parte | O que é |
+|---|---|
+| Painel **sessão** (esquerda, ~60%) | histórico da conversa (`>` você, `<` modelo) |
+| Painel **atividade** (direita, ~40%) | fases do loop: modelo, gate e execução de tools |
+| Divisória `─` | separa os painéis da área de comando |
+| **Gate** | aparece acima do input quando há aprovação pendente |
+| Linha de **input** | `> ` + texto, cursor destacado no caractere sob o caret |
+| **Rodapé** (2 linhas) | versão/provedor/modelo/modo/sessão + contexto e saúde |
+
+**Scrollbar**: cada painel tem uma coluna própria (`░` trilha, `█` posição do thumb). Ela só
+aparece quando o conteúdo é maior que o visível — o tamanho do texto nunca muda.
+
+**Foco**: o painel sob controle das setas é marcado com `▸` e fica em ciano. `Tab` alterna entre
+sessão e atividade; as setas `↑`/`↓` passam a rolar esse painel. Digitar qualquer tecla (ou
+`Enter`) devolve o controle para a linha de input.
 
 O rodapé mostra: versão | provedor | modelo | modo | sessão (linha 1); medidor de contexto em 5
 células + indicador de saúde (linha 2):
 
 ```
-ancientai 0.9.0-m9 | nvidia | nvidia/nemotron-3.5-lightning-30b-a3b | run | default.jsonl
+ancientai 0.10.0-m10 | nvidia | nvidia/nemotron-3.5-lightning-30b-a3b | run | default.jsonl
 ctx ▓░░░░ 20% | ◎ ok
 ```
 
@@ -138,12 +148,15 @@ Sem orçamento de contexto (`session_context_bytes=0`): `ctx -- | ◎ ok`. Acima
 | Tecla | Efeito |
 |---|---|
 | `Enter` | envia o prompt / submete |
+| `Tab` / `Shift+Tab` | alterna o foco entre os painéis sessão ↔ atividade |
+| `←` `→` | com painel focado: troca de painel; no input: move o cursor |
+| `↑` `↓` | com painel focado: rola o painel; no input: histórico de prompts |
+| `PgUp` `PgDown` | pagina o painel focado |
+| `Home` `End` | topo/fim do painel focado (no input: início/fim da linha) |
 | `r` `R` | com erro no banner: refaz /retry |
 | `c` `C` | com erro no banner: limpa o erro |
-| `↑` `↓` | navega o histórico de prompts |
-| `←` `→` `Home` `End` | move o cursor |
 | `Backspace`/`Delete` | edição da linha |
-| `Ctrl+C` | em turno: cancela; sem turno: sai da TUI |
+| `Ctrl+C` | em turno: cancela; no gate: nega; sem turno: sai da TUI |
 | `/…` | qualquer comando do REPL funciona igual (`/model`, `/provider`, `!1`, `/exit`…) |
 
 ### Aprovações na TUI

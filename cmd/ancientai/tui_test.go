@@ -44,6 +44,7 @@ func mkModel(t *testing.T, ag *loop.Loop) *tuiModel {
 		toolbox:     "run",
 		sessionName: "default.jsonl",
 		width:       100,
+		height:      30,
 	}
 	m.resetPrompt()
 	return m
@@ -249,7 +250,152 @@ func TestModelViewHidesRawSecret(t *testing.T) {
 	}
 }
 
-// --- helpers -----------------------------------------------------------------
+// --- M10: panel focus + viewport navigation ---------------------------------
+
+func TestModelTabCyclesFocus(t *testing.T) {
+	m := mkModel(t, nil)
+	m.focus = panelSession
+	m, _ = upd(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.focus != panelActivity {
+		t.Errorf("Tab from session must focus activity, got %v", m.focus)
+	}
+	m, _ = upd(m, tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.focus != panelSession {
+		t.Errorf("Shift+Tab from activity must focus session, got %v", m.focus)
+	}
+	// left/right also cycle between the two viewport panels
+	m, _ = upd(m, tea.KeyMsg{Type: tea.KeyLeft})
+	if m.focus != panelActivity {
+		t.Errorf("Left must cycle to activity, got %v", m.focus)
+	}
+	m, _ = upd(m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.focus != panelSession {
+		t.Errorf("Right must cycle back to session, got %v", m.focus)
+	}
+}
+
+func TestModelArrowsScrollFocusedPanel(t *testing.T) {
+	m := mkModel(t, nil)
+	// 40 lines > the 24 visible rows of a 30-line viewport, so scrolling moves.
+	m.session = make([]string, 40)
+	for i := range m.session {
+		m.session[i] = "linha"
+	}
+	m.focus = panelSession
+	m.sessionOff = 0
+	m, _ = upd(m, tea.KeyMsg{Type: tea.KeyDown})
+	if m.sessionOff != 1 {
+		t.Errorf("Down must scroll session viewport, got off=%d", m.sessionOff)
+	}
+	m, _ = upd(m, tea.KeyMsg{Type: tea.KeyUp})
+	if m.sessionOff != 0 {
+		t.Errorf("Up must scroll session back, got off=%d", m.sessionOff)
+	}
+}
+
+func TestModelPgUpDownScrollFocusedPanel(t *testing.T) {
+	m := mkModel(t, nil)
+	m.session = make([]string, 40)
+	m.focus = panelSession
+	m, _ = upd(m, tea.KeyMsg{Type: tea.KeyPgDown})
+	if m.sessionOff <= 0 {
+		t.Errorf("PgDn must page the session viewport, got off=%d", m.sessionOff)
+	}
+	m, _ = upd(m, tea.KeyMsg{Type: tea.KeyHome})
+	if m.sessionOff != 0 {
+		t.Errorf("Home must jump viewport to top, got off=%d", m.sessionOff)
+	}
+	m, _ = upd(m, tea.KeyMsg{Type: tea.KeyEnd})
+	if m.sessionOff == 0 {
+		t.Errorf("End must scroll to bottom, got off=%d", m.sessionOff)
+	}
+}
+
+func TestModelArrowsOnPromptKeepHistory(t *testing.T) {
+	m := mkModel(t, nil)
+	m.promptHist = []string{"ola", "tudo bem"}
+	m.focus = panelPrompt
+	m, _ = upd(m, tea.KeyMsg{Type: tea.KeyUp})
+	if m.input != "tudo bem" {
+		t.Errorf("Up on prompt focus must load history, got %q", m.input)
+	}
+	if m.sessionOff != 0 {
+		t.Errorf("Up on prompt focus must NOT scroll session, got off=%d", m.sessionOff)
+	}
+}
+
+func TestModelFollowsBottomWhileChatting(t *testing.T) {
+	// A new answer must be visible immediately while the operator has not
+	// scrolled up; scrolling up must freeze the viewport.
+	m := mkModel(t, nil)
+	m.runner = &fakeRunner{out: "resposta"}
+	m.focus = panelPrompt
+	// 40 lines of history: viewport is 24 rows at height 30.
+	for i := 0; i < 40; i++ {
+		m.session = append(m.session, "linha antiga")
+	}
+	m.sessionOff = 16 // at the bottom
+	m.input = "pergunta"
+	m.cursor = len(m.input)
+
+	var cmd tea.Cmd
+	m, cmd = upd(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Enter must return a turn command")
+	}
+	m, _ = upd(m, cmd())
+	if m.sessionOff != len(m.session)-m.panelContentRows() {
+		t.Errorf("new answer must be visible at the bottom, off=%d (len=%d)",
+			m.sessionOff, len(m.session))
+	}
+
+	// Now the operator scrolls up: a new answer must NOT yank the viewport.
+	m, _ = upd(m, tea.KeyMsg{Type: tea.KeyTab}) // focus the session panel
+	for i := 0; i < 10; i++ {
+		m, _ = upd(m, tea.KeyMsg{Type: tea.KeyUp})
+	}
+	frozen := m.sessionOff
+	m.input = "outra"
+	m.cursor = len(m.input)
+	m, cmd = upd(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = upd(m, cmd())
+	if m.sessionOff != frozen {
+		t.Errorf("scrolled-up viewport must stay put: %d → %d", frozen, m.sessionOff)
+	}
+}
+
+func TestModelTabOnGateIsInnocuous(t *testing.T) {
+	m := mkModel(t, nil)
+	m.gate = newTuiGate()
+	done := make(chan gateResult, 1)
+	go func() { d, e := m.gate.Decide(context.Background(), "shell", "x"); done <- gateResult{d, e} }()
+	open := <-m.gate.opened()
+	m, _ = upd(m, gateOpenMsg{dialog: open})
+	if m.dialog == nil {
+		t.Fatal("dialog not open")
+	}
+	focusBefore := m.focus
+	m, cmds := upd(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.dialog == nil {
+		t.Error("Tab must not close the gate dialog")
+	}
+	if cmds != nil {
+		t.Errorf("Tab must not decide the gate: %v", cmds)
+	}
+	if m.focus != focusBefore {
+		t.Errorf("Tab must not move focus while gate is open, %v → %v", focusBefore, m.focus)
+	}
+	select {
+	case r := <-done:
+		t.Fatalf("gate was decided by Tab: %v", r.Decision)
+	default:
+	}
+	m, _ = upd(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	r := <-done
+	if r.Decision != loop.DecisionDeny {
+		t.Errorf("n must deny, got %v", r.Decision)
+	}
+}
 
 // upd runs a message through Model.Update and unwraps the tea.Model back to the
 // concrete *tuiModel (the interface's result is the Bubble Tea contract; tests

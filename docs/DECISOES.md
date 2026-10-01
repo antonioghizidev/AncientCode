@@ -750,3 +750,30 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   tcell/tview (mais pesado, evitado em D-36).
 - **Consequência**: `go.mod`/`go.sum` ganham o grafo pinado (versões acima); UI é delivery-only;
   o REPL de texto continua default e byte-estável (sem `--tui` → caminho M8 inalterado).
+
+### D-2026-09-30-50 — TUI M10: painéis fixos com borda, scrollbar e navegação entre painéis
+
+- **Contexto**: o usuário aprovou o design M9 mas considerou a entrega decepcionante: esperava a
+  UI lazydocker de verdade — painéis fixos com bordas desenhadas, **scrollbar**, **foco
+  navegável** entre painéis (Tab cicla; ↑↓/PgUp/PgDn/Home/End rolam o painel focado). O M9
+  renderizou as duas colunas como texto corrido sem moldura, sem viewport e sem troca de painel.
+- **Decisão**: novo milestone **M10** (`--tui` "painéis", branch `m10-tui-paineis`) que envolve o
+  mesmo core em um layout lazydocker real, **sem dependência nova** (D-49 já trouxe Bubble Tea;
+  nada além disso entra):
+  - **Layout**: painel **sessão** à esquerda (~60% da largura) e painel **atividade** à direita
+    (~40%), ambos com **borda box-drawing** (`─│┌┐└┘├┤┬┴┼`) e título; depois divisor, janela de
+    prompt, gate e footer 2 linhas (contrato M9 intacto).
+  - **Painéis roláveis**: cada painel tem **viewport próprio** (offset) + **scrollbar** de
+    proporção (posição no total).
+  - **Foco navegável**: `Tab`/`Shift+Tab`/setas laterais ciclam foco sessão ↔ atividade (↔
+    prompt quando o gate não está aberto); o painel focado tem a borda **destacada** (cor ANSI);
+    `↑/↓`/`PgUp`/`PgDn`/`Home`/`End` rolam o painel focado.
+  - **Prompt sempre recebe digitação** (foco de edição é o prompt; a navegação entre painéis é
+    só de *viewport*) — preserva o fluxo M8/M9 (digitar + Enter sem perder o teclado).
+  - **Segurança não muda**: `tui_gate.go` continua o único `Approver`; projeções continuam
+    stdlib-puras, determinísticas e redigidas antes do paint; `internal/*` segue sem Bubble Tea.
+- **Alternativa**: usar `lipgloss` para bordas/estilo (dependência nova — rejeitado: box-drawing
+  Unicode + ANSI via stdlib é suficiente e testável); tcell/tview (descartado em D-36).
+- **Consequência**: `tui_panels.go` ganha projeções puras de viewport/scrollbar/moldura (testadas
+  no host sem TTY); `tui.go` ganha estado de viewport por painel + teclas de navegação; smoke
+  Inspiron revalidado (render de bordas em pty real). REPL default e pipes seguem byte-estáveis.
