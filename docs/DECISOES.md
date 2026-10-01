@@ -806,13 +806,19 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   (`TestSanitizeStripsControlSequences`, `TestViewNeverPaintsRawControlSequences`) e uma de
   regressão do smoke (`TestGateDetailReadsRealShellSchemaKey`). Versão `0.11.0-m11`.
 
-### D-2026-10-01-52 — Bug pré-existente: schema da tool `shell` declara `cmd`, a struct decodifica `n`
+### D-2026-10-01-52 — RETRATADO: o bug "schema `cmd` vs struct `n`" na tool `shell` não existe
 
-- **Contexto**: o smoke do M11 no Inspiron mostrou o gate exibindo `{"cmd":"id -un"}` e a tool
-  recusando com `shell: n is required`. `internal/tools/shell/shell.go:55` publica o schema
-  `{"cmd": …}` mas o struct usa `Cmd string \`json:"n"\`` — o contrato publicado e o decoder não
-  concordam, então **toda chamada `shell` vinda do modelo falha**.
-- **Decisão**: **não corrigido no M11** (mudança de contrato de tool é sensível a segurança e
-  exige decisão própria + smoke dedicado). Registrado aqui para não se perder.
-- **Próximo passo**: alinhar schema e struct (padronizar em `cmd`, que é o nome do REPL/manual),
-  com teste de schema↔decode e smoke `shell` real no Inspiron.
+- **Registro original (ERRADO)**: afirmei que `internal/tools/shell/shell.go:55` publicava o schema
+  com a chave `cmd` enquanto o struct decodificava `json:"n"`, e que portanto **toda chamada `shell`
+  do modelo falharia** com `shell: n is required`.
+- **Retificação**: o bug **não existe**. Schema (linha 55), struct (linha 60) e mensagem de erro
+  (linha 67) usam `cmd` de forma consistente.
+- **Causa do erro**: usei `rg -rn '<padrão>' <arquivo>` — em ripgrep, `-r` é *replace*, então cada
+  ocorrência do padrão foi substituída pela letra `n` na saída. Li o resultado corrompido como se
+  fosse o conteúdo do arquivo e documentei um defeito inexistente (DECISOES, `AGENTS.md` e nota de
+  sessão da época carregaram a afirmação falsa).
+- **Lição**: conferir o arquivo com o leitor de arquivos (ou `rg` **sem** `-r`) antes de registrar
+  um defeito; a primeira leitura não é evidência. A checagem de contrato schema↔decode
+  (`TestGateDetailReadsRealShellSchemaKey`, já adicionada no M11) cobre o caminho real do gate.
+- **Consequência**: nenhum código muda. Nenhum trabalho de "conserto" é necessário. A afirmação
+  falsa foi removida de `AGENTS.md` e da nota de sessão do M11.

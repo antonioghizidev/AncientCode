@@ -35,11 +35,20 @@ Uso real do M10 no Inspiron revelou que a UI **não era auditável nem diagnosti
 
 ## Defeito encontrado pelo smoke (regressão coberta)
 
-O schema da tool `shell` declara `{"cmd": …}` (`internal/tools/shell/shell.go:55`), mas o struct
-decodifica `json:"n"` — **toda chamada `shell` vinda do modelo falha** com `shell: n is required`.
-Um extrator que procurasse apenas `command` cairia no fallback e o operador continuaria vendo JSON.
-Coberto por `TestGateDetailReadsRealShellSchemaKey`; a correção do contrato ficou registrada em
-**D-2026-10-01-52** (não corrigida no M11 — exige decisão e smoke próprios).
+A primeira versão desta nota Affirmava que o schema da tool `shell` declarava a chave `cmd` e que o
+struct decodificava `json:"n"` — logo, `shell` inutilizável. **Isso era falso** (D-2026-10-01-52,
+retratado): a evidência veio de uma saída corrompida do `rg -rn`, em que `-r` (replace) trocou cada
+ocorrência do padrão pela letra `n`. Schema, struct e mensagem de erro usam `cmd` de forma
+consistente.
+
+O que o smoke **de fato** revelou foi outra coisa, e isso sim é real e está coberto por
+`TestGateDetailReadsRealShellSchemaKey`: um extrator que procurasse apenas a chave `command`
+cairia no fallback e o operador continuaria vendo JSON cru — a chave real é `cmd`.
+
+## Lição
+
+Antes de registrar um defeito, confirmar com o leitor de arquivos (ou `rg` **sem** `-r`). A
+primeira leitura não é evidência; saída de ferramenta corrompida parece código legítimo.
 
 ## Testes
 
@@ -78,7 +87,8 @@ Artefatos de teste e drivers temporários removidos do `/tmp` e de `/opt/ancient
 
 ## Próximos passos
 
-1. Abrir PR `m11-gate-informado` → `main`.
-2. **D-2026-10-01-52**: alinhar o schema da tool `shell` (`cmd`) com a struct (`json:"n"`), com
-   teste schema↔decode e smoke `shell` real — hoje a tool está inutilizável pelo modelo.
-3. **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF).
+1. PR `m11-gate-informado` → `main` (aberto e aprovado; merge em `6605f25`).
+2. **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF).
+
+> Nada pendente quanto à tool `shell`: a suposta inconsistência de contrato não existia
+> (ver "Defeito encontrado pelo smoke" acima).

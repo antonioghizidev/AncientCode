@@ -167,12 +167,11 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   limpos, `GOAMD64=v1` ok. **Smoke Inspiron**: gate `shell` exibindo `id -un`, gate `write_file`
   `y`→`executed policy=ask decision=allow` + arquivo criado, `n`→negado. Ver
   `docs/session-2026-10-01-m11-gate-informado.md`.
-- **BUG pré-existente registrado em D-2026-10-01-52 (não corrigido)**: o schema da tool `shell`
-  publica a chave `cmd` (`internal/tools/shell/shell.go:55`) mas o struct decodifica `json:"n"` —
-  **toda chamada `shell` do modelo falha** com `shell: n is required`. Alinhar os dois exige
-  decisão + smoke dedicado.
-- **Próximo**: abrir PR `m11-gate-informado` → `main`; corrigir D-2026-10-01-52 (`shell` inutilizável
-  hoje); **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) — reusa o
+- **RESSALVA (D-2026-10-01-52, retratado)**: uma versão anterior desta lista afirmava que a tool
+  `shell` estava inutilizável (schema `cmd` vs struct `json:"n"`). **Era falso** — vi a saída
+  corrompida do `rg -r` (flag de *replace*) e a tratei como conteúdo do arquivo. Schema, struct e
+  mensagem de erro usam `cmd` consistentemente. Nenhum trabalho pendente daí; não levar adiante.
+- **Próximo**: **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) — reusa o
   contrato M8/M11, sem tocar em `internal/loop`; **agendamento depende do usuário**.
 
 ## Como trabalhar (resumo da metodologia)
