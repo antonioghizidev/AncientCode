@@ -131,25 +131,28 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   alt-screen). Guarda de pipe: `echo ola | ancientai --tui` → `erro: --tui exige stdin E stdout
   TTY (pipes/arquivos recusados)` RC=2. Artefatos de teste removidos. Ver
   `docs/session-2026-09-18-inspiron-m9.md`.
-- **M10 em andamento (branch `m10-tui-paineis`)** (D-2026-09-30-50): o M9 foi aceito no design
-  mas delivery quedó aquém do esperado — faltavam bordas desenhadas, scrollbar e navegação entre
+- **M10 concluído (branch `m10-tui-paineis`)** (D-2026-09-30-50): o M9 foi aceito no design
+  mas delivery ficou aquém do esperado — faltavam bordas desenhadas, scrollbar e navegação entre
   painéis. `tui_panels.go` ganhou a projeção lazydocker real (**sessão ~60% à esquerda /
   atividade ~40% à direita**, moldura dupla box-drawing com borda vertical compartilhada `┬`/`┴`,
   títulos no topo): `renderPanels`, `panelWidths`/`panelInnerWidths` (60/40 com soma exata),
   `viewportFor` (offset clampado), `scrollThumb`+`scrollbarCol` (trilha `░` + thumb `█`
   proporcional; coluna em branco quando não rola), `panelTitle` (marcador `▸` + ciano no foco),
   `promptLine` (cursor in-band reverse video). `tui.go` ganhou `height`/`focus`/`sessionOff`/
-  `activityOff`: `Tab`/`Shift+Tab`/`←→` ciclam foco, `↑↓`/PgUp/PgDn/Home/End rolam o painel
-  focado, digitar devolve o foco ao prompt, `followSessionBottom` mantém o rodapé. **Sem
-  dependência nova** (rejeitado `lipgloss`: borda Unicode + ANSI stdlib bastam). Corrigido no
-  caminho o cursor do M9, que acrescentava espaços ao fim e quebrava edição no meio da linha.
-  Gate/observer/parser/redação intactos; `tuiGate` segue o único `Approver`. Versão `0.10.0-m10`.
-  Host serial 16/16 0 falhas, `gofmt`/`vet` limpos, `GOAMD64=v1` build ok. Ver
-  `docs/session-2026-09-30-m10-tui-paineis.md`.
-- **Próximo**: fechar M10 — `go test -race` no WSL e smoke no Inspiron (pty real, NIM:
-  bordas/scrollbar, `Tab`/setas, gate `y`/`d` auditado, `/comandos`); depois commit
-  `feat(M10)`. **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) —
-  reusa o contrato M8/M9, sem tocar em `internal/loop`; **agendamento depende do usuário**.
+  `activityOff`: `Tab`/`Shift+Tab`/`←→` ciclam foco, `↑↓`/PgUp/PgDown/Home/End rolam o painel
+  focado, digitar devolve o foco ao prompt, `followBottom` mantém o rodapé (usa o total
+  **anterior** ao append — senão nunca detecta "estava no fim"). **Sem dependência nova**
+  (rejeitado `lipgloss`: borda Unicode + ANSI stdlib bastam). Corrigido no caminho o cursor do
+  M9, que acrescentava espaços ao fim e quebrava edição no meio da linha. Gate/observer/parser/
+  redação intactos; `tuiGate` segue o único `Approver`. Versão `0.10.0-m10`. Host serial 16/16,
+  WSL `-race` 16/16 (Go 1.27 instalado no WSL), `gofmt`/`vet` limpos, `GOAMD64=v1` build ok.
+  **Smoke Inspiron** (pty real + NIM, binário `/home/ancientai/ancientai-0.10.0-m10`): moldura
+  completa, scrollbar (verificada com terminal de 11 linhas), marcador `▸`, rodapé; gate `y` →
+  audit `write_file executed policy=ask decision=allow` + arquivo criado; gate `d` → `denied` +
+  arquivo não criado. Artefatos removidos. Ver `docs/session-2026-09-30-m10-tui-paineis.md`.
+- **Próximo**: abrir PR `m10-tui-paineis` → `main`. **Backlog Web** (SSE + shell-HTTP +
+  `Approver` por canal + auth/TLS/CSRF) — reusa o contrato M8/M9, sem tocar em `internal/loop`;
+  **agendamento depende do usuário**.
 
 ## Como trabalhar (resumo da metodologia)
 

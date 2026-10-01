@@ -1,6 +1,6 @@
 # M10 — TUI painéis: bordas fixas, scrollbar e navegação entre painéis
 
-**Status**: ▶ em andamento (implementação + gate host verdes; falta WSL `-race` e smoke)
+**Status**: ✅ concluído em 2026-10-01 (host + WSL `-race` + smoke Inspiron)
 **Depende de**: M9 (TUI Bubble Tea delivery-only, contrato de eventos + gate + parser)
 **Sessão de referência**: `docs/session-2026-09-30-m10-tui-paineis.md`
 
@@ -86,9 +86,12 @@ Projeções puras em `cmd/ancientai/tui_panels.go` (só stdlib, determinísticas
 
 - [x] Suíte completa verde no host serial (16 pacotes, 0 falhas), `gofmt`/`go vet` limpos,
       `GOAMD64=v1` build ok (`dist/ancientai`, 8.458.400 bytes, versão `0.10.0-m10`).
-- [ ] WSL `-race` 16/16.
-- [ ] Smoke no Inspiron (pty real, NIM): bordas/scrollbar renderizam; Tab/↑↓ rolam; gate y/d
-      auditado como no M9; `/comandos` no prompt.
-- [x] `docs/DECISOES.md` (D-50) atualizado.
-- [ ] `AGENTS.md` atualizado; `docs/MANUAL.md` seção TUI atualizada; nota de sessão criada.
-- [ ] Commit padronizado `feat(M10): ...` no branch `m10-tui-paineis`.
+- [x] WSL `-race` 16/16 (Go 1.27, toolchain baixado; nenhuma data race).
+- [x] Smoke no Inspiron (pty real + NIM, binário `0.10.0-m10`): moldura completa
+      (`┌┐└┘┬┴│`), scrollbar presente quando o conteúdo transborda (verificado com terminal de
+      11 linhas), marcador de foco `▸`, títulos, rodapé; **gate `y`** → `write_file executed
+      policy=ask decision=allow` + arquivo criado; **gate `d`** → `status=denied decision=denied`
+      + arquivo não criado. Artefatos de teste removidos.
+- [x] `docs/DECISOES.md` (D-50) atualizado; `AGENTS.md` atualizado; `docs/MANUAL.md` seção TUI
+      atualizada; nota de sessão criada.
+- [x] Commit padronizado `feat(M10): ...` no branch `m10-tui-paineis`.

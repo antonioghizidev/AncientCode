@@ -40,8 +40,8 @@ Escopo decidido com o usuário: **sessão à esquerda (~60%) / atividade à dire
 | Host serial (16 pacotes) | suíte completa | ✅ 0 falhas |
 | `gofmt` / `go vet` | estático | ✅ |
 | `GOAMD64=v1` build | `dist/ancientai` 8.458.400 bytes, `0.10.0-m10` | ✅ |
-| WSL `-race` | 16/16 | ⏳ pendente |
-| Smoke Inspiron | pty real + NIM | ⏳ pendente |
+| WSL `-race` (16 pacotes) | detector de corrida | ✅ 0 races |
+| Smoke Inspiron | pty real + NIM | ✅ |
 
 ## Critérios de aceite
 
@@ -52,14 +52,35 @@ Escopo decidido com o usuário: **sessão à esquerda (~60%) / atividade à dire
 | Gate `y/n/d/C-c` inalterado; navegação inócua com gate aberto | ✅ |
 | Segredo cru nunca vaza na `View` | ✅ (`TestModelViewHidesRawSecret`) |
 | `internal/*` sem Bubble Tea / `cmd/*` | ✅ (teste arquitetural) |
-| WSL `-race` + smoke Inspiron | ⏳ |
+| WSL `-race` + smoke Inspiron | ✅ |
+
+## Smoke no Inspiron (pty real, NVIDIA NIM, binário `0.10.0-m10`)
+
+Deploy em `/home/ancientai/ancientai-0.10.0-m10` (`0.10.0-m10`, GOAMD64=v1). Driver pty Python
+(fora do repo) respondendo as queries OSC11 + DSR, Enter = `\r`, janela 100×30 (e 100×11 para
+forçar overflow de scrollbar):
+
+| Verificação | Resultado |
+|---|---|
+| Moldura completa | `┌┐└┘┬┴│` presentes no stream |
+| Títulos dos painéis | `sessão` + `atividade` |
+| Marcador de foco | `▸` presente após `Tab` |
+| Scrollbar | presente com conteúdo > viewport (terminal de 11 linhas) |
+| Rodapé | `ctx …` + `0.10.0-m10` |
+| Gate `y` | audit `write_file status=executed policy=ask decision=allow`; arquivo criado |
+| Gate `d` | audit `status=denied decision=denied`; arquivo NÃO criado |
+
+Nota: a primeira tentativa de gate usou caminho **absoluto** e a tool recusou
+(`status=error`, `decision=allow`) — comportamento fail-closed esperado desde o M6
+(D-2026-09-16-33: arquivos recusam caminho absoluto). Repetido com caminho relativo: executado.
+
+Artefatos de teste (`smoke-m10.txt`, `smoke-m10-veto.txt`) e drivers temporários removidos.
 
 ## Próximos passos
 
-1. `go test -race -count=1 ./...` no WSL.
-2. Deploy do binário `0.10.0-m10` no Inspiron + smoke em pty real (responder OSC11 + DSR,
-   Enter `\r`): bordas/scrollbar, `Tab`/setas, gate `y`/`d` auditado, `/comandos`.
-3. Commit `feat(M10): ...`.
+1. Abrir PR `m10-tui-paineis` → `main`.
+2. **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) como milestone
+   futuro — o contrato M8/M10 já o permite sem tocar em `internal/loop`.
 
 ## Observações / riscos
 
