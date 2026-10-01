@@ -187,19 +187,210 @@ func TestProjectionLayoutContainsPanels(t *testing.T) {
 		Prompt:   "escreva algo",
 		Cursor:   11,
 		Footer:   []string{"| ancientai | run |", "ctx --"},
-		Width:    80,
+		Width:    100,
+		Height:   24,
 	})
-	if !strings.Contains(layout, "> oi") {
+	plain := stripANSI(layout)
+	if !strings.Contains(plain, "> oi") {
 		t.Errorf("session panel missing: %q", layout)
 	}
-	if !strings.Contains(layout, "* tool: shell ok") {
+	if !strings.Contains(plain, "* tool: shell ok") {
 		t.Errorf("activity panel missing: %q", layout)
 	}
-	if !strings.Contains(layout, "escreva algo") {
+	if !strings.Contains(plain, "escreva algo") {
 		t.Errorf("prompt missing: %q", layout)
 	}
-	if !strings.Contains(layout, "ctx --") {
+	if !strings.Contains(plain, "ctx --") {
 		t.Errorf("footer missing: %q", layout)
+	}
+}
+
+// stripANSI removes SGR escape sequences so assertions can match the visible
+// text. The render is intentionally ANSI-decorated (focus color, caret).
+func stripANSI(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b {
+			j := i + 1
+			for j < len(s) && (s[j] == '[' || (s[j] >= '0' && s[j] <= '9') || s[j] == 'm') {
+				j++
+			}
+			i = j
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
+func TestPromptLineKeepsFullTextWithCaretInside(t *testing.T) {
+	// The caret cell is highlighted in-band; the text must NOT be truncated
+	// or padded (M9 appended cursor-sized spaces, which broke mid-line edits).
+	got := stripANSI(promptLine("escreva algo", 7))
+	if !strings.Contains(got, "> escreva algo") {
+		t.Errorf("prompt text truncated: %q", got)
+	}
+	if !strings.Contains(promptLine("escreva algo", 7), cursorOn) {
+		t.Errorf("caret cell must be highlighted: %q", promptLine("escreva algo", 7))
+	}
+	// Caret at the end draws a trailing block after the text.
+	if tail := stripANSI(promptLine("oi", 2)); !strings.Contains(tail, "> oi") {
+		t.Errorf("trailing caret broken: %q", tail)
+	}
+}
+
+func TestScrollbarColTrackAndThumb(t *testing.T) {
+	// A scrolling panel shows a ░ track with the █ thumb on the mapped row.
+	col := scrollbarCol(6, 3, true)
+	if len(col) != 6 {
+		t.Fatalf("column length = %d, want 6", len(col))
+	}
+	if col[3] != '█' {
+		t.Errorf("thumb must sit on row 3, got %q", string(col))
+	}
+	for i, c := range col {
+		if i != 3 && c != '░' {
+			t.Errorf("row %d must be track ░, got %q", i, string(c))
+		}
+	}
+	// A non-scrolling panel gets a blank column (no track, no thumb).
+	blank := scrollbarCol(4, 0, false)
+	for i, c := range blank {
+		if c != ' ' {
+			t.Errorf("non-scrollable column must be blank at %d, got %q", i, string(c))
+		}
+	}
+}
+
+func TestViewportForClamps(t *testing.T) {
+	// viewportFor must clamp offsets into [0, total-visible] and never go
+	// negative when the content fits entirely.
+	cases := []struct {
+		off, total, visible, delta, want int
+	}{
+		{0, 10, 5, -1, 0},  // at top, up stays at top
+		{4, 10, 5, +1, 5},  // scroll down one
+		{0, 10, 5, +50, 5}, // huge jump clamps to total-visible
+		{5, 10, 5, -50, 0}, // huge jump back clamps to 0
+		{0, 3, 5, +1, 0},   // content fits: offset invariant 0
+		{3, 3, 0, +1, 0},   // zero visible & degenerate total: never negative
+	}
+	for _, c := range cases {
+		if got := viewportFor(c.off, c.total, c.visible, c.delta); got != c.want {
+			t.Errorf("viewportFor(%d,%d,%d,%d) = %d, want %d", c.off, c.total, c.visible, c.delta, got, c.want)
+		}
+	}
+}
+
+func TestScrollThumb(t *testing.T) {
+	// Scrollbar is only meaningful when the content overflows the viewport.
+	if _, ok := scrollThumb(0, 3, 5); ok {
+		t.Error("scrollThumb must report not-scrollable when total <= visible")
+	}
+	// When scrollable, the thumb must stay inside the visible range.
+	for off := 0; off <= 5; off++ {
+		thumb, ok := scrollThumb(off, 10, 5)
+		if !ok {
+			t.Fatalf("scrollThumb(%d,10,5) must be scrollable", off)
+		}
+		if thumb < 0 || thumb >= 5 {
+			t.Errorf("scrollThumb(%d,10,5) thumb=%d out of [0,5)", off, thumb)
+		}
+	}
+	// End of content → thumb at the last visible row; start → row 0.
+	if thumb, _ := scrollThumb(5, 10, 5); thumb != 4 {
+		t.Errorf("scrollThumb at end = %d, want 4", thumb)
+	}
+	if thumb, _ := scrollThumb(0, 10, 5); thumb != 0 {
+		t.Errorf("scrollThumb at start = %d, want 0", thumb)
+	}
+}
+
+func TestPanelFrameDrawsBorders(t *testing.T) {
+	// The panel layout must draw box-drawing borders and a centered title.
+	got := buildView(viewData{
+		Session:  []string{"linha-sessao"},
+		Activity: []string{"linha-atividade"},
+		Prompt:   "> teste",
+		Cursor:   6,
+		Footer:   []string{"footer1", "footer2"},
+		Width:    60,
+		Height:   12,
+	})
+	wantFrames := []string{"\u250c", "\u2510", "\u2514", "\u2518", "\u252c"} // ┌ ┐ └ ┘ ┬
+	for _, r := range wantFrames {
+		if !strings.Contains(got, r) {
+			t.Errorf("panel frame missing box char %q", r)
+		}
+	}
+	if !strings.Contains(got, "sessão") || !strings.Contains(got, "atividade") {
+		t.Errorf("panel titles missing: %q", got)
+	}
+	if !strings.Contains(got, "linha-sessao") || !strings.Contains(got, "linha-atividade") {
+		t.Errorf("panel content missing: %q", got)
+	}
+}
+
+func TestPanelFrameFocusedTitleHighlighted(t *testing.T) {
+	// The focused panel's title segment must be wrapped in a color escape; the
+	// other panel stays plain. This is how the user sees where the viewport
+	// lives.
+	ansiSpan := func(view, word string) bool {
+		// true iff `word` appears inside a \x1b[36m…\x1b[0m span (the whole
+		// title segment is wrapped, dashes included).
+		rest := view
+		for {
+			i := strings.Index(rest, "\x1b[36m")
+			if i < 0 {
+				return false
+			}
+			span := rest[i+len("\x1b[36m"):]
+			j := strings.Index(span, "\x1b[0m")
+			if j < 0 {
+				return false
+			}
+			if strings.Contains(span[:j], word) {
+				return true
+			}
+			rest = span[j:]
+		}
+	}
+
+	vSession := buildView(viewData{
+		Session: []string{"a"}, Activity: []string{"b"}, Prompt: "x",
+		Footer: []string{"f1", "f2"}, Width: 60, Height: 12, Focus: panelSession,
+	})
+	if !ansiSpan(vSession, "sessão") {
+		t.Errorf("focused session title not highlighted: %q", vSession)
+	}
+	if ansiSpan(vSession, "atividade") {
+		t.Errorf("unfocused activity title must stay plain: %q", vSession)
+	}
+	if strings.Count(vSession, "\x1b[36m") != 1 {
+		t.Errorf("exactly one panel may be highlighted: %q", vSession)
+	}
+
+	vActivity := buildView(viewData{
+		Session: []string{"a"}, Activity: []string{"b"}, Prompt: "x",
+		Footer: []string{"f1", "f2"}, Width: 60, Height: 12, Focus: panelActivity,
+	})
+	if !ansiSpan(vActivity, "atividade") {
+		t.Errorf("focused activity title not highlighted: %q", vActivity)
+	}
+	if ansiSpan(vActivity, "sessão") {
+		t.Errorf("unfocused session title must stay plain: %q", vActivity)
+	}
+}
+
+func TestPanelWidthsKeepRatio(t *testing.T) {
+	sess, act := panelWidths(100)
+	if sess != 60 || act != 40 {
+		t.Errorf("panelWidths(100) = %d,%d, want 60,40", sess, act)
+	}
+	total := sess + act
+	if total != 100 {
+		t.Errorf("panel widths must sum to 100: %d", total)
 	}
 }
 

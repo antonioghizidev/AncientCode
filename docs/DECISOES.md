@@ -750,3 +750,69 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   tcell/tview (mais pesado, evitado em D-36).
 - **Consequência**: `go.mod`/`go.sum` ganham o grafo pinado (versões acima); UI é delivery-only;
   o REPL de texto continua default e byte-estável (sem `--tui` → caminho M8 inalterado).
+
+### D-2026-09-30-50 — TUI M10: painéis fixos com borda, scrollbar e navegação entre painéis
+
+- **Contexto**: o usuário aprovou o design M9 mas considerou a entrega decepcionante: esperava a
+  UI lazydocker de verdade — painéis fixos com bordas desenhadas, **scrollbar**, **foco
+  navegável** entre painéis (Tab cicla; ↑↓/PgUp/PgDn/Home/End rolam o painel focado). O M9
+  renderizou as duas colunas como texto corrido sem moldura, sem viewport e sem troca de painel.
+- **Decisão**: novo milestone **M10** (`--tui` "painéis", branch `m10-tui-paineis`) que envolve o
+  mesmo core em um layout lazydocker real, **sem dependência nova** (D-49 já trouxe Bubble Tea;
+  nada além disso entra):
+  - **Layout**: painel **sessão** à esquerda (~60% da largura) e painel **atividade** à direita
+    (~40%), ambos com **borda box-drawing** (`─│┌┐└┘├┤┬┴┼`) e título; depois divisor, janela de
+    prompt, gate e footer 2 linhas (contrato M9 intacto).
+  - **Painéis roláveis**: cada painel tem **viewport próprio** (offset) + **scrollbar** de
+    proporção (posição no total).
+  - **Foco navegável**: `Tab`/`Shift+Tab`/setas laterais ciclam foco sessão ↔ atividade (↔
+    prompt quando o gate não está aberto); o painel focado tem a borda **destacada** (cor ANSI);
+    `↑/↓`/`PgUp`/`PgDn`/`Home`/`End` rolam o painel focado.
+  - **Prompt sempre recebe digitação** (foco de edição é o prompt; a navegação entre painéis é
+    só de *viewport*) — preserva o fluxo M8/M9 (digitar + Enter sem perder o teclado).
+  - **Segurança não muda**: `tui_gate.go` continua o único `Approver`; projeções continuam
+    stdlib-puras, determinísticas e redigidas antes do paint; `internal/*` segue sem Bubble Tea.
+- **Alternativa**: usar `lipgloss` para bordas/estilo (dependência nova — rejeitado: box-drawing
+  Unicode + ANSI via stdlib é suficiente e testável); tcell/tview (descartado em D-36).
+- **Consequência**: `tui_panels.go` ganha projeções puras de viewport/scrollbar/moldura (testadas
+  no host sem TTY); `tui.go` ganha estado de viewport por painel + teclas de navegação; smoke
+  Inspiron revalidado (render de bordas em pty real). REPL default e pipes seguem byte-estáveis.
+
+### D-2026-10-01-51 — Gate informado: o operador vê o payload; erros visíveis; sanitize no paint
+
+- **Contexto**: uso real do M10 revelou três defeitos. (1) O gate dizia apenas `[aprovar] shell` /
+  `gate: shell` — o `Summary` já chegava ao `Approver` (`summaryFor` = tool + args redigidos) mas
+  a TUI o descartava; aprovar sem ver o payload **não é consentimento informado**. (2) O rodapé
+  virava `✗ erro` sem nenhuma mensagem: `buildView` nunca renderizava `m.banner` (7 escritas,
+  0 leituras). (3) Derivado de (1)/(2): conteúdo do modelo ia para o paint sem remoção de
+  sequências de controle — `\x1b[2J` no retorno de uma tool podia apagar/falsificar o próprio gate.
+  `redact` só mascara segredos; não toca em controles.
+- **Decisão**:
+  - **Gate mostra o payload**: `gateDetail` lê a chave decisiva **de cada schema real**
+    (`shell.cmd`, `docker.subcommand`+`args`, `apt.action`+`packages`, `*.path`,
+    `code_scaffold.template`+`name`, `skill_run.skill`+`script`+`argv`); desenha o comando como
+    linha própria. Tool desconhecida → varre chaves conhecidas; shape irreconhecível → mostra os
+    args crus (nunca esconde o payload em silêncio). `Event{PhaseGateWaiting}` passou a carregar
+    `Detail` (args **já redigidos na origem**) para o painel de atividade mostrar o mesmo.
+  - **Erro visível**: banner em vermelho acima do input **e** linha `! erro: …` no painel de
+    sessão (sobrevive à rolagem); `c` limpa o banner.
+  - **`sanitize` no paint**: remove C0/DEL/C1 (inclui ESC) de todo conteúdo não confiável antes de
+    pintar; `\t`→espaço, resto de controle descartado. Aplicado em sessão, atividade, gate e banner.
+  - **`fixedRows`** como fonte única da verdade do orçamento de linhas, para projeção e navegação
+    de scroll concordarem na altura dos painéis.
+- **Alternativa**: mostrar os args JSON crus em até 3 linhas (rejeitado pelo usuário: ilegível);
+  corrigir o gate no REPL também (o REPL já imprimia o `summary`; só a TUI o perdia).
+- **Consequência**: duas linhas de segurança que falham se a proteção for removida
+  (`TestSanitizeStripsControlSequences`, `TestViewNeverPaintsRawControlSequences`) e uma de
+  regressão do smoke (`TestGateDetailReadsRealShellSchemaKey`). Versão `0.11.0-m11`.
+
+### D-2026-10-01-52 — Bug pré-existente: schema da tool `shell` declara `cmd`, a struct decodifica `n`
+
+- **Contexto**: o smoke do M11 no Inspiron mostrou o gate exibindo `{"cmd":"id -un"}` e a tool
+  recusando com `shell: n is required`. `internal/tools/shell/shell.go:55` publica o schema
+  `{"cmd": …}` mas o struct usa `Cmd string \`json:"n"\`` — o contrato publicado e o decoder não
+  concordam, então **toda chamada `shell` vinda do modelo falha**.
+- **Decisão**: **não corrigido no M11** (mudança de contrato de tool é sensível a segurança e
+  exige decisão própria + smoke dedicado). Registrado aqui para não se perder.
+- **Próximo passo**: alinhar schema e struct (padronizar em `cmd`, que é o nome do REPL/manual),
+  com teste de schema↔decode e smoke `shell` real no Inspiron.

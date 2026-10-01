@@ -90,6 +90,7 @@ type tuiModel struct {
 	toolbox     string
 	sessionName string
 	width       int
+	height      int
 
 	input      string
 	cursor     int
@@ -101,6 +102,10 @@ type tuiModel struct {
 	activity []string // activity panel lines (from the observer)
 	banner   string   // one error/info line
 	usage    loop.Usage
+
+	focus       panelID // viewport navigation target (M10)
+	sessionOff  int     // viewport top offset of the session panel
+	activityOff int     // viewport top offset of the activity panel
 
 	inTurn     bool
 	turnCancel func() // canceled on Ctrl+C mid-turn
@@ -140,6 +145,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		m.height = msg.Height
 		return m, nil
 	case gateOpenMsg:
 		m.dialog = msg.dialog
@@ -149,8 +155,10 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case agentEventMsg:
 		if line := activityFromEvent(msg.ev); line != "" {
+			prev := len(m.activity)
 			m.activity = append(m.activity, line)
 			m.activity = capLines(m.activity, maxActivityLines)
+			m.followActivityBottom(prev)
 		}
 		m.refreshUsage()
 		return m, nil
@@ -158,12 +166,20 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inTurn = false
 		m.turnCancel = nil
 		if msg.err != nil {
+			// M11: an error that only flips the footer to "erro" is unreadable.
+			// It gets the banner AND a history line, so it survives scrolling.
 			m.banner = "erro: " + msg.err.Error()
+			prev := len(m.session)
+			m.session = append(m.session, "! erro: "+truncatedLine(msg.err.Error()))
+			m.session = capLines(m.session, maxSessionLines)
+			m.followSessionBottom(prev)
 		} else {
 			m.banner = ""
+			prev := len(m.session)
 			m.session = append(m.session, "< "+redact.Redact(truncatedLine(msg.out)))
 			m.session = capLines(m.session, maxSessionLines)
 			m.refreshUsage()
+			m.followSessionBottom(prev)
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -173,8 +189,8 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // handleKey routes one key event. When a gate dialog is open only y/n/d (or
-// Ctrl+C = n) are meaningful; everything else is routed to editing/turns as
-// the spec keymap (09 §5) requires.
+// Ctrl+C = n) are meaningful; everything else is routed to editing/navigation
+// as the M10 keymap requires.
 func (m *tuiModel) handleKey(k tea.KeyMsg) tea.Cmd {
 	if m.dialog != nil {
 		return m.handleGateKey(k)
@@ -193,22 +209,56 @@ func (m *tuiModel) handleKey(k tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		return tea.Quit
-	case tea.KeyUp:
-		m.histStep(-1)
+	case tea.KeyTab:
+		m.cycleFocus()
+		return nil
+	case tea.KeyShiftTab: // Shift+Tab arrives as its own key type
+		m.cycleFocus()
+		return nil
 	case tea.KeyDown:
+		if m.navigatePanel(+1) {
+			return nil
+		}
 		m.histStep(+1)
+	case tea.KeyUp:
+		if m.navigatePanel(-1) {
+			return nil
+		}
+		m.histStep(-1)
+	case tea.KeyPgDown:
+		m.scrollPanel(m.panelContentRows())
+		return nil
+	case tea.KeyPgUp:
+		m.scrollPanel(-m.panelContentRows())
+		return nil
+	case tea.KeyHome:
+		if m.focus != panelPrompt {
+			m.panelToTop()
+			return nil
+		}
+		m.cursor = 0
+	case tea.KeyEnd:
+		if m.focus != panelPrompt {
+			m.panelToBottom()
+			return nil
+		}
+		m.cursor = len([]rune(m.input))
 	case tea.KeyLeft:
+		if m.focus != panelPrompt {
+			m.cycleFocus()
+			return nil
+		}
 		if m.cursor > 0 {
 			m.cursor--
 		}
 	case tea.KeyRight:
+		if m.focus != panelPrompt {
+			m.cycleFocus()
+			return nil
+		}
 		if m.cursor < len([]rune(m.input)) {
 			m.cursor++
 		}
-	case tea.KeyHome:
-		m.cursor = 0
-	case tea.KeyEnd:
-		m.cursor = len([]rune(m.input))
 	case tea.KeyBackspace:
 		m.backspace()
 	case tea.KeyDelete:
@@ -219,6 +269,107 @@ func (m *tuiModel) handleKey(k tea.KeyMsg) tea.Cmd {
 		return m.handleRunes(k.Runes)
 	}
 	return nil
+}
+
+// followBottom snaps a viewport to the newest content when the operator was
+// already at the bottom — chat behaviour: a new line shows up immediately.
+// `prevTotal` is the content length BEFORE the append; comparing against the
+// post-append length would never detect "was at the bottom" (the append moves
+// the bottom away by one). A viewport the operator scrolled up is left alone.
+//
+// `off`/`total` are passed by pointer-style through the returned value.
+func (m *tuiModel) followBottom(off *int, total, prevTotal int) {
+	vis := m.panelContentRows()
+	if total <= vis {
+		*off = 0
+		return
+	}
+	wasAtBottom := prevTotal <= vis || *off >= prevTotal-vis
+	if wasAtBottom {
+		*off = total - vis
+	}
+}
+
+// followSessionBottom keeps the session viewport pinned to the newest line.
+func (m *tuiModel) followSessionBottom(prevTotal int) {
+	m.followBottom(&m.sessionOff, len(m.session), prevTotal)
+}
+
+// followActivityBottom keeps the activity viewport pinned to the newest event.
+func (m *tuiModel) followActivityBottom(prevTotal int) {
+	m.followBottom(&m.activityOff, len(m.activity), prevTotal)
+}
+
+// cycleFocus moves the viewport navigation focus between the two panels (M10).
+// The prompt is never part of the cycle: typing stays on the prompt, only the
+// scroll target moves.
+func (m *tuiModel) cycleFocus() {
+	switch m.focus {
+	case panelSession:
+		m.focus = panelActivity
+	case panelActivity:
+		m.focus = panelSession
+	default:
+		m.focus = panelSession // first Tab from the prompt focuses the session
+	}
+}
+
+// navigatePanel scrolls the focused panel one row in `delta` direction
+// (+1 down, -1 up); reports true when the key was consumed by navigation
+// (never by the prompt editor).
+func (m *tuiModel) navigatePanel(delta int) bool {
+	switch m.focus {
+	case panelSession:
+		m.sessionOff = viewportFor(m.sessionOff, len(m.session), m.panelContentRows(), delta)
+		return true
+	case panelActivity:
+		m.activityOff = viewportFor(m.activityOff, len(m.activity), m.panelContentRows(), delta)
+		return true
+	}
+	return false
+}
+
+// scrollPanel scrolls the focused panel by `delta` rows (page keys). The
+// prompt never consumes these keys.
+func (m *tuiModel) scrollPanel(delta int) {
+	m.navigatePanel(delta)
+}
+
+// panelToTop / panelToBottom implement Home/End on the focused panel.
+func (m *tuiModel) panelToTop()    { m.navigatePanel(-(1 << 30)) }
+func (m *tuiModel) panelToBottom() { m.navigatePanel(+(1 << 30)) }
+
+// gateLines renders the pending approval so the operator can read WHAT will run
+// before answering (M11). Approving a tool whose payload is hidden is not
+// informed consent — the command is the whole point of the gate.
+func (m *tuiModel) gateLines() []string {
+	if m.dialog == nil {
+		return nil
+	}
+	width := m.width
+	if width <= 0 {
+		width = 120
+	}
+	head := "[aprovar] " + m.dialog.Tool + " | y aprova, n nega, d nega sempre"
+	lines := []string{gateOn + head + gateOff}
+	for _, d := range gateDetail(m.dialog.Summary, width-2, 2) {
+		lines = append(lines, "  "+d)
+	}
+	return lines
+}
+
+// panelContentRows mirrors the row budget buildView gives the panels, so the
+// viewport navigation and the projection agree on how many rows are visible.
+func (m *tuiModel) panelContentRows() int {
+	h := m.height
+	if h <= 0 {
+		h = 30
+	}
+	rows := h - fixedRows(m.dialog != nil, m.banner != "")
+	if rows < 3 {
+		rows = 3
+	}
+	return rows - 2 // top + bottom border
 }
 
 // handleGateKey resolves the open dialog. Only y/n/d/Ctrl+C do anything; d
@@ -249,7 +400,8 @@ func (m *tuiModel) handleGateKey(k tea.KeyMsg) tea.Cmd {
 
 // handleRunes processes printable key runs, with the special ^R/retry and
 // ^C-ish clear affordances the spec maps (a banner error makes 'r' retry and
-// 'c' clear).
+// 'c' clear). Typing always returns the viewport focus to the prompt (the
+// scroll target and the keyboard are decoupled, M10).
 func (m *tuiModel) handleRunes(rs []rune) tea.Cmd {
 	if len(rs) == 1 {
 		switch rs[0] {
@@ -271,6 +423,7 @@ func (m *tuiModel) handleRunes(rs []rune) tea.Cmd {
 			}
 		}
 	}
+	m.focus = panelPrompt
 	m.insertRunes(rs)
 	return nil
 }
@@ -364,8 +517,10 @@ func (m *tuiModel) submit() tea.Cmd {
 	if cmd, isCmd := parseCommand(m.input); isCmd {
 		return m.handleCommand(m.input, cmd)
 	}
+	prev := len(m.session)
 	m.session = append(m.session, "> "+redact.Redact(strings.TrimSpace(line)))
 	m.session = capLines(m.session, maxSessionLines)
+	m.followSessionBottom(prev) // keep the submitted prompt visible
 	m.promptHist = append(m.promptHist, redact.Redact(line))
 	prompt := line
 	m.resetPrompt()
@@ -497,21 +652,24 @@ func (m *tuiModel) View() string {
 	sess := capLines(m.session, maxSessionLines)
 	redacted := make([]string, len(sess))
 	for i, l := range sess {
-		redacted[i] = redact.Redact(l)
+		// M11: redact (secrets) AND sanitize (control sequences) — both before
+		// the line leaves the model.
+		redacted[i] = sanitize(redact.Redact(l))
 	}
 	act := capLines(m.activity, maxActivityLines)
-	gateTxt := ""
-	if m.dialog != nil {
-		gateTxt = "[aprovar] " + m.dialog.Tool + " | y aprova, n nega, d nega sempre"
-	}
 	return buildView(viewData{
-		Session:  redacted,
-		Activity: act,
-		Prompt:   m.input,
-		Cursor:   m.cursor,
-		Footer:   buildFooter(info),
-		Width:    m.width,
-		GateText: gateTxt,
+		Session:     redacted,
+		Activity:    act,
+		Prompt:      m.input,
+		Cursor:      m.cursor,
+		Footer:      buildFooter(info),
+		Width:       m.width,
+		Height:      m.height,
+		Focus:       m.focus,
+		SessionOff:  m.sessionOff,
+		ActivityOff: m.activityOff,
+		GateLines:   m.gateLines(),
+		Banner:      sanitize(m.banner),
 	})
 }
 
