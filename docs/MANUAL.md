@@ -161,11 +161,36 @@ Sem orçamento de contexto (`session_context_bytes=0`): `ctx -- | ◎ ok`. Acima
 
 ### Aprovações na TUI
 
-Quando o modelo pede uma tool mutante, a linha do gate aparece:
+Quando o modelo pede uma tool, o gate mostra **o que será executado** — o comando em destaque,
+não um JSON:
 
 ```
-[aprovar] write_file | y aprova, n nega, d nega sempre
+[aprovar] shell | y aprova, n nega, d nega sempre
+  rm -rf /tmp/build
 ```
+
+O painel de atividade registra a mesma informação:
+
+```
+* gate: shell  rm -rf /tmp/build
+* tool: shell (executando)
+* tool: shell ok 0.31s
+```
+
+O que aparece em destaque depende da tool:
+
+| Tool | Mostrado |
+|---|---|
+| `shell` | a linha de comando (`cmd`) |
+| `docker` | `subcommand` + `args` (ex.: `ps -a`) |
+| `apt` | `action` + `packages` (ex.: `install nginx`) |
+| `write_file` / `edit_file` / `read_file` | o `path` |
+| `code_scaffold` | `template` + `name` |
+| `skill_run` | `skill` + `script` + `argv` |
+
+Texto longo quebra em até 2 linhas com `…` no fim (nunca é cortado em silêncio). Se a tool
+mandar argumentos que a UI não reconhece, os args crus são mostrados — em nenhum caso o payload é
+oculto.
 
 | Tecla | Efeito |
 |---|---|
@@ -175,7 +200,25 @@ Quando o modelo pede uma tool mutante, a linha do gate aparece:
 | `Ctrl+C` | cancela o gate (equivale a `n`) |
 
 Nenhuma outra tecla mexe no gate: ele só fecha com y/n/d/Ctrl+C. O resultado de cada decisão fica
-no painel de atividade e no rodapé (`◎ ok` → `◉ espera` → `✗ erro`).
+no painel de atividade e no rodapé (`◉ ok` → `◦ espera` → `✗ erro`).
+
+### Erros
+
+Quando um turno falha, o erro aparece em **dois lugares**:
+
+- **banner em vermelho** logo acima do input, enquanto durar:
+  ```
+  erro: loop: aprovacao de "shell" expirou; recusado (fail-closed)
+  > escreva o relatorio▏
+  ```
+- **linha no histórico** do painel de sessão (`! erro: …`), que continua disponível ao rolar.
+
+Digitar qualquer tecla ou `c` limpa o banner; o histórico permanece.
+
+> **Segurança do paint**: nada que venha do modelo ou de uma tool consegue emitir sequências de
+> controle ANSI na tela. Caracteres de controle (inclusive ESC) são removidos antes de desenhar —
+> caso contrário um `\x1b[2J` no retorno de uma tool poderia apagar o próprio gate e torná-lo
+> inconfiável. Segredos são mascarados antes disso.
 
 ## 4. Auditoria e limpeza
 

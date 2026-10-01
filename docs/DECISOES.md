@@ -777,3 +777,42 @@ As decisões que alteram a SPEC devem ser refletidas lá.
 - **Consequência**: `tui_panels.go` ganha projeções puras de viewport/scrollbar/moldura (testadas
   no host sem TTY); `tui.go` ganha estado de viewport por painel + teclas de navegação; smoke
   Inspiron revalidado (render de bordas em pty real). REPL default e pipes seguem byte-estáveis.
+
+### D-2026-10-01-51 — Gate informado: o operador vê o payload; erros visíveis; sanitize no paint
+
+- **Contexto**: uso real do M10 revelou três defeitos. (1) O gate dizia apenas `[aprovar] shell` /
+  `gate: shell` — o `Summary` já chegava ao `Approver` (`summaryFor` = tool + args redigidos) mas
+  a TUI o descartava; aprovar sem ver o payload **não é consentimento informado**. (2) O rodapé
+  virava `✗ erro` sem nenhuma mensagem: `buildView` nunca renderizava `m.banner` (7 escritas,
+  0 leituras). (3) Derivado de (1)/(2): conteúdo do modelo ia para o paint sem remoção de
+  sequências de controle — `\x1b[2J` no retorno de uma tool podia apagar/falsificar o próprio gate.
+  `redact` só mascara segredos; não toca em controles.
+- **Decisão**:
+  - **Gate mostra o payload**: `gateDetail` lê a chave decisiva **de cada schema real**
+    (`shell.cmd`, `docker.subcommand`+`args`, `apt.action`+`packages`, `*.path`,
+    `code_scaffold.template`+`name`, `skill_run.skill`+`script`+`argv`); desenha o comando como
+    linha própria. Tool desconhecida → varre chaves conhecidas; shape irreconhecível → mostra os
+    args crus (nunca esconde o payload em silêncio). `Event{PhaseGateWaiting}` passou a carregar
+    `Detail` (args **já redigidos na origem**) para o painel de atividade mostrar o mesmo.
+  - **Erro visível**: banner em vermelho acima do input **e** linha `! erro: …` no painel de
+    sessão (sobrevive à rolagem); `c` limpa o banner.
+  - **`sanitize` no paint**: remove C0/DEL/C1 (inclui ESC) de todo conteúdo não confiável antes de
+    pintar; `\t`→espaço, resto de controle descartado. Aplicado em sessão, atividade, gate e banner.
+  - **`fixedRows`** como fonte única da verdade do orçamento de linhas, para projeção e navegação
+    de scroll concordarem na altura dos painéis.
+- **Alternativa**: mostrar os args JSON crus em até 3 linhas (rejeitado pelo usuário: ilegível);
+  corrigir o gate no REPL também (o REPL já imprimia o `summary`; só a TUI o perdia).
+- **Consequência**: duas linhas de segurança que falham se a proteção for removida
+  (`TestSanitizeStripsControlSequences`, `TestViewNeverPaintsRawControlSequences`) e uma de
+  regressão do smoke (`TestGateDetailReadsRealShellSchemaKey`). Versão `0.11.0-m11`.
+
+### D-2026-10-01-52 — Bug pré-existente: schema da tool `shell` declara `cmd`, a struct decodifica `n`
+
+- **Contexto**: o smoke do M11 no Inspiron mostrou o gate exibindo `{"cmd":"id -un"}` e a tool
+  recusando com `shell: n is required`. `internal/tools/shell/shell.go:55` publica o schema
+  `{"cmd": …}` mas o struct usa `Cmd string \`json:"n"\`` — o contrato publicado e o decoder não
+  concordam, então **toda chamada `shell` vinda do modelo falha**.
+- **Decisão**: **não corrigido no M11** (mudança de contrato de tool é sensível a segurança e
+  exige decisão própria + smoke dedicado). Registrado aqui para não se perder.
+- **Próximo passo**: alinhar schema e struct (padronizar em `cmd`, que é o nome do REPL/manual),
+  com teste de schema↔decode e smoke `shell` real no Inspiron.

@@ -334,7 +334,10 @@ func (l *Loop) planCalls(ctx context.Context, calls []provider.CompletedToolCall
 				defer cancel()
 			}
 			l.notify("gate humano: aguardando sua aprovacao...")
-			l.emit(Event{Phase: PhaseGateWaiting, Tool: c.Name})
+			// M11: carry the (redacted) args so every frontend can show WHAT is
+			// being authorized. An approval without the payload is not informed
+			// consent. Detail is redacted at the source, before it reaches a UI.
+			l.emit(Event{Phase: PhaseGateWaiting, Tool: c.Name, Detail: redact.Redact(string(c.Args))})
 			dec, err := l.appr.Decide(dctx, c.Name, summaryFor(c))
 			l.notify("")
 			if err != nil {

@@ -166,7 +166,13 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inTurn = false
 		m.turnCancel = nil
 		if msg.err != nil {
+			// M11: an error that only flips the footer to "erro" is unreadable.
+			// It gets the banner AND a history line, so it survives scrolling.
 			m.banner = "erro: " + msg.err.Error()
+			prev := len(m.session)
+			m.session = append(m.session, "! erro: "+truncatedLine(msg.err.Error()))
+			m.session = capLines(m.session, maxSessionLines)
+			m.followSessionBottom(prev)
 		} else {
 			m.banner = ""
 			prev := len(m.session)
@@ -333,18 +339,33 @@ func (m *tuiModel) scrollPanel(delta int) {
 func (m *tuiModel) panelToTop()    { m.navigatePanel(-(1 << 30)) }
 func (m *tuiModel) panelToBottom() { m.navigatePanel(+(1 << 30)) }
 
+// gateLines renders the pending approval so the operator can read WHAT will run
+// before answering (M11). Approving a tool whose payload is hidden is not
+// informed consent — the command is the whole point of the gate.
+func (m *tuiModel) gateLines() []string {
+	if m.dialog == nil {
+		return nil
+	}
+	width := m.width
+	if width <= 0 {
+		width = 120
+	}
+	head := "[aprovar] " + m.dialog.Tool + " | y aprova, n nega, d nega sempre"
+	lines := []string{gateOn + head + gateOff}
+	for _, d := range gateDetail(m.dialog.Summary, width-2, 2) {
+		lines = append(lines, "  "+d)
+	}
+	return lines
+}
+
 // panelContentRows mirrors the row budget buildView gives the panels, so the
 // viewport navigation and the projection agree on how many rows are visible.
 func (m *tuiModel) panelContentRows() int {
-	extra := 4
-	if m.dialog != nil {
-		extra++
-	}
 	h := m.height
 	if h <= 0 {
 		h = 30
 	}
-	rows := h - extra
+	rows := h - fixedRows(m.dialog != nil, m.banner != "")
 	if rows < 3 {
 		rows = 3
 	}
@@ -631,13 +652,11 @@ func (m *tuiModel) View() string {
 	sess := capLines(m.session, maxSessionLines)
 	redacted := make([]string, len(sess))
 	for i, l := range sess {
-		redacted[i] = redact.Redact(l)
+		// M11: redact (secrets) AND sanitize (control sequences) — both before
+		// the line leaves the model.
+		redacted[i] = sanitize(redact.Redact(l))
 	}
 	act := capLines(m.activity, maxActivityLines)
-	gateTxt := ""
-	if m.dialog != nil {
-		gateTxt = "[aprovar] " + m.dialog.Tool + " | y aprova, n nega, d nega sempre"
-	}
 	return buildView(viewData{
 		Session:     redacted,
 		Activity:    act,
@@ -649,7 +668,8 @@ func (m *tuiModel) View() string {
 		Focus:       m.focus,
 		SessionOff:  m.sessionOff,
 		ActivityOff: m.activityOff,
-		GateText:    gateTxt,
+		GateLines:   m.gateLines(),
+		Banner:      sanitize(m.banner),
 	})
 }
 

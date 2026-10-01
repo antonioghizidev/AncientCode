@@ -150,9 +150,30 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   completa, scrollbar (verificada com terminal de 11 linhas), marcador `▸`, rodapé; gate `y` →
   audit `write_file executed policy=ask decision=allow` + arquivo criado; gate `d` → `denied` +
   arquivo não criado. Artefatos removidos. Ver `docs/session-2026-09-30-m10-tui-paineis.md`.
-- **Próximo**: abrir PR `m10-tui-paineis` → `main`. **Backlog Web** (SSE + shell-HTTP +
-  `Approver` por canal + auth/TLS/CSRF) — reusa o contrato M8/M9, sem tocar em `internal/loop`;
-  **agendamento depende do usuário**.
+- **M11 concluído (branch `m11-gate-informado`)** (D-2026-10-01-51/52): uso real do M10 mostrou que
+  a UI não era auditável nem diagnosticável. (1) **Gate informado**: o `Summary` já chegava ao
+  `Approver` (`summaryFor` = tool + args redigidos) e a TUI o descartava — aprovar sem ver o payload
+  não é consentimento informado. Agora `gateSummaryFor(tool,args)` lê a chave decisiva do schema
+  **real** de cada tool (`shell.cmd`, `docker.subcommand`+`args`, `apt.action`+`packages`, `*.path`,
+  `code_scaffold.template`+`name`, `skill_run.skill`+`script`+`argv`), com fallback por chaves
+  conhecidas e args crus quando nada é reconhecível; `Event{PhaseGateWaiting}` carrega `Detail`
+  redigido na origem e a atividade mostra `* gate: shell  id -un`. (2) **Erro visível**: o banner
+  existia mas `buildView` **nunca o renderizava** (7 escritas, 0 leituras) — agora é linha em
+  vermelho acima do input **e** entrada `! erro: …` no painel de sessão. (3) **Sanitize no paint**:
+  `sanitize` remove C0/DEL/C1 (inclui ESC) de todo conteúdo não confiável — sem isso `\x1b[2J` no
+  retorno de uma tool podia apagar/falsificar o gate, e `redact` só mascara segredos.
+  `fixedRows` unifica o orçamento de linhas entre projeção e navegação. `shell` continua sendo o
+  único `Approver`. Versão `0.11.0-m11`. Host 16/16, WSL `-race` 16/16, `gofmt` (blob)/`vet`
+  limpos, `GOAMD64=v1` ok. **Smoke Inspiron**: gate `shell` exibindo `id -un`, gate `write_file`
+  `y`→`executed policy=ask decision=allow` + arquivo criado, `n`→negado. Ver
+  `docs/session-2026-10-01-m11-gate-informado.md`.
+- **BUG pré-existente registrado em D-2026-10-01-52 (não corrigido)**: o schema da tool `shell`
+  publica a chave `cmd` (`internal/tools/shell/shell.go:55`) mas o struct decodifica `json:"n"` —
+  **toda chamada `shell` do modelo falha** com `shell: n is required`. Alinhar os dois exige
+  decisão + smoke dedicado.
+- **Próximo**: abrir PR `m11-gate-informado` → `main`; corrigir D-2026-10-01-52 (`shell` inutilizável
+  hoje); **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) — reusa o
+  contrato M8/M11, sem tocar em `internal/loop`; **agendamento depende do usuário**.
 
 ## Como trabalhar (resumo da metodologia)
 

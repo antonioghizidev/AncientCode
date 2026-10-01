@@ -6,6 +6,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -42,6 +43,10 @@ const (
 	focusMark = "▸"       // focus marker, visible without color support
 	cursorOn  = "\x1b[7m" // reverse video on the caret cell
 	cursorOff = "\x1b[27m"
+	errOn     = "\x1b[31m" // error banner (M11)
+	errOff    = "\x1b[0m"
+	gateOn    = "\x1b[33m" // approval prompt: what is about to be executed (M11)
+	gateOff   = "\x1b[0m"
 )
 
 // footerInfo is everything the footer projection needs (deterministic).
@@ -131,7 +136,13 @@ func activityFromEvent(ev loop.Event) string {
 	case loop.PhaseModelStreaming:
 		return "* modelo: recebendo tokens..."
 	case loop.PhaseGateWaiting:
-		return "* gate: " + ev.Tool
+		// M11: the operator must see WHAT is being authorized, not just the
+		// tool name (the args come from the loop already redacted).
+		head := "* gate: " + ev.Tool
+		if detail := gateSummaryFor(ev.Tool, ev.Detail); detail != "" {
+			head += "  " + sanitize(redact.Redact(detail))
+		}
+		return head
 	case loop.PhaseToolRunning:
 		return "* tool: " + ev.Tool + " (executando)"
 	case loop.PhaseTurnOK:
@@ -194,7 +205,8 @@ type viewData struct {
 	Focus       panelID
 	SessionOff  int // viewport top offset for the session panel
 	ActivityOff int // viewport top offset for the activity panel
-	GateText    string
+	GateLines   []string
+	Banner      string // error/info line shown above the prompt (M11)
 }
 
 // panelWidths splits the total width into the two panel allocations: session
@@ -288,6 +300,181 @@ func scrollbarCol(visible, thumbRow int, scrollable bool) []rune {
 	return col
 }
 
+// sanitize strips terminal control sequences from UNTRUSTED text before it
+// reaches the screen (M11, security).
+//
+// Model output and tool arguments are data, never terminal commands. Without
+// this, a tool returning "\x1b[2J" could erase the approval dialog, and an OSC
+// sequence could retitle the window or hide the very line the operator is being
+// asked to approve — the gate would stop being trustworthy. `redact` only masks
+// secrets; it does not touch control characters.
+//
+// C0 (0x00–0x1F), DEL (0x7F) and C1 (0x80–0x9F, which includes 8-bit CSI/ESC)
+// are removed; a space replaces tab/newline/CR so panel geometry is preserved.
+// Printable text — including non-ASCII and box-drawing — is untouched.
+func sanitize(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == '\t':
+			b.WriteByte(' ')
+		case r < 0x20 || r == 0x7f:
+			// dropped: control characters carry no readable meaning here
+		case r >= 0x80 && r <= 0x9f:
+			// C1: 8-bit CSI/SOS/PM/APC, can escape sequences too
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// sanitizeWidth is sanitize plus a hard cell cap, for lines that go into a
+// fixed-width panel cell (no clipping marker: the panel edge is the boundary).
+func sanitizeWidth(s string, width int) string {
+	return runeCap(sanitize(s), width)
+}
+
+// gateDetail turns the Approver summary ("<tool> <args>") into the lines the
+// operator reads before approving (M11). Approving a tool whose payload is
+// hidden is not informed consent, so the decisive argument is surfaced: for
+// shell that is the command line itself, not a JSON blob.
+//
+// Output is re-redacted (defense in depth — the loop already redacts) and
+// sanitized (the payload is untrusted), then bounded by width and maxLines.
+func gateDetail(summary string, width, maxLines int) []string {
+	if maxLines <= 0 {
+		maxLines = 1
+	}
+	tool, args, _ := strings.Cut(summary, " ")
+	detail := sanitize(redact.Redact(gateSummaryFor(strings.TrimSpace(tool), args)))
+	if detail == "" {
+		return nil
+	}
+	return wrapText(detail, width, maxLines)
+}
+
+// gateArgKeys are the decisive argument keys per tool, in display order. The
+// names come from each tool's JSON schema (internal/tools/*), so the gate shows
+// the real payload instead of guessing a field name.
+var gateArgKeys = map[string][]string{
+	"shell":         {"cmd"},
+	"docker":        {"subcommand"},
+	"apt":           {"action"},
+	"write_file":    {"path"},
+	"read_file":     {"path"},
+	"list_dir":      {"path"},
+	"edit_file":     {"path"},
+	"code_review":   {"path"},
+	"code_scaffold": {"template", "name"},
+	"skill_run":     {"skill", "script"},
+}
+
+// gateListKeys are list-valued arguments appended after the decisive key, so
+// `docker ps -a` and `apt install nginx` read as real command lines.
+var gateListKeys = map[string][]string{
+	"docker":    {"args"},
+	"apt":       {"packages"},
+	"skill_run": {"argv"},
+}
+
+// gateFallbackKeys are tried (in order) for a tool the UI does not know yet, so
+// a new tool still gets a readable gate instead of raw JSON.
+var gateFallbackKeys = []string{"cmd", "command", "path", "template", "action", "subcommand", "skill", "script", "name"}
+
+// gateSummaryFor renders the tool args as a compact one-line description.
+// Falls back to the raw args when nothing recognizable is found (never hides
+// the payload silently).
+func gateSummaryFor(tool, args string) string {
+	args = strings.TrimSpace(args)
+	if args == "" {
+		return ""
+	}
+	m := map[string]any{}
+	if !strings.HasPrefix(args, "{") || json.Unmarshal([]byte(args), &m) != nil {
+		return args
+	}
+	keys, known := gateArgKeys[tool]
+	if !known {
+		keys = gateFallbackKeys
+	}
+	parts := make([]string, 0, 4)
+	for _, k := range keys {
+		if s, ok := m[k].(string); ok && strings.TrimSpace(s) != "" {
+			parts = append(parts, s)
+		}
+	}
+	for _, k := range gateListKeys[tool] {
+		arr, ok := m[k].([]any)
+		if !ok || len(arr) == 0 {
+			continue
+		}
+		items := make([]string, 0, len(arr))
+		for _, it := range arr {
+			if s, ok := it.(string); ok {
+				items = append(items, s)
+			}
+		}
+		if len(items) > 0 {
+			parts = append(parts, strings.Join(items, " "))
+		}
+	}
+	if len(parts) == 0 {
+		return args // unrecognized shape: show it raw rather than hide it
+	}
+	return strings.Join(parts, " ")
+}
+
+// wrapText hard-wraps s to width cells, returning at most maxLines lines. The
+// last line is ellipsized when the text did not fit, so the operator can tell
+// the view was cut (never a silent truncation of what they are approving).
+func wrapText(s string, width, maxLines int) []string {
+	if width <= 0 {
+		width = 1
+	}
+	if maxLines <= 0 {
+		maxLines = 1
+	}
+	r := []rune(s)
+	lines := make([]string, 0, maxLines)
+	cut := false
+	for i := 0; i < len(r); i += width {
+		if len(lines) == maxLines {
+			cut = true
+			break
+		}
+		end := i + width
+		if end >= len(r) {
+			lines = append(lines, string(r[i:]))
+			break
+		}
+		lines = append(lines, string(r[i:end]))
+	}
+	if cut && len(lines) > 0 {
+		last := []rune(lines[len(lines)-1])
+		if len(last) > 0 {
+			lines[len(lines)-1] = string(last[:len(last)-1]) + "…"
+		}
+	}
+	return lines
+}
+
+// fixedRows is the number of screen rows the TUI reserves BELOW the two panels
+// (divider + prompt + 2 footer lines, plus one row each for an open gate dialog
+// and for the error banner). Single source of truth so the projection and the
+// scroll navigation agree on how tall the panels are.
+func fixedRows(gateOpen, banner bool) int {
+	n := 4 // divider + prompt + footer(2)
+	if gateOpen {
+		n++
+	}
+	if banner {
+		n++
+	}
+	return n
+}
+
 // centered returns a title segment of exactly `n` cells with `─` fill and the
 // title centered, e.g. centered("sessão", 14) → "─── sessão ─────".
 func centered(title string, n int) string {
@@ -363,8 +550,8 @@ func renderPanels(sess, act []string, sessOff, actOff, width, rows int, focus pa
 	lines := make([]string, 0, rows)
 	lines = append(lines, top)
 	for i := 0; i < visible; i++ {
-		sCell := runeCap(lineAt(sess, sessOff+i), sessBody)
-		aCell := runeCap(lineAt(act, actOff+i), actBody)
+		sCell := runeCap(sanitize(lineAt(sess, sessOff+i)), sessBody)
+		aCell := runeCap(sanitize(lineAt(act, actOff+i)), actBody)
 		lines = append(lines,
 			"│"+padRight(sCell, sessBody)+string(sBar[i])+"│"+
 				padRight(aCell, actBody)+string(aBar[i])+"│")
@@ -408,13 +595,9 @@ func buildView(v viewData) string {
 	if v.Height <= 0 {
 		v.Height = 30
 	}
-	// Fixed rows below the panels: divider(1) + prompt(1) + footer(2); the
-	// gate consumes one more row when a dialog is open.
-	extra := 4
-	if v.GateText != "" {
-		extra++
-	}
-	panelRows := v.Height - extra
+	// Fixed rows below the panels come from the shared budget (see fixedRows)
+	// so the drawn height and the scroll navigation never diverge.
+	panelRows := v.Height - fixedRows(len(v.GateLines) > 0, v.Banner != "")
 	if panelRows < 3 {
 		panelRows = 3 // top border + 1 content row + bottom border
 	}
@@ -429,8 +612,11 @@ func buildView(v viewData) string {
 		b.WriteString(l)
 	}
 	b.WriteString("\n" + strings.Repeat("─", v.Width))
-	if v.GateText != "" {
-		b.WriteString("\n" + v.GateText)
+	for _, l := range v.GateLines {
+		b.WriteString("\n" + l)
+	}
+	if v.Banner != "" {
+		b.WriteString("\n" + errOn + v.Banner + errOff)
 	}
 	b.WriteString("\n" + promptLine(v.Prompt, v.Cursor))
 	for _, l := range v.Footer {
