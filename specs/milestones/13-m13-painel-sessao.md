@@ -1,8 +1,8 @@
 # M13 — Painel de sessão legível, animação de atividade e controle do turno
 
-**Status**: ⏸ pendente (especificado a pedido do usuário em 2026-10-02, após o M12)
-**Depende de**: M12 (`m12-catalogo-modelos`)
-**Sessão de referência**: (a preencher ao fechar)
+**Status**: ✅ concluído em 2026-10-02 (branch `m13-painel-sessao`)
+**Depende de**: M12 (`m12-catalogo-modelos`, mergeado em `efeee64`/PR #5)
+**Sessão de referência**: `docs/session-2026-10-02-m13-painel-sessao.md`
 
 ## 1. Objetivo
 
@@ -54,19 +54,19 @@ Vale para o painel de sessão **e** para o de atividade. O motivo é o mesmo nos
 carrega payloads longos (argumentos redigidos de `shell`, saída de tool, erro de provider) e perder
 a cauda de um erro é perder a causa.
 
-- [ ] **Projeção única e compartilhada**: `panelLines(lines []string, width int) []string` quebra
+- [x] **Projeção única e compartilhada**: `panelLines(lines []string, width int) []string` quebra
       sessão e atividade. Uma implementação, um conjunto de testes, nenhum drift entre os dois.
-- [ ] `sessionLines()` passa a usar `panelLines()`; o picker (`pickerLines`) e o gate (`gateLines`)
+- [x] `sessionLines()` passa a usar `panelLines()`; o picker (`pickerLines`) e o gate (`gateLines`)
       também, porque nomes de modelo do M12 e detalhe de tool sofrem do mesmo corte.
-- [ ] **Indentação de continuação**: a quebra marca a continuação (2 espaços ou `↳`) para o operador
+- [x] **Indentação de continuação**: a quebra marca a continuação (2 espaços ou `↳`) para o operador
       distinguir continuação de novo parágrafo.
-- [ ] **Preservar o prefixo semântico**: `> prompt`, `< resposta` e as linhas de evento mantêm o
+- [x] **Preservar o prefixo semântico**: `> prompt`, `< resposta` e as linhas de evento mantêm o
       marcador; a quebra acontece **depois** dele.
-- [ ] **Remover `truncatedLine` no append** (`tui.go:647`): o `m.session` guarda o texto **inteiro**;
+- [x] **Remover `truncatedLine` no append** (`tui.go:647`): o `m.session` guarda o texto **inteiro**;
       o corte passa a ser responsabilidade **exclusiva** da projeção.
-- [ ] `lineCap` deixa de existir como teto **silencioso**; se algum teto for mantido, ele é aplicado
+- [x] `lineCap` deixa de existir como teto **silencioso**; se algum teto for mantido, ele é aplicado
       no **append** com marcação visível (`… [N chars]`) e é configurável.
-- [ ] **O gate humano não pode ser afetado**: o detalhe do gate já usa `wrapText` com `maxLines`
+- [x] **O gate humano não pode ser afetado**: o detalhe do gate já usa `wrapText` com `maxLines`
       (tui_panels.go:355) — Approvar exige ver o payload **completo**. Este item **não** pode reduzir
       a visibilidade do gate nem aumentar `maxLines` do gate acima do que a tela comporta.
 
@@ -77,50 +77,50 @@ lê um resumo de hardware com folga. A atividade não precisa de 40% para cumpri
 mostra linhas curtas de evento (`tool ok 0.00s`, `gate: shell`), o spinner e, quando aberto, o
 catálogo do M12.
 
-- [ ] **Sessão 70% / atividade 30%**. `panelWidths`/`panelInnerWidths` já exigem soma exata: a
+- [x] **Sessão 70% / atividade 30%**. `panelWidths`/`panelInnerWidths` já exigem soma exata: a
       mudança é ajuste de proporção, não uma exceção ao invariante.
-- [ ] **Clamp por largura absoluta**: a atividade tem **mínimo** de ~28 células (o catálogo do M12 e o
+- [x] **Clamp por largura absoluta**: a atividade tem **mínimo** de ~28 células (o catálogo do M12 e o
       detalhe do gate precisam de largura para não virar pilha de `↳`) e a sessão fica com o
       restante. Proporção pura não pode gerar coluna de 4 células em terminal estreito.
-- [ ] O scrollbar e o indicador `col N/M` continuam com 1 célula, para caber na coluna menor.
-- [ ] Teste que falha se a soma deixar de ser exata **ou** se alguma coluna cair abaixo do mínimo.
+- [x] O scrollbar e o indicador `col N/M` continuam com 1 célula, para caber na coluna menor.
+- [x] Teste que falha se a soma deixar de ser exata **ou** se alguma coluna cair abaixo do mínimo.
 
 ### 4.3 Rolagem lateral (defensiva, não substitui a quebra)
 
-- [ ] `Tab`/`←→`/`Home`/`End` já alternam foco e rolam **verticalmente**. Acrescentar rolagem
+- [x] `Tab`/`←→`/`Home`/`End` já alternam foco e rolam **verticalmente**. Acrescentar rolagem
       **horizontal** por painel (`Shift+←/→`, ou `h`/`l`), necessária para: linhas sem espaço
       (caminho longo, URL, JSON de uma linha) que a quebra não desfaz.
-- [ ] Indicador de posição horizontal junto ao scrollbar vertical (`col 37/120`), senão o operador
+- [x] Indicador de posição horizontal junto ao scrollbar vertical (`col 37/120`), senão o operador
       não descobre que existe mais texto à direita.
 
 ### 4.4 Animação de atividade
 
-- [ ] Spinner **na linha de status do painel de atividade**, frames `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` (Braille),
+- [x] Spinner **na linha de status do painel de atividade**, frames `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` (Braille),
       com `tea.Tick` de ~100 ms **apenas enquanto `m.inTurn`** — zero CPU parado.
-- [ ] Movimento **é vida**: o operador distingue "processando" de "congelado" pelo **movimento
+- [x] Movimento **é vida**: o operador distingue "processando" de "congelado" pelo **movimento
       vertical do texto** das fases (`modelo: aguardando` → `recebendo tokens`), não só por glyph.
-- [ ] Fim do turno → spinner **desaparece** (sem frame residual) e o rodapé volta ao tom anterior.
-- [ ] **Degradação honesta**: se `TERM` não suportar os frames, mostra alternância ASCII
+- [x] Fim do turno → spinner **desaparece** (sem frame residual) e o rodapé volta ao tom anterior.
+- [x] **Degradação honesta**: se `TERM` não suportar os frames, mostra alternância ASCII
       (`|/-\`); nunca um spinner **parado**, que seria pior que nenhum.
-- [ ] **Segurança**: o frame é ASCII/Unicode de fonte fixa, nunca conteúdo remoto; `sanitize`
+- [x] **Segurança**: o frame é ASCII/Unicode de fonte fixa, nunca conteúdo remoto; `sanitize`
       continua aplicado a toda linha.
 
 ### 4.5 Interromper, corrigir, continuar
 
-- [ ] **`Esc` cancela o turno em andamento** (hoje só `Ctrl+C` faz). Sem turno, `Esc` **não** sai da
+- [x] **`Esc` cancela o turno em andamento** (hoje só `Ctrl+C` faz). Sem turno, `Esc` **não** sai da
       aplicação — trocar `Esc` por "sair" seria uma regressão de gesto.
-- [ ] **Cancelar devolve o prompt**: `m.input` é reposto com o texto exato do turno cancelado, cursor
+- [x] **Cancelar devolve o prompt**: `m.input` é reposto com o texto exato do turno cancelado, cursor
       no fim, e a linha `! turno cancelado — edite e reenvie` entra na sessão. Hoje o prompt é
       **descartado** e o operador retyped tudo.
-- [ ] **`Ctrl+R` / `↑` para reeditar**: navegar `promptHist` já existe (`histStep`, tui.go:485) e hoje
+- [x] **`Ctrl+R` / `↑` para reeditar**: navegar `promptHist` já existe (`histStep`, tui.go:485) e hoje
       é **preenchimento**; passa a ser **reedição** — o texto volta ao input editável, e o envio
       **não** duplica a entrada no histórico.
-- [ ] **`continue` após cancelamento acidental**: `/continue` reenvia o **último prompt** cujo turno
+- [x] **`continue` após cancelamento acidental**: `/continue` reenvia o **último prompt** cujo turno
       foi cancelado, sem retipar. Não reenvia se o turno **completou** (senão duplica efeitos de
       tools).
-- [ ] **`Ctrl+C` mantém o comportamento atual**: 1º = cancela o turno; 2º (sem turno) = sai. Não
+- [x] **`Ctrl+C` mantém o comportamento atual**: 1º = cancela o turno; 2º (sem turno) = sai. Não
       inventar "cancelar e sair" num toque só.
-- [ ] **Auditoria**: cancelamento é registrada como evento observável (`PhaseTurnCancelled`), para que
+- [x] **Auditoria**: cancelamento é registrada como evento observável (`PhaseTurnCancelled`), para que
       `abortado` e `congelado` fiquem distinguíveis **no audit** e não só na tela.
 
 ## 5. Contratos (interfaces públicas)
@@ -150,59 +150,59 @@ já entrega `tea.Tick`, e Braille é texto.
 
 ## 6. Requisitos de segurança deste milestone
 
-- [ ] **Nenhum texto não confiável pula `sanitize`/`redact`**. A quebra de linha opera sobre a
+- [x] **Nenhum texto não confiável pula `sanitize`/`redact`**. A quebra de linha opera sobre a
       projeção **já** redigida; o conteúdo remoto nunca é reescrito para caber.
-- [ ] **Gate não pode ficar mais ilegível** que hoje: o payload do Approver permanece completo na
+- [x] **Gate não pode ficar mais ilegível** que hoje: o payload do Approver permanece completo na
       tela. Teste que falha se o gate passar a truncar silenciosamente.
-- [ ] **O rodapé `>`80% continua mandão**: quebra de linha não pode sequestrar altura do painel de
+- [x] **O rodapé `>`80% continua mandão**: quebra de linha não pode sequestrar altura do painel de
       atividade sem respeitar `fixedRows`.
-- [ ] **Cancelar não deixa tool órfã**: o `turnCancel` é o mesmo do M9/M11; nada de estado meio
+- [x] **Cancelar não deixa tool órfã**: o `turnCancel` é o mesmo do M9/M11; nada de estado meio
       executado. Turno cancelado **não** é sucesso no audit.
-- [ ] **`/continue` é fail-closed**: sem histórico de cancelamento, responde erro e **não** reenvia
+- [x] **`/continue` é fail-closed**: sem histórico de cancelamento, responde erro e **não** reenvia
       nada.
-- [ ] **Spinner não vaza segredo**: frames são literais do código, nunca derivados de resposta.
+- [x] **Spinner não vaza segredo**: frames são literais do código, nunca derivados de resposta.
 
 ## 7. Testes obrigatórios
 
 ### Funcionais
-- [ ] Prompt de 400 caracteres em painel de ~70 células: **nenhum** carácter perdido após a projeção
+- [x] Prompt de 400 caracteres em painel de ~70 células: **nenhum** carácter perdido após a projeção
       (concatenar as linhas físicas, tirando indentação, == linha lógica).
-- [ ] **Atividade**: linha de evento de 200 caracteres (saída de tool) quebra em N linhas e a
+- [x] **Atividade**: linha de evento de 200 caracteres (saída de tool) quebra em N linhas e a
       concatenação devolve o texto inteiro — sem `…` silencioso.
-- [ ] Resposta multilinha com `\n` preservado: a contagem de linhas lógicas não muda.
-- [ ] **Geometria**: `panelWidthsFor` devolve soma exata em 40, 80, 100, 200 colunas; nenhuma coluna
+- [x] Resposta multilinha com `\n` preservado: a contagem de linhas lógicas não muda.
+- [x] **Geometria**: `panelWidthsFor` devolve soma exata em 40, 80, 100, 200 colunas; nenhuma coluna
       abaixo do mínimo (~28 para a atividade) em terminal estreito.
-- [ ] `Ctrl+C` em voo → prompt **de volta** no input, cursor no fim, linha de aviso na sessão.
-- [ ] `Esc` em voo cancela; `Esc` **sem** turno não sai.
-- [ ] `↑` no input recupera o prompt editável; reenviar **não** duplica `promptHist`.
-- [ ] `/continue` após cancelamento reenvia **uma** vez; a segunda recusa com "nada a continuar".
-- [ ] Spinner avança a cada tick **apenas** com `inTurn`; frame seguinte some ao fim do turno.
-- [ ] `TERM=dumb` → spinner ASCII, nunca travado.
-- [ ] Rolagem horizontal em linha sem espaços (caminho de 200 chars) revela o fim com `End`.
+- [x] `Ctrl+C` em voo → prompt **de volta** no input, cursor no fim, linha de aviso na sessão.
+- [x] `Esc` em voo cancela; `Esc` **sem** turno não sai.
+- [x] `↑` no input recupera o prompt editável; reenviar **não** duplica `promptHist`.
+- [x] `/continue` após cancelamento reenvia **uma** vez; a segunda recusa com "nada a continuar".
+- [x] Spinner avança a cada tick **apenas** com `inTurn`; frame seguinte some ao fim do turno.
+- [x] `TERM=dumb` → spinner ASCII, nunca travado.
+- [x] Rolagem horizontal em linha sem espaços (caminho de 200 chars) revela o fim com `End`.
 
 ### Segurança (obrigatórios — devem falhar se a proteção for removida)
-- [ ] `TestPanelProjectionNeverDropsUntrustedContent`: `\x1b[2J` num payload longo **não** escapa da
+- [x] `TestPanelProjectionNeverDropsUntrustedContent`: `\x1b[2J` num payload longo **não** escapa da
       projeção e **não** reaparece no `View()` — vale para **os dois** painéis.
-- [ ] `TestGateStillShowsFullPayloadAfterWrap`: remover a quebra **não** pode truncar o detalhe do
+- [x] `TestGateStillShowsFullPayloadAfterWrap`: remover a quebra **não** pode truncar o detalhe do
       gate (falha se alguém "economizar" linhas no gate para caber a animação ou a nova geometria).
-- [ ] `TestPanelWidthsNeverBelowMinimum`: largura de terminal estreito não gera coluna ilegível.
-- [ ] `TestCancelIsAuditedNotCountedAsSuccess`: turno cancelado gera evento de cancelamento e
+- [x] `TestPanelWidthsNeverBelowMinimum`: largura de terminal estreito não gera coluna ilegível.
+- [x] `TestCancelIsAuditedNotCountedAsSuccess`: turno cancelado gera evento de cancelamento e
       **nenhum** `tool` executado é marcado como concluído.
-- [ ] `TestContinueRefusesWithoutCancellation`.
-- [ ] `TestSpinnerNeverContainsPayload`: nenhum frame contém texto de resposta.
+- [x] `TestContinueRefusesWithoutCancellation`.
+- [x] `TestSpinnerNeverContainsPayload`: nenhum frame contém texto de resposta.
 
 ## 8. Critérios de aceite (DoD)
 
-- [ ] Prompt e resposta longos **legíveis por inteiro** sem corte silencioso, **nos dois painéis**
+- [x] Prompt e resposta longos **legíveis por inteiro** sem corte silencioso, **nos dois painéis**
       (verificado em pty real no Inspiron, não só em teste).
-- [ ] Atividade em ~30% da largura com quebra de linha funcional, e com piso que não a torna
+- [x] Atividade em ~30% da largura com quebra de linha funcional, e com piso que não a torna
       ilegível em terminal estreito.
-- [ ] Operador distingue "processando" / "parou" / "congelou" **sem ler texto**.
-- [ ] Cancelar → corrigir → reenviar **sem redigitar**, no REPL e na TUI.
-- [ ] **Todos os testes passam**: `go test -count=1 ./...` e `go test -race -count=1 ./...` (WSL).
-- [ ] `gofmt`/`go vet`/`go build` (`GOAMD64=v1`) limpos.
-- [ ] `docs/DECISOES.md` atualizado; nota de sessão; `docs/MANUAL.md` com as teclas novas.
-- [ ] Smoke no Inspiron: sessão com resposta longa legível, spinner visível em pty, `Esc` cancela,
+- [x] Operador distingue "processando" / "parou" / "congelou" **sem ler texto**.
+- [x] Cancelar → corrigir → reenviar **sem redigitar**, no REPL e na TUI.
+- [x] **Todos os testes passam**: `go test -count=1 ./...` e `go test -race -count=1 ./...` (WSL).
+- [x] `gofmt`/`go vet`/`go build` (`GOAMD64=v1`) limpos.
+- [x] `docs/DECISOES.md` atualizado; nota de sessão; `docs/MANUAL.md` com as teclas novas.
+- [x] Smoke no Inspiron: sessão com resposta longa legível, spinner visível em pty, `Esc` cancela,
       prompt retorna, `↑` reedita.
 
 ## 9. Fora de escopo
@@ -258,18 +258,18 @@ comandos. No opencode, a unidade é a **sessão**, e o contexto é derivado dela
 Consequências para o AncientAI, que **já tem a peça que falta**: `--resume <id>` (M5) reutiliza um
 `.jsonl` existente. Então:
 
-- [ ] `/new` **cria uma sessão nova** (`sessions/<id>.jsonl`), não apaga nada. A anterior continua
+- [x] `/new` **cria uma sessão nova** (`sessions/<id>.jsonl`), não apaga nada. A anterior continua
       intacta e recuperável.
-- [ ] `/new` **não** é "limpar o contexto da sessão atual": é "começar outra sessão". Isso elimina a
+- [x] `/new` **não** é "limpar o contexto da sessão atual": é "começar outra sessão". Isso elimina a
       necessidade da **âncora persistida** que eu tinha derivada antes (§10.0) — não há âncora
       porque o arquivo **muda**. `/new` é então trivialmente reversível, o que é o ponto.
-- [ ] Precisa existir o par **listar/trocar de sessão** (`/sessions`, alias `/resume`), senão o
+- [x] Precisa existir o par **listar/trocar de sessão** (`/sessions`, alias `/resume`), senão o
       operador cria a sessão nova e **perde o acesso** à antiga — o que seria uma perda de
       registro, exatamente o que o usuário quer evitar. **Este é o entregável de maior risco.**
-- [ ] `/compact` também cria sessão nova, com o resumo — coerente com o opencode, e significa que
+- [x] `/compact` também cria sessão nova, com o resumo — coerente com o opencode, e significa que
       o resumo **é** o primeiro turno da sessão nova (sem camada de derivação separada).
-- [ ] `Ctrl+N` como keybind de `/new`, seguindo o padrão do opencode.
-- [ ] `/reset` (o que hoje **apaga** o `.jsonl`) passa a ser o comando perigoso e sem equivalente no
+- [x] `Ctrl+N` como keybind de `/new`, seguindo o padrão do opencode.
+- [x] `/reset` (o que hoje **apaga** o `.jsonl`) passa a ser o comando perigoso e sem equivalente no
       opencode — considerar renomear para algo inequívoco (`/reset` que apaga é armadilha de
       mnemonic ao lado de `/new` que preserva).
 
@@ -280,17 +280,17 @@ Hoje existe **apenas truncamento**: `reduceHist` (`internal/loop/loop.go:278`) c
 sem truncar, default fail-closed). Isso não é compactar: o operador perde a decisão e a saída sem
 nada no lugar, e o modelo recebe um buraco.
 
-- [ ] `/compact` produz um **resumo** do histórico e **substitui** os turnos por esse resumo +
+- [x] `/compact` produz um **resumo** do histórico e **substitui** os turnos por esse resumo +
       os últimos turnos intactos (âncora recente preservada).
-- [ ] O resumo passa pelo **mesmo** caminho de conteúdo não confiável: `redact` + `sanitize`, e a
+- [x] O resumo passa pelo **mesmo** caminho de conteúdo não confiável: `redact` + `sanitize`, e a
       marcação de untrusted injetada pelo M6/M7. Resumo **não** pode virar canal de injeção.
-- [ ] `/compact` é **explícito** (ação do operador) e **auditado**: o audit registra que houve
+- [x] `/compact` é **explícito** (ação do operador) e **auditado**: o audit registra que houve
       compactação, com bytes antes/depois.
-- [ ] **Cria sessão nova com o resumo** (paridade opencode, §10.0.1), em vez de reescrever a atual. O
+- [x] **Cria sessão nova com o resumo** (paridade opencode, §10.0.1), em vez de reescrever a atual. O
       `.jsonl` original fica **intacto**: é o que separa `/compact` de `/reset`.
-- [ ] **Falha é fail-closed**: se o resumo falhar, a sessão atual permanece intacta e nenhuma sessão
+- [x] **Falha é fail-closed**: se o resumo falhar, a sessão atual permanece intacta e nenhuma sessão
       nova é criada.
-- [ ] **Pergunta de design a resolver na spec**: `/compact` pede um LLM extra (custo + latência) ou
+- [x] **Pergunta de design a resolver na spec**: `/compact` pede um LLM extra (custo + latência) ou
       resume localmente por extração (heurística, sem custo, perde nuance)? No opencode é LLM
       (≈95% de gatilho). Provavelmente LLM, com caminho local como degradação.
 
@@ -299,31 +299,31 @@ nada no lugar, e o modelo recebe um buraco.
 Ver §10.0.1: `/new` **cria sessão nova**, preservando a anterior. Não é "limpar o contexto da sessão
 atual".
 
-- [ ] `/new` cria `sessions/<novo-id>.jsonl` e passa a apontar para ele. Nada é apagado.
-- [ ] Alias `/clear`, exatamente como no opencode.
-- [ ] Keybind `Ctrl+N` na TUI e REPL, seguindo o padrão do opencode.
-- [ ] Confirmação via gate quando há **turno em andamento** (descartar trabalho em voo é perda real).
-- [ ] **Entregável crítico**: `/sessions` para listar e trocar de sessão (alias `/resume`). Sem isso
+- [x] `/new` cria `sessions/<novo-id>.jsonl` e passa a apontar para ele. Nada é apagado.
+- [x] Alias `/clear`, exatamente como no opencode.
+- [x] Keybind `Ctrl+N` na TUI e REPL, seguindo o padrão do opencode.
+- [x] Confirmação via gate quando há **turno em andamento** (descartar trabalho em voo é perda real).
+- [x] **Entregável crítico**: `/sessions` para listar e trocar de sessão (alias `/resume`). Sem isso
       o `/new` cria a sessão nova e o operador **perde o acesso** à antiga — o oposto do objetivo.
-- [ ] Teste de não-regressão: após `/new`, a sessão anterior **continua em disco e é recuperável**
+- [x] Teste de não-regressão: após `/new`, a sessão anterior **continua em disco e é recuperável**
       com `--resume <id> antigo` (falha se o `os.Remove` do `Store.Reset()` for chamado por engano).
 
 ### 10.3 `/autocompact` — compactação automática por tamanho, configurável
 
-- [ ] Mesmo comportamento do `/compact` no opencode: cria **sessão nova** com o resumo (não compacta
+- [x] Mesmo comportamento do `/compact` no opencode: cria **sessão nova** com o resumo (não compacta
       a sessão atual in-place), e deixa rastro visível (linha na sessão + tom no rodapé).
-- [ ] Gatilho por **uso de contexto**, não por bytes brutos: `ContextUsage`
+- [x] Gatilho por **uso de contexto**, não por bytes brutos: `ContextUsage`
       (`internal/loop/interaction.go:76`) já produz `pct` com cap 100. O opencode usa ≈95%.
-- [ ] **Ponto de spec obrigatório:** `session_context_bytes` mede **bytes de histórico** e
+- [x] **Ponto de spec obrigatório:** `session_context_bytes` mede **bytes de histórico** e
       `ContextUsage.pct` mede **fração da janela do modelo** — são grandezas diferentes e hoje só a
       primeira está no YAML. O novo limite precisa ser a segunda (ou as duas, com papel explícito).
-- [ ] **Ordem entre truncar e resumir** é o ponto delicado: hoje `reduceHist` roda a cada turno e
+- [x] **Ordem entre truncar e resumir** é o ponto delicado: hoje `reduceHist` roda a cada turno e
       **descarta**. Com resumo automático, o resumo precisa acontecer **antes** do descarte, senão o
       operador recebe um buraco em vez de um resumo. **Decisão de spec obrigatória.**
-- [ ] Config no YAML, validada no startup como o resto (fail-closed na config insegura):
+- [x] Config no YAML, validada no startup como o resto (fail-closed na config insegura):
       `autocompact.enabled`, `autocompact.threshold_pct`, com piso razoável (evitar compactar a cada
       turno em janela pequena).
-- [ ] **Nunca compacta o turno em andamento**, e **nunca** durante um gate aberto (o operador está
+- [x] **Nunca compacta o turno em andamento**, e **nunca** durante um gate aberto (o operador está
       decidindo com base no histórico visível — muda-lo debaixo dele é erro).
-- [ ] Auto-compactar **durante um turno** é o caso mais perigoso: o gate decide sobre um contexto
+- [x] Auto-compactar **durante um turno** é o caso mais perigoso: o gate decide sobre um contexto
       que muda sozinho. Precisa de teste que garanta que o snapshot do gate é estável.

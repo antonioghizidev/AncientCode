@@ -191,18 +191,32 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `0.12.0-m12`. Host 17/17, WSL `-race` 17/17, `gofmt`/`vet` limpos, `GOAMD64=v1` ok. Smoke Inspiron:
   REPL e TUI listam/filtram/selecionam e um turno real responde com o modelo escolhido. Ver
   `docs/session-2026-10-01-m12-catalogo-modelos.md`.
-- **M12 mergeado** em `main` (`efeee64`, PR #5). **M13 em andamento** (branch
-  `m13-painel-sessao`, `specs/milestones/13-m13-painel-sessao.md`, pedido do usuário em 2026-10-02):
-  (1) **ambos os painéis cortam** prompt/resposta e evento de tool — causa raiz dupla: `runeCap` no
-  paint (`tui_panels.go:553`) **e** `truncatedLine`/`lineCap=90` no append (`tui.go:647`), que perde
-  texto **irreversivelmente**; entrega = `panelLines` compartilhado (quebra + continuação indentada)
-  e remoção do corte no append; (2) **geometria** — 60/40 → **70/30**, com piso de ~28 células para
-  a atividade (o `min=12` de `panelWidths` é curto para o catálogo do M12) e soma exata preservada;
-  (3) **animação** — spinner Braille via `tea.Tick` só enquanto `inTurn`, degradação ASCII honesta
-  (nunca spinner parado); (4) **interromper/corrigir/continuar** — `Esc` cancela em voo (hoje só
-  `Ctrl+C`), cancelar **devolve o prompt** ao input (hoje é descartado), `↑` reedita em vez de só
-  preencher, `/continue` reenvia o cancelado (fail-closed). Fora de escopo: `undo` completo de
-  prompts executados (repetiria efeitos de tools sem rollback) — fase própria.
+- **M13 concluído** (branch `m13-painel-sessao`) (D-2026-10-02-56..61): o painel de sessão
+  cortava prompt/resposta. **Causa dupla**: `runeCap` no paint (`tui_panels.go:553`) e
+  `truncatedLine`/`lineCap=90` **no append** (`tui.go:647`) — o texto morria antes de qualquer
+  projeção, então corrigir só o desenho não recuperava nada. Entregue: **`panelLines`** (projeção
+  única compartilhada por sessão/atividade/picker/gate, quebra por caractere + continuação
+  indentada), remoção do corte no append, **offset em linhas físicas** (com offset lógico uma
+  resposta de 40 linhas contava como uma e `↓` pulava a resposta inteira), geometria **70/30** com
+  **piso de 28 células** para a atividade (o `min=12` virava pilha de `↳`), rolagem horizontal
+  (`Shift+←/→`) com indicador `col N/M`, **spinner Braille** via `tea.Tick` só enquanto `inTurn`
+  (degradação ASCII; spinner parado seria pior que nenhum), **`Esc` cancela** e **devolve o prompt**
+  ao input, `/continue` reenvia o cancelado **avisando quais tools já rodaram** (opção escolhida
+  pelo usuário), `PhaseTurnCancelled` como estado terminal próprio. **Defeitos achados no caminho,
+  todos com teste**: (a) `View()` **mutava** `m.activity` — prefixava o spinner a cada frame (~10/s)
+  e destruía o log de eventos (D-57); (b) `sanitize` **comia o `\n`** (é C0) e colapsava saída
+  multilinha de tool numa linha só (D-58); (c) `handleRunes` **engolia `r`/`c`** quando havia banner
+  — "verifique" virava "veifique", no caminho de recuperação pós-erro/pós-cancel (D-61); (d) o gate
+  cortava o payload em 2 linhas **e** `fixedRows` reservava 1 linha para um diálogo de 3, empurrando
+  o prompt para fora da tela (D-60, defeito do M11); (e) rodapé fatiando **bytes** (UTF-8 partido);
+  (f) cancelamento pintado como **erro** vermelho. Versão `0.13.0-m13`. Host 17/17 (127 testes em
+  `cmd/ancientai`), WSL `-race` 17/17 (**sequencial por pacote**: em paralelo sobre `/mnt/d` o
+  pacote estoura o orçamento sem ser falha real), `gofmt`/`vet` limpos, `GOAMD64=v1` ok. Smoke
+  Inspiron: prompt de 152 caracteres em 3 linhas com continuação, spinner animando, `Esc` cancela e
+  devolve o prompt, gate aberto com input visível. **Não validado**: integridade bit-a-bit via
+  `--run` (cold start do NIM >600 s neste ambiente) e a camada 3 `/models --check` (dívida do M12).
+  Ver `docs/session-2026-10-02-m13-painel-sessao.md`.
+- **Próximo**: abrir PR `m13-painel-sessao` → `main`.
 - **Backlog anotado para a PRÓXIMA sessão de specs** (pedido do usuário em 2026-10-02; **não
   implementar no M13**, seção 10 da spec M13): **`/compact`**, **`/new`** e **`/autocompact`** —
   **paridade com o opencode** (decisão do usuário em 2026-10-02, medida em `dev.opencode.ai/docs/tui`

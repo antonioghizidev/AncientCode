@@ -20,6 +20,11 @@ const (
 	PhaseTurnOK
 	PhaseTurnError
 	PhaseProviderSwitch
+	// M13: the operator interrupted the turn. It is a distinct terminal phase,
+	// NOT a success: the turn ended without producing a final answer. Emitting it
+	// is what makes "aborted" distinguishable from "froze" in the audit trail and
+	// in any transport built later.
+	PhaseTurnCancelled
 )
 
 // phaseLabel maps a phase to the human-readable status text the TTY renderer
@@ -38,6 +43,8 @@ func (p Phase) Label() string {
 		return ""
 	case PhaseProviderSwitch:
 		return "provider trocado em tempo de execucao"
+	case PhaseTurnCancelled:
+		return "turno cancelado pelo operador"
 	case PhaseTurnError:
 		return ""
 	default:

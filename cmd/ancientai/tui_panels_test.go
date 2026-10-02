@@ -384,9 +384,11 @@ func TestPanelFrameFocusedTitleHighlighted(t *testing.T) {
 }
 
 func TestPanelWidthsKeepRatio(t *testing.T) {
+	// M13: 70/30 — the conversation needs the room; activity carries short event
+	// lines. The sum invariant is unchanged.
 	sess, act := panelWidths(100)
-	if sess != 60 || act != 40 {
-		t.Errorf("panelWidths(100) = %d,%d, want 60,40", sess, act)
+	if sess != 70 || act != 30 {
+		t.Errorf("panelWidths(100) = %d,%d, want 70,30", sess, act)
 	}
 	total := sess + act
 	if total != 100 {

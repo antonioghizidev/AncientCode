@@ -17,9 +17,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -52,6 +54,11 @@ func (r loopRunner) cont(ctx context.Context) (string, error) {
 const (
 	maxSessionLines  = 200 // session panel scrollback bound
 	maxActivityLines = 30  // activity panel scrollback bound
+	maxCancelled     = 20  // M13: how many cancelled turns /continue can resume
+
+	// M13 animation + navigation.
+	spinInterval = 100 * time.Millisecond // spinner tick while a turn runs
+	hscrollStep  = 8                      // cells per Shift+Left/Right
 )
 
 // turnResultMsg carries one finished turn back to Update (from the tea.Cmd).
@@ -59,6 +66,16 @@ type turnResultMsg struct {
 	out   string
 	err   error
 	retry bool
+}
+
+// spinTickMsg advances the activity spinner. M13: without a temporal signal the
+// operator cannot tell a working model from a frozen one.
+type spinTickMsg struct{}
+
+// spinTick schedules the next spinner frame. It is ONLY scheduled while a turn
+// is in flight, so an idle TUI does no repaint work at all.
+func spinTick() tea.Cmd {
+	return tea.Tick(spinInterval, func(time.Time) tea.Msg { return spinTickMsg{} })
 }
 
 // gateOpenMsg tells the model a gate dialog must be shown (bridged from
@@ -103,14 +120,41 @@ type tuiModel struct {
 	banner   string   // one error/info line
 	usage    loop.Usage
 
-	focus       panelID // viewport navigation target (M10)
-	sessionOff  int     // viewport top offset of the session panel
-	activityOff int     // viewport top offset of the activity panel
-	picker      *picker // M12: open model-selection panel (nil = closed)
+	// M13: physical (wrapped) projections. The logical slices above keep the
+	// text WHOLE; these are what the viewport scrolls over, so a long answer is
+	// readable row by row instead of jumping over in one keystroke.
+	sessionView  []string
+	activityView []string
+
+	focus       panelID         // viewport navigation target (M10)
+	sessionOff  int             // viewport top offset (PHYSICAL rows) of the session panel
+	activityOff int             // viewport top offset (PHYSICAL rows) of the activity panel
+	hoff        map[panelID]int // M13: horizontal scroll per panel (defensive)
+	picker      *picker         // M12: open model-selection panel (nil = closed)
 
 	inTurn     bool
-	turnCancel func() // canceled on Ctrl+C mid-turn
+	frame      int    // M13: spinner tick counter (advances only while inTurn)
+	asciiSpin  bool   // M13: no Braille in this terminal (ASCII degradation)
+	turnCancel func() // canceled on Ctrl+C or Esc mid-turn
 	dialog     *gateOpen
+
+	// M13: the prompt of the turn in flight, so cancelling can hand it back to
+	// the input instead of making the operator retype it.
+	flyingPrompt string
+	turnSeq      int      // identifies the turn in flight
+	cancelledSeq int      // turnSeq of the turn the operator interrupted
+	turnTools    []string // tools that already ran in the turn in flight (M13)
+	cancelled    []cancelInfo
+	lastCancel   string
+}
+
+// cancelInfo records a cancelled turn: the prompt to re-send and whether any
+// tool already ran. Re-sending after a tool executed REPEATS its effect, so the
+// operator is told which tools ran instead of being silently exposed to it
+// (spec M13 §4.5).
+type cancelInfo struct {
+	prompt string
+	tools  []string
 }
 
 func (m *tuiModel) resetPrompt() {
@@ -156,12 +200,22 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case agentEventMsg:
 		if line := activityFromEvent(msg.ev); line != "" {
-			prev := len(m.activity)
-			m.activity = append(m.activity, line)
-			m.activity = capLines(m.activity, maxActivityLines)
-			m.followActivityBottom(prev)
+			m.appendActivity(line)
+		}
+		// M13: remember which tools ran in the turn in flight, so a cancel can
+		// tell the operator what re-sending would repeat.
+		if msg.ev.Phase == loop.PhaseToolRunning && msg.ev.Tool != "" {
+			m.turnTools = append(m.turnTools, msg.ev.Tool)
 		}
 		m.refreshUsage()
+		return m, nil
+	case spinTickMsg:
+		// M13: the tick only exists while a turn is running; the tick that ends
+		// the turn is never scheduled, so nothing ticks while idle.
+		if m.inTurn {
+			m.frame++
+			return m, spinTick()
+		}
 		return m, nil
 	case pickerMsg:
 		return m, m.pickerFetched(msg)
@@ -174,21 +228,29 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case turnResultMsg:
 		m.inTurn = false
 		m.turnCancel = nil
+		// M13: a turn the operator interrupted comes back as an error
+		// (context canceled) — that is the EXPECTED outcome, not a failure.
+		// Painting it in red would tell the operator their deliberate action
+		// broke something.
+		wasCancelled := m.cancelledSeq == m.turnSeq && m.turnSeq != 0
+		m.turnSeq = 0
+		if wasCancelled {
+			if msg.err != nil && !errors.Is(msg.err, context.Canceled) {
+				m.appendSession("! erro: " + msg.err.Error())
+			}
+			return m, nil
+		}
 		if msg.err != nil {
 			// M11: an error that only flips the footer to "erro" is unreadable.
 			// It gets the banner AND a history line, so it survives scrolling.
 			m.banner = "erro: " + msg.err.Error()
-			prev := len(m.session)
-			m.session = append(m.session, "! erro: "+truncatedLine(msg.err.Error()))
-			m.session = capLines(m.session, maxSessionLines)
-			m.followSessionBottom(prev)
+			// M13: no truncation here. The error is kept whole and wrapped by the
+			// projection — the tail of an error IS the useful part.
+			m.appendSession("! erro: " + msg.err.Error())
 		} else {
 			m.banner = ""
-			prev := len(m.session)
-			m.session = append(m.session, "< "+redact.Redact(truncatedLine(msg.out)))
-			m.session = capLines(m.session, maxSessionLines)
+			m.appendSession("< " + redact.Redact(msg.out))
 			m.refreshUsage()
-			m.followSessionBottom(prev)
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -211,17 +273,30 @@ func (m *tuiModel) handleKey(k tea.KeyMsg) tea.Cmd {
 	switch k.Type {
 	case tea.KeyEnter:
 		return m.submit()
+	case tea.KeyEsc:
+		// M13: Esc interrupts the turn in flight. It does NOT quit — Ctrl+C is
+		// the quit gesture, and turning Esc into "exit" would be a regression of
+		// a key the operator already uses to back out of the picker.
+		if m.inTurn {
+			m.cancelTurn("Esc")
+			return nil
+		}
+		return nil
 	case tea.KeyCtrlC:
 		if m.inTurn {
-			if m.turnCancel != nil {
-				m.turnCancel()
-			}
-			m.inTurn = false
-			m.turnCancel = nil
-			m.banner = "turno cancelado (Ctrl+C)"
+			m.cancelTurn("Ctrl+C")
 			return nil
 		}
 		return tea.Quit
+	case tea.KeyShiftLeft:
+		// M13: Shift+Left/Right scroll the focused panel horizontally. Wrapping
+		// handles long prose, but a path or a one-line JSON has no break
+		// opportunity — without this its tail is unreachable.
+		m.hscroll(-1)
+		return nil
+	case tea.KeyShiftRight:
+		m.hscroll(+1)
+		return nil
 	case tea.KeyTab:
 		m.cycleFocus()
 		return nil
@@ -303,14 +378,177 @@ func (m *tuiModel) followBottom(off *int, total, prevTotal int) {
 	}
 }
 
+// sessBodyWidth / actBodyWidth are the usable cell counts inside each panel
+// frame: the inner width minus the scrollbar column. They are the wrap width
+// for panelLines.
+func (m *tuiModel) sessBodyWidth() int {
+	w := m.width
+	if w <= 0 {
+		w = 120
+	}
+	sessInner, _ := panelInnerWidths(w)
+	if n := sessInner - 1; n > 1 {
+		return n
+	}
+	return 1
+}
+
+func (m *tuiModel) actBodyWidth() int {
+	w := m.width
+	if w <= 0 {
+		w = 120
+	}
+	_, actInner := panelInnerWidths(w)
+	if n := actInner - 1; n > 1 {
+		return n
+	}
+	return 1
+}
+
+// cancelTurn interrupts the turn in flight (M13).
+//
+// It hands the prompt back to the input: before M13 the text was dropped on
+// submit, so the operator had to retype the whole thing to fix a route. It also
+// records which tools ALREADY ran, because re-sending the prompt repeats their
+// effects (`write_file`, `docker rm`) — the operator is told, not exposed to it.
+func (m *tuiModel) cancelTurn(by string) {
+	if m.turnCancel != nil {
+		m.turnCancel()
+	}
+	tools := append([]string(nil), m.turnTools...)
+	prompt := m.flyingPrompt
+	wasCancelled := m.turnSeq
+	m.inTurn = false
+	m.turnCancel = nil
+	m.flyingPrompt = ""
+	m.turnTools = nil
+	// Remember WHICH turn was interrupted: its result message arrives later and
+	// must not be reported as a failure.
+	m.cancelledSeq = wasCancelled
+
+	line := "! turno cancelado (" + by + ") — edite e reenvie"
+	if len(tools) > 0 {
+		line += " | tools que ja executaram: " + strings.Join(tools, ", ")
+	}
+	m.appendSession(line)
+	m.banner = "turno cancelado (" + by + ")"
+	if prompt != "" {
+		m.cancelled = append(m.cancelled, cancelInfo{prompt: prompt, tools: tools})
+		if len(m.cancelled) > maxCancelled {
+			m.cancelled = m.cancelled[len(m.cancelled)-maxCancelled:]
+		}
+		// Hand the prompt back for editing, caret at the end.
+		m.input = prompt
+		m.cursor = len([]rune(prompt))
+		m.histIdx = -1
+	}
+	m.syncViews()
+}
+
+// reSendCancelled is what /continue does: re-send the last cancelled prompt.
+// Fail-closed with nothing cancelled, and it consumes the entry so a second
+// /continue cannot repeat a turn (and its tool effects) twice.
+func (m *tuiModel) reSendCancelled() tea.Cmd {
+	if len(m.cancelled) == 0 {
+		m.banner = "erro: nada a continuar (nenhum turno foi cancelado)"
+		return nil
+	}
+	c := m.cancelled[len(m.cancelled)-1]
+	m.cancelled = m.cancelled[:len(m.cancelled)-1]
+	m.resetPrompt()
+	if len(c.tools) > 0 {
+		// Option chosen by the operator: warn, do not refuse. Re-sending is
+		// legitimate; doing it blind is not.
+		m.banner = "atencao: reenviando; ja executaram: " + strings.Join(c.tools, ", ")
+	} else {
+		m.banner = ""
+	}
+	m.input = c.prompt
+	return m.submit()
+}
+
+// hscroll moves the focused panel horizontally, clamped by hscrollRange.
+func (m *tuiModel) hscroll(dir int) {
+	p := m.focus
+	if p != panelSession && p != panelActivity {
+		return // the prompt owns the arrow keys: no horizontal scroll there
+	}
+	if m.hoff == nil {
+		m.hoff = map[panelID]int{}
+	}
+	step := dir * hscrollStep
+	m.hoff[p] += step
+	if m.hoff[p] < 0 {
+		m.hoff[p] = 0
+	}
+}
+
+// spinnerFrame returns the current spinner glyph, or 0 when no turn is running.
+func (m *tuiModel) spinnerFrame() rune {
+	if !m.inTurn {
+		return 0
+	}
+	return spinnerFrame(m.frame, m.asciiSpin)
+}
+
+// spinnerLine returns the spinner prefix for the activity panel status line, or
+// "" when idle. Empty when idle is deliberate: a stopped spinner would confirm
+// the freeze the operator is trying to rule out.
+func (m *tuiModel) spinnerLine() string {
+	f := m.spinnerFrame()
+	if f == 0 {
+		return ""
+	}
+	return string(f) + " "
+}
+
+// syncViews recomputes the PHYSICAL projections of both panels (M13).
+//
+// The logical lines are kept intact in m.session / m.activity — that is the
+// point: `truncatedLine` used to cut them at 90 runes ON APPEND, so the text was
+// gone before any projection ran and no fix in the paint could recover it.
+//
+// The viewport offsets count physical (wrapped) rows on purpose. With logical
+// offsets, a 40-row answer counts as ONE row: pressing ↓ would jump over it and
+// the operator could never read the middle — the very complaint the M13
+// milestone was opened for.
+func (m *tuiModel) syncViews() {
+	m.sessionView = panelLines(m.session, m.sessBodyWidth())
+	m.activityView = panelLines(m.activity, m.actBodyWidth())
+}
+
+// appendSession appends one logical line to the session and keeps the viewport
+// pinned to the bottom. The line is stored WHOLE (no cap): truncation is the
+// projection's job now.
+func (m *tuiModel) appendSession(line string) {
+	m.syncViews()
+	prev := len(m.sessionView)
+	m.session = append(m.session, line)
+	m.session = capLines(m.session, maxSessionLines)
+	m.syncViews()
+	m.followBottom(&m.sessionOff, len(m.sessionView), prev)
+}
+
+// appendActivity appends one logical line to the activity log, same contract.
+func (m *tuiModel) appendActivity(line string) {
+	m.syncViews()
+	prev := len(m.activityView)
+	m.activity = append(m.activity, line)
+	m.activity = capLines(m.activity, maxActivityLines)
+	m.syncViews()
+	m.followBottom(&m.activityOff, len(m.activityView), prev)
+}
+
 // followSessionBottom keeps the session viewport pinned to the newest line.
 func (m *tuiModel) followSessionBottom(prevTotal int) {
-	m.followBottom(&m.sessionOff, len(m.session), prevTotal)
+	m.syncViews()
+	m.followBottom(&m.sessionOff, len(m.sessionView), prevTotal)
 }
 
 // followActivityBottom keeps the activity viewport pinned to the newest event.
 func (m *tuiModel) followActivityBottom(prevTotal int) {
-	m.followBottom(&m.activityOff, len(m.activity), prevTotal)
+	m.syncViews()
+	m.followBottom(&m.activityOff, len(m.activityView), prevTotal)
 }
 
 // cycleFocus moves the viewport navigation focus between the two panels (M10).
@@ -331,12 +569,13 @@ func (m *tuiModel) cycleFocus() {
 // (+1 down, -1 up); reports true when the key was consumed by navigation
 // (never by the prompt editor).
 func (m *tuiModel) navigatePanel(delta int) bool {
+	m.syncViews()
 	switch m.focus {
 	case panelSession:
-		m.sessionOff = viewportFor(m.sessionOff, len(m.session), m.panelContentRows(), delta)
+		m.sessionOff = viewportFor(m.sessionOff, len(m.sessionView), m.panelContentRows(), delta)
 		return true
 	case panelActivity:
-		m.activityOff = viewportFor(m.activityOff, len(m.activity), m.panelContentRows(), delta)
+		m.activityOff = viewportFor(m.activityOff, len(m.activityView), m.panelContentRows(), delta)
 		return true
 	}
 	return false
@@ -352,6 +591,36 @@ func (m *tuiModel) scrollPanel(delta int) {
 func (m *tuiModel) panelToTop()    { m.navigatePanel(-(1 << 30)) }
 func (m *tuiModel) panelToBottom() { m.navigatePanel(+(1 << 30)) }
 
+// gateDetailMaxRows bounds how tall the approval dialog may grow. M13: the
+// detail used to be capped at TWO lines, which silently truncated the payload of
+// any long command — approving what you cannot read is not informed consent
+// (M11). The cap now exists only to keep the dialog on screen.
+const gateDetailMaxRows = 8
+
+// gateRowsFor returns how many detail rows the gate can spend: bounded by
+// gateDetailMaxRows AND by the height left over once the prompt, footer and a
+// usable panel strip are reserved. The dialog never crowds the input line out.
+func (m *tuiModel) gateRowsFor() int {
+	h := m.height
+	if h <= 0 {
+		h = 30
+	}
+	// fixedRows with no gate: divider + prompt + footer, plus the banner.
+	reserved := fixedRows(0, m.banner != "")
+	spare := h - reserved - minPanelRowsOnGate // minPanelRowsOnGate = 5
+	if spare < 1 {
+		return 1
+	}
+	if spare > gateDetailMaxRows {
+		return gateDetailMaxRows
+	}
+	return spare
+}
+
+// minPanelRowsOnGate is how many panel rows must survive when the gate is open:
+// enough to see the turn state and the pending event while deciding.
+const minPanelRowsOnGate = 5
+
 // gateLines renders the pending approval so the operator can read WHAT will run
 // before answering (M11). Approving a tool whose payload is hidden is not
 // informed consent — the command is the whole point of the gate.
@@ -365,7 +634,7 @@ func (m *tuiModel) gateLines() []string {
 	}
 	head := "[aprovar] " + m.dialog.Tool + " | y aprova, n nega, d nega sempre"
 	lines := []string{gateOn + head + gateOff}
-	for _, d := range gateDetail(m.dialog.Summary, width-2, 2) {
+	for _, d := range gateDetail(m.dialog.Summary, width-2, m.gateRowsFor()) {
 		lines = append(lines, "  "+d)
 	}
 	return lines
@@ -378,7 +647,7 @@ func (m *tuiModel) panelContentRows() int {
 	if h <= 0 {
 		h = 30
 	}
-	rows := h - fixedRows(m.dialog != nil, m.banner != "")
+	rows := h - fixedRows(len(m.gateLines()), m.banner != "")
 	if rows < 3 {
 		rows = 3
 	}
@@ -415,19 +684,32 @@ func (m *tuiModel) handleGateKey(k tea.KeyMsg) tea.Cmd {
 // ^C-ish clear affordances the spec maps (a banner error makes 'r' retry and
 // 'c' clear). Typing always returns the viewport focus to the prompt (the
 // scroll target and the keyboard are decoupled, M10).
+// handleRunes inserts typed text, with two single-letter shortcuts that only
+// apply when the input is EMPTY.
+//
+// M13: they used to fire whenever a banner was visible, which silently ate the
+// operator's typing. "verifique" became "veifique" because the 'r' started a
+// retry. The banner is exactly what is on screen after an error or a cancel —
+// so the bug hit the most common recovery path: fix the prompt and resend.
+// A shortcut that eats letters is worse than no shortcut.
 func (m *tuiModel) handleRunes(rs []rune) tea.Cmd {
-	if len(rs) == 1 {
+	if len(rs) == 1 && m.input == "" {
 		switch rs[0] {
 		case 'r', 'R':
 			if m.banner != "" {
 				m.banner = ""
 				m.inTurn = true
+				m.frame = 0
+				m.turnSeq++
+				m.flyingPrompt = ""
 				ctx, cancel := context.WithCancel(context.Background())
 				m.turnCancel = cancel
-				return func() tea.Msg {
-					out, err := m.runner.cont(ctx)
+				m.turnTools = nil
+				cont := m.runner.cont
+				return tea.Batch(func() tea.Msg {
+					out, err := cont(ctx)
 					return turnResultMsg{out: out, err: err, retry: true}
-				}
+				}, spinTick())
 			}
 		case 'c', 'C':
 			if m.banner != "" {
@@ -536,20 +818,24 @@ func (m *tuiModel) submit() tea.Cmd {
 		m.resetPrompt()
 		return m.handleCommand(raw, cmd)
 	}
-	prev := len(m.session)
-	m.session = append(m.session, "> "+redact.Redact(strings.TrimSpace(line)))
-	m.session = capLines(m.session, maxSessionLines)
-	m.followSessionBottom(prev) // keep the submitted prompt visible
+	// M13: the prompt is stored WHOLE (no 90-rune cap). The panel wraps it.
+	m.appendSession("> " + redact.Redact(strings.TrimSpace(line)))
 	m.promptHist = append(m.promptHist, redact.Redact(line))
 	prompt := line
 	m.resetPrompt()
 	m.inTurn = true
+	m.frame = 0
+	m.turnSeq++
+	m.flyingPrompt = prompt
 	ctx, cancel := context.WithCancel(context.Background())
 	m.turnCancel = cancel
-	return func() tea.Msg {
+	m.turnTools = nil
+	run := func() tea.Msg {
 		out, err := m.runner.run(ctx, prompt)
 		return turnResultMsg{out: out, err: err}
 	}
+	// M13: the spinner starts with the turn and dies with it.
+	return tea.Batch(run, spinTick())
 }
 
 // handleCommand executes a slash-command using the SAME classifier the REPL
@@ -560,33 +846,33 @@ func (m *tuiModel) handleCommand(raw string, cmd command) tea.Cmd {
 	case cmdExit:
 		return tea.Quit
 	case cmdHelp:
-		m.session = append(m.session, redact.Redact(helpText))
+		m.appendSession(redact.Redact(helpText))
 	case cmdReset:
 		m.session = nil
-		m.session = append(m.session, "session (painel) resetado")
+		m.appendSession("session (painel) resetado")
 	case cmdHistory:
 		if m.agent != nil {
 			for i, p := range m.agent.PromptList() {
-				m.session = append(m.session, secLine(i+1, p))
+				m.appendSession(secLine(i+1, p))
 			}
 		} else {
-			m.session = append(m.session, "historico indisponivel")
+			m.appendSession("historico indisponivel")
 		}
 	case cmdModels:
 		return m.openPicker(cmd.opts)
 	case cmdContext:
 		m.refreshUsage()
 		if m.usage.Pct < 0 {
-			m.session = append(m.session, "ctx: off ("+itoa(m.usage.SentBytes)+" bytes)")
+			m.appendSession("ctx: off (" + itoa(m.usage.SentBytes) + " bytes)")
 		} else {
-			m.session = append(m.session, "ctx: "+itoa(m.usage.Pct)+"% ("+itoa(m.usage.SentBytes)+"/"+itoa(m.usage.Budget)+" bytes)")
+			m.appendSession("ctx: " + itoa(m.usage.Pct) + "% (" + itoa(m.usage.SentBytes) + "/" + itoa(m.usage.Budget) + " bytes)")
 		}
 	case cmdModel:
 		if cmd.arg == "" {
 			if m.agent != nil {
 				m.model = m.agent.CurrentModel()
 			}
-			m.session = append(m.session, "model: "+m.model)
+			m.appendSession("model: " + m.model)
 		} else if m.agent != nil {
 			// Async for the same reason as the picker (M12): a synchronous
 			// switch emits an event and deadlocks on tea.Program.Send.
@@ -597,19 +883,29 @@ func (m *tuiModel) handleCommand(raw string, cmd command) tea.Cmd {
 			if m.agent != nil {
 				m.provider = m.agent.CurrentProviderBaseURL()
 			}
-			m.session = append(m.session, "provider base_url: "+m.provider)
+			m.appendSession("provider base_url: " + m.provider)
 		} else if m.agent != nil {
 			return switchProviderCmd(m.agent, cmd.arg)
 		}
-	case cmdRetry, cmdContinue:
+	case cmdContinue:
+		// M13: /continue re-sends the last CANCELLED turn. A plain /continue
+		// after a completed turn is the existing "retry from history" behaviour,
+		// so the cancelled case is only handled when there is one.
+		if len(m.cancelled) > 0 {
+			return m.reSendCancelled()
+		}
 		m.banner = ""
 		m.inTurn = true
+		m.frame = 0
+		m.turnSeq++
 		ctx, cancel := context.WithCancel(context.Background())
 		m.turnCancel = cancel
-		return func() tea.Msg {
-			out, err := m.runner.cont(ctx)
+		cont := m.runner.cont
+		return tea.Batch(func() tea.Msg {
+			out, err := cont(ctx)
 			return turnResultMsg{out: out, err: err, retry: true}
-		}
+		}, spinTick())
+	case cmdRetry:
 	case cmdResend:
 		if cmd.index <= 0 || m.agent == nil {
 			m.banner = "erro: sem prompt !" + itoa(cmd.index) + " (historico vazio)"
@@ -620,34 +916,29 @@ func (m *tuiModel) handleCommand(raw string, cmd command) tea.Cmd {
 			m.banner = "erro: sem prompt !" + itoa(cmd.index)
 			return nil
 		}
-		m.session = append(m.session, "> "+p)
+		m.appendSession("> " + p)
 		m.promptHist = append(m.promptHist, p)
 		m.resetPrompt()
 		m.inTurn = true
+		m.frame = 0
+		m.turnSeq++
+		m.flyingPrompt = p
 		ctx, cancel := context.WithCancel(context.Background())
 		m.turnCancel = cancel
+		m.turnTools = nil
 		pline := p
 		return func() tea.Msg {
 			out, err := m.runner.run(ctx, pline)
 			return turnResultMsg{out: out, err: err}
 		}
 	}
-	m.session = capLines(m.session, maxSessionLines)
+	m.syncViews()
 	return nil
 }
 
 // secLine renders a numbered history/session helper line.
 func secLine(i int, s string) string {
 	return itoa(i) + ": " + s
-}
-
-// truncatedLine caps one output line to the session panel bound.
-func truncatedLine(s string) string {
-	r := []rune(s)
-	if len(r) > lineCap {
-		return string(r[:lineCap-1]) + "\u2026"
-	}
-	return s
 }
 
 // View renders the whole TUI screen against the model state (spec 09 layout:
@@ -669,19 +960,32 @@ func (m *tuiModel) View() string {
 		// the line leaves the model.
 		redacted[i] = sanitize(redact.Redact(l))
 	}
+	// M13: redact/sanitize happens BEFORE the wrap, so a remote escape sequence
+	// can never shift the column arithmetic of the projection.
 	act := capLines(m.activity, maxActivityLines)
 	// M12: the picker replaces the activity panel while open — it is a distinct
 	// task with its own keyboard, so mixing a choice list into the event log
 	// would make both harder to read. The activity viewport must also reset:
 	// a stale offset would open the picker scrolled past its first rows,
 	// hiding the highlighted entry and the filter line.
-	if m.picker != nil {
+	switch {
+	case m.picker != nil:
 		act = pickerLines(m.picker)
 		m.activityOff = 0
+	default:
+		if spin := strings.TrimSpace(m.spinnerLine()); spin != "" {
+			// M13: the animated status line. Humans read motion as "work in
+			// progress"; a static panel cannot distinguish a running model from a
+			// frozen one. It is a LOCAL display list — writing it back to
+			// m.activity would prepend one line per rendered frame (~10/s) and
+			// push the real event log out of the panel.
+			act = append([]string{spin + " processando… (Esc cancela)"}, act...)
+		}
 	}
+	m.syncViews()
 	return buildView(viewData{
-		Session:     redacted,
-		Activity:    act,
+		Session:     panelLines(redacted, m.sessBodyWidth()),
+		Activity:    panelLines(act, m.actBodyWidth()),
 		Prompt:      m.input,
 		Cursor:      m.cursor,
 		Footer:      buildFooter(info),
@@ -690,6 +994,8 @@ func (m *tuiModel) View() string {
 		Focus:       m.focus,
 		SessionOff:  m.sessionOff,
 		ActivityOff: m.activityOff,
+		SessHOff:    m.hoff[panelSession],
+		ActHOff:     m.hoff[panelActivity],
 		GateLines:   m.gateLines(),
 		Banner:      sanitize(m.banner),
 	})
@@ -721,6 +1027,11 @@ func runTUI(agent *loop.Loop, gate *tuiGate, cfg *config.Config, version, sessio
 		activity:    []string{},
 		session:     []string{},
 		usage:       agent.ContextUsage(),
+		// M13: honest degradation. A terminal without Braille gets the ASCII
+		// cycle, which still MOVES. A frozen spinner would be worse than none:
+		// it would confirm the freeze the operator is trying to rule out.
+		asciiSpin: !termSupportsBraille(),
+		hoff:      map[panelID]int{},
 	}
 	m.resetPrompt()
 	if m.provider == "" {
