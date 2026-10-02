@@ -171,8 +171,28 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `shell` estava inutilizável (schema `cmd` vs struct `json:"n"`). **Era falso** — vi a saída
   corrompida do `rg -r` (flag de *replace*) e a tratei como conteúdo do arquivo. Schema, struct e
   mensagem de erro usam `cmd` consistentemente. Nenhum trabalho pendente daí; não levar adiante.
-- **Próximo**: **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) — reusa o
-  contrato M8/M11, sem tocar em `internal/loop`; **agendamento depende do usuário**.
+- **M12 concluído (branch `m12-catalogo-modelos`)** (D-2026-10-01-53/54/55): faltava **listar os
+  modelos do provedor e escolher um**. Medido no Inspiron: NIM 81 modelos devolvendo só
+  `id`/`object`/`owned_by`; OpenRouter 464 com `architecture`/`pricing`/`supported_parameters` —
+  logo a mesma filtragem tem fidelidades diferentes. **Três camadas** (D-53): (1) grátis, exclusão
+  de famílias não-chat por nome; (2) grátis quando existe, metadados do provedor; (3) sob demanda,
+  `--check` com request real de tool calling (pede confirmação, gasta tokens). `ToolSupport` é
+  **tri-estado**: ausência de metadado vira `?`, nunca "sim" — evita oferecer modelo sem tool
+  calling em silêncio. `--free` só onde há preço: **OpenRouter sim, NIM não** (a UI declara a
+  indisponibilidade). Camadas: `internal/provider` (`ListModels`, leitura limitada, chave nunca em
+  erro) + `internal/catalog` (predicados puros) + `internal/loop` (`ListModels`/`SelectModel`,
+  fail-closed). REPL: `/models [--free|--all|--check|texto]` numerado + `/model <N>`. TUI: `/models`
+  abre **painel dedicado** (digitar filtra, `↑↓` move, `Enter` seleciona, `Esc` cancela, `Ctrl+F`
+  alterna gratuitos). **Defeitos achados no smoke e corrigidos**: (a) **deadlock que travava a TUI**
+  — `SwitchModel` dentro de `Update` → `emit` → observer → `tea.Program.Send` bloqueia a event loop
+  (D-54; `/model` e `/provider` tinham o bug latente desde o M8/M9; agora tudo via `tea.Cmd`); (b)
+  comando não limpava a linha de input (`> /modelsoi`, D-55, bug do M8/M9); (c) painel substituído
+  herdava offset de rolagem; (d) "nenhum modelo corresponde" mentindo durante o fetch. Versão
+  `0.12.0-m12`. Host 17/17, WSL `-race` 17/17, `gofmt`/`vet` limpos, `GOAMD64=v1` ok. Smoke Inspiron:
+  REPL e TUI listam/filtram/selecionam e um turno real responde com o modelo escolhido. Ver
+  `docs/session-2026-10-01-m12-catalogo-modelos.md`.
+- **Próximo**: abrir PR `m12-catalogo-modelos` → `main`. **Backlog Web** (SSE + shell-HTTP +
+  `Approver` por canal + auth/TLS/CSRF) — reusa o contrato M8/M12; **agendamento depende do usuário**.
 
 ## Como trabalhar (resumo da metodologia)
 

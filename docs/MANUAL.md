@@ -82,6 +82,8 @@ executar? [y/N, d = negar sempre] y
 | `/retry` `/continue` | reexecuta a última linha (retry) ou pede continuação |
 | `/model` | mostra o modelo atual |
 | `/model <nome>` | troca o modelo **só nesta sessão** (não grava no yaml) |
+| `/model <N>` | escolhe o **Nº da última listagem** do `/models` |
+| `/models [filtro]` | lista os modelos do provedor (ver §3.1) |
 | `/provider` | mostra a base URL e as opções disponíveis |
 | `/provider <nome>` | troca de provedor nesta sessão (ex.: `openrouter`) |
 | `/context` | mostra uso de contexto: `ctx: 12% (3400/28000 bytes)`; `off` se `session_context_bytes=0` |
@@ -219,6 +221,80 @@ Digitar qualquer tecla ou `c` limpa o banner; o histórico permanece.
 > controle ANSI na tela. Caracteres de controle (inclusive ESC) são removidos antes de desenhar —
 > caso contrário um `\x1b[2J` no retorno de uma tool poderia apagar o próprio gate e torná-lo
 > inconfiável. Segredos são mascarados antes disso.
+
+## 3.1 Escolher o modelo (`/models`)
+
+O provedor expõe um catálogo (`GET {base_url}/models`). O critério de "funciona aqui" é mais
+estreito que "é um modelo de chat": o agente precisa de um modelo que emita **tool calls**.
+
+### No REPL
+
+```
+> /models
+*   1. nvidia/nemotron-3.5-lightning-30b-a3b  [?, tools?]      <- * = modelo ativo
+    2. meta/llama-3.1-8b-instruct  [chat, tools?]
+    3. deepseek/deepseek-chat  [chat, tools, free, ctx 64000]
+    4. nvidia/nv-embedqa-e5-v5  [embedding, tools?]            <- escondido, use --all
+  66 de 81 visiveis | 0 gratuitos | 0 sem tool calling confirmado | 15 nao-chat ocultos
+  selecione com /model <numero>
+```
+
+| Filtro | Efeito |
+|---|---|
+| `/models` | só o que pode servir de agente (oculta embedding/rerank/guard/vision/…) |
+| `/models llama` | busca por substring no id, no nome **ou na família** |
+| `/models --all` | inclui as famílias não-chat (útil para diagnóstico) |
+| `/models --free` | só modelos com preço zero — **só onde o provedor informa preço** |
+| `/models --check` | verificação real: 1 requisição por modelo candidato (gasta tokens; pede confirmação) |
+
+Depois, escolha pela posição:
+
+```
+> /model 3
+model: deepseek/deepseek-chat (vale nesta sessao — nao persiste no yaml)
+```
+
+Índice fora da lista é recusado e **nada é trocado**: `erro: indice 9999 fora da lista (66 modelos)`.
+
+### Na TUI
+
+`/models` abre um **painel dedicado** com busca embutida:
+
+```
+┌──────────────────────────sessão──────────────────────────┬── atividade ────────┐
+│  catalogo: 81 modelos no provedor, 66 uteis para este age │  filtrando: nemot    │
+│                                                            │  > * 1. nvidia/nemot…│
+│                                                            │    2. nvidia/llama-3…│
+│                                                            │    3. nvidia/nemotro…│
+│                                                            │  1 de 81 visiveis |…│
+│                                                            │  Enter seleciona …   │
+└────────────────────────────────────────────────────────────┴─────────────────────┘
+```
+
+| Tecla | Efeito |
+|---|---|
+| qualquer caractere | filtra a lista ao vivo |
+| `Backspace` | apaga um caractere da busca |
+| `↑` `↓` `PgUp` `PgDown` `Home` `End` | move o destaque |
+| `Enter` | troca para o modelo destacado |
+| `Esc` / `Ctrl+C` | cancela sem trocar |
+| `Ctrl+F` | alterna "só gratuitos" |
+
+### O que os rótulos significam
+
+| Rótulo | Significado |
+|---|---|
+| `chat`, `?` | família reconhecida / **não reconhecida** (nada é inventado) |
+| `tools?` | o provedor **não informa** se suporta tool calling (caso do NIM) |
+| `tools` / `sem tools` | o provedor **declarou** suporte (ou ausência) |
+| `free` | preço zero declarado pelo provedor |
+| `ctx 128000` | tamanho de contexto, quando informado |
+| `verificado` | passou no `--check` (request real com tool calling) |
+
+> **Fidelidade depende do provedor.** O OpenRouter publica capacidades e preço, então a lista é
+> precisa e `--free` funciona. O **NVIDIA NIM publica apenas o id**: por isso os rótulos aparecem
+> como `tools?` e a UI avisa `provedor nao informa preco: filtro --free indisponivel aqui` em vez
+> de mostrar uma lista vazia. Nada é suposto — quando não se sabe, aparece `?`.
 
 ## 4. Auditoria e limpeza
 

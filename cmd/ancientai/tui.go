@@ -106,6 +106,7 @@ type tuiModel struct {
 	focus       panelID // viewport navigation target (M10)
 	sessionOff  int     // viewport top offset of the session panel
 	activityOff int     // viewport top offset of the activity panel
+	picker      *picker // M12: open model-selection panel (nil = closed)
 
 	inTurn     bool
 	turnCancel func() // canceled on Ctrl+C mid-turn
@@ -162,6 +163,14 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refreshUsage()
 		return m, nil
+	case pickerMsg:
+		return m, m.pickerFetched(msg)
+	case modelSwitchedMsg:
+		m.applyModelSwitch(msg)
+		return m, nil
+	case providerSwitchedMsg:
+		m.applyProviderSwitch(msg)
+		return m, nil
 	case turnResultMsg:
 		m.inTurn = false
 		m.turnCancel = nil
@@ -189,11 +198,15 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // handleKey routes one key event. When a gate dialog is open only y/n/d (or
-// Ctrl+C = n) are meaningful; everything else is routed to editing/navigation
-// as the M10 keymap requires.
+// Ctrl+C = n) are meaningful; when the model picker is open it owns the
+// keyboard; everything else is routed to editing/navigation as the M10 keymap
+// requires.
 func (m *tuiModel) handleKey(k tea.KeyMsg) tea.Cmd {
 	if m.dialog != nil {
 		return m.handleGateKey(k)
+	}
+	if m.picker != nil {
+		return m.handlePickerKey(k)
 	}
 	switch k.Type {
 	case tea.KeyEnter:
@@ -515,7 +528,13 @@ func (m *tuiModel) submit() tea.Cmd {
 		return nil
 	}
 	if cmd, isCmd := parseCommand(m.input); isCmd {
-		return m.handleCommand(m.input, cmd)
+		// The command consumed the line: clear the input. Without this the
+		// command text stayed in the prompt and the next thing typed was
+		// appended to it ("/modelsoi"), because commands returned before the
+		// reset below — invisible in the REPL, obvious in the TUI.
+		raw := m.input
+		m.resetPrompt()
+		return m.handleCommand(raw, cmd)
 	}
 	prev := len(m.session)
 	m.session = append(m.session, "> "+redact.Redact(strings.TrimSpace(line)))
@@ -553,6 +572,8 @@ func (m *tuiModel) handleCommand(raw string, cmd command) tea.Cmd {
 		} else {
 			m.session = append(m.session, "historico indisponivel")
 		}
+	case cmdModels:
+		return m.openPicker(cmd.opts)
 	case cmdContext:
 		m.refreshUsage()
 		if m.usage.Pct < 0 {
@@ -567,12 +588,9 @@ func (m *tuiModel) handleCommand(raw string, cmd command) tea.Cmd {
 			}
 			m.session = append(m.session, "model: "+m.model)
 		} else if m.agent != nil {
-			if err := m.agent.SwitchModel(cmd.arg); err != nil {
-				m.banner = "erro: " + err.Error()
-			} else {
-				m.model = m.agent.CurrentModel()
-				m.session = append(m.session, "model: "+m.model+" (vale nesta sessao)")
-			}
+			// Async for the same reason as the picker (M12): a synchronous
+			// switch emits an event and deadlocks on tea.Program.Send.
+			return switchModelCmd(m.agent, cmd.arg)
 		}
 	case cmdProvider:
 		if cmd.arg == "" {
@@ -581,12 +599,7 @@ func (m *tuiModel) handleCommand(raw string, cmd command) tea.Cmd {
 			}
 			m.session = append(m.session, "provider base_url: "+m.provider)
 		} else if m.agent != nil {
-			if err := m.agent.SwitchProvider(cmd.arg); err != nil {
-				m.banner = "erro: " + err.Error()
-			} else {
-				m.provider = m.agent.CurrentProviderBaseURL()
-				m.session = append(m.session, "provider: "+strings.ToLower(strings.TrimSpace(cmd.arg))+" ativo (vale nesta sessao)")
-			}
+			return switchProviderCmd(m.agent, cmd.arg)
 		}
 	case cmdRetry, cmdContinue:
 		m.banner = ""
@@ -657,6 +670,15 @@ func (m *tuiModel) View() string {
 		redacted[i] = sanitize(redact.Redact(l))
 	}
 	act := capLines(m.activity, maxActivityLines)
+	// M12: the picker replaces the activity panel while open — it is a distinct
+	// task with its own keyboard, so mixing a choice list into the event log
+	// would make both harder to read. The activity viewport must also reset:
+	// a stale offset would open the picker scrolled past its first rows,
+	// hiding the highlighted entry and the filter line.
+	if m.picker != nil {
+		act = pickerLines(m.picker)
+		m.activityOff = 0
+	}
 	return buildView(viewData{
 		Session:     redacted,
 		Activity:    act,

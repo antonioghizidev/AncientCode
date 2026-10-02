@@ -21,16 +21,26 @@ const (
 	cmdResend  // !N
 	cmdRetry   // /retry
 	cmdContinue
-	cmdModel    // /model [nome]
+	cmdModel    // /model [nome|N]
 	cmdProvider // /provider [nome]
 	cmdContext  // /context
+	cmdModels   // /models [--free|--all|--check|texto]
 )
+
+// catalogOpts are the /models filters (M12, D-2026-10-01-53).
+type catalogOpts struct {
+	free           bool
+	includeNonChat bool
+	check          bool
+	query          string
+}
 
 // command is the parsed form of one REPL line.
 type command struct {
 	kind  cmdKind
 	arg   string // /model X, /provider Y
 	index int    // !N → 1-based prompt index
+	opts  catalogOpts
 }
 
 // parseCommand interprets a single trimmed REPL line. Plain text returns
@@ -62,6 +72,8 @@ func parseCommand(line string) (command, bool) {
 		return command{kind: cmdContext}, true
 	case "/model":
 		return command{kind: cmdModel, arg: rest}, true
+	case "/models":
+		return command{kind: cmdModels, opts: parseCatalogOpts(rest)}, true
 	case "/provider":
 		return command{kind: cmdProvider, arg: rest}, true
 	}
@@ -86,10 +98,35 @@ func parseCommand(line string) (command, bool) {
 	return command{}, false
 }
 
+// parseCatalogOpts reads /models flags. Unrecognized tokens are treated as the
+// search query, so "/models llama" just searches — a filter can never fail
+// silently into an empty list because of a typo.
+func parseCatalogOpts(rest string) catalogOpts {
+	var o catalogOpts
+	for _, tok := range strings.Fields(rest) {
+		switch strings.ToLower(tok) {
+		case "--free":
+			o.free = true
+		case "--all":
+			o.includeNonChat = true
+		case "--check":
+			o.check = true
+		default:
+			if o.query == "" {
+				o.query = tok
+			} else {
+				o.query += " " + tok
+			}
+		}
+	}
+	return o
+}
+
 // isPrompt reports whether a parsed line should be treated as a normal prompt
 // (no command semantics).
 func (c command) isPrompt() bool { return c.kind == cmdNone }
 
 // helpText lists the REPL commands (shared by /help and banner).
 const helpText = "comandos: /exit /quit /reset /help /historico (!N repete) /retry /continue " +
-	"/model [nome] /provider [nome] /context | no plano: y aprova e executa, feedback:<msg> replaneja"
+	"/model [nome|N] /models [--free|--all|--check|texto] /provider [nome] /context | " +
+	"no plano: y aprova e executa, feedback:<msg> replaneja"
