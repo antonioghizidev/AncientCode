@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"ancientai/internal/audit"
+	"ancientai/internal/catalog"
 	"ancientai/internal/config"
 	"ancientai/internal/loop"
 	"ancientai/internal/model"
@@ -67,7 +68,7 @@ var skillFlags []string
 // would abort before the provider itself gives up.
 const turnTimeout = 5 * time.Minute
 
-const version = "0.11.0-m11"
+const version = "0.12.0-m12"
 
 // terminalApprover is the human gate (SPEC §5.6.6). It shows the exact command
 // before deciding. Answering "d" registers a veto for the tool: from then on
@@ -433,6 +434,10 @@ func main() {
 
 	ctx := context.Background()
 
+	// M12: the entries shown by the last /models, so "/model <N>" resolves the
+	// number the operator actually saw.
+	var lastCatalog []catalog.Entry
+
 	// withTurn runs one bounded agent interaction under the signal guard and
 	// returns the model answer.
 	withTurn := func(fn func(context.Context) (string, error)) (string, error) {
@@ -527,11 +532,47 @@ func main() {
 			case cmdModel:
 				if cmd.arg == "" {
 					fmt.Println("model:", agent.CurrentModel())
+				} else if i, ok := modelIndexArg(cmd.arg); ok {
+					// M12: a number selects from the last /models listing, so a
+					// stale number cannot switch to an unintended model
+					// (SelectModel refuses out-of-range and changes nothing).
+					if len(lastCatalog) == 0 {
+						fmt.Fprintln(os.Stderr, "erro: /model <numero> precisa de um /models anterior nesta sessao")
+						continue
+					}
+					if err := agent.SelectModel(lastCatalog, i); err != nil {
+						fmt.Fprintln(os.Stderr, "erro:", err)
+					} else {
+						fmt.Println("model:", agent.CurrentModel(), "(vale nesta sessao — nao persiste no yaml)")
+					}
 				} else if err := agent.SwitchModel(cmd.arg); err != nil {
 					fmt.Fprintln(os.Stderr, "erro:", err)
 				} else {
 					fmt.Println("model:", agent.CurrentModel(), "(vale nesta sessao — nao persiste no yaml)")
 				}
+				continue
+			case cmdModels:
+				if cmd.opts.check {
+					// Layer 3 costs one request per candidate model: always ask
+					// before spending the operator's quota.
+					fmt.Fprintf(os.Stderr,
+						"/models --check faz 1 requisicao por modelo candidato (custo de tokens). Continuar? [y/N] ")
+					if line, _ := askLine(""); !strings.EqualFold(strings.TrimSpace(line), "y") {
+						fmt.Fprintln(os.Stderr, "verificacao cancelada; nada foi executado")
+						continue
+					}
+				}
+				entries, err := agent.ListModels(ctx)
+				if err != nil {
+					// Fail-closed: a failed listing never changes the model.
+					fmt.Fprintln(os.Stderr, "erro:", err)
+					continue
+				}
+				lines, visible := catalogLines(entries, cmd.opts, agent.CurrentModel(), 40)
+				for _, l := range lines {
+					fmt.Println(redactCatalogEcho(l))
+				}
+				lastCatalog = visible
 				continue
 			case cmdProvider:
 				if cmd.arg == "" {

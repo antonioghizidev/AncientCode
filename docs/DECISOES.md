@@ -822,3 +822,56 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   (`TestGateDetailReadsRealShellSchemaKey`, já adicionada no M11) cobre o caminho real do gate.
 - **Consequência**: nenhum código muda. Nenhum trabalho de "conserto" é necessário. A afirmação
   falsa foi removida de `AGENTS.md` e da nota de sessão do M11.
+
+### D-2026-10-01-53 — Catálogo de modelos em três camadas; troca de modelo pela TUI é assíncrona
+
+- **Contexto**: faltava listar os modelos do provedor e escolher um. O critério real de "funciona
+  aqui" é mais estreito que "é um modelo de chat": o agente depende de `tool_calls`. Medido no
+  Inspiron: **NIM 81 modelos** devolvendo só `id`/`object`/`owned_by`; **OpenRouter 464** com
+  `architecture`, `context_length`, `pricing`, `supported_parameters`. A mesma filtragem, portanto,
+  tem fidelidades muito diferentes.
+- **Decisão**:
+  - **Três camadas**, com o custo explícito: (1) exclusão de famílias não-chat por nome + curadoria
+    — grátis; (2) metadados do provedor (`tools`, modalidades, contexto, preço) — grátis quando
+    existem; (3) verificação real com um request de tool calling por modelo — **sob demanda**
+    (`--check`, pede confirmação porque gasta tokens).
+  - **Ausência de metadado vira "desconhecido", nunca "sim"**: `ToolSupport` é tri-estado e o
+    catálogo não promete o que o provedor não disse. É o que evita oferecer um modelo que não faz
+    tool calling em silêncio.
+  - **`--free` só onde há preço** (`pricing == "0"`): OpenRouter sim; **NIM não** — a UI declara a
+    indisponibilidade em vez de mostrar lista vazia. Busca por nome de família **revela** a família
+    pedida (digitar `embed` acha embeddings), mesmo oculta por padrão.
+  - **Divisão de camadas**: `internal/provider` (transporte, leitura limitada, chave nunca em erro),
+    `internal/catalog` (predicados puros e determinísticos), `internal/loop` (semântica única para
+    os dois frontends). Nenhum item novo entrou no `Approver`.
+  - **Picker é terceiro painel** (não o painel de atividade): escolher modelo é tarefa distinta, com
+    teclado próprio; o teclado vai para o picker enquanto ele está aberto, e o offset de rolagem do
+    painel substituído é zerado (senão abre rolado, escondendo a linha de filtro e o item
+    destacado).
+- **Consequência**: `/models [--free|--all|--check|texto]` no REPL com lista numerada, `/model <N>`
+  seleciona pela posição da última listagem (índice fora da faixa é recusado sem trocar nada), e
+  `/models` na TUI abre o painel (digitar filtra, `↑↓` move, `Enter` seleciona, `Esc` cancela,
+  `Ctrl+F` alterna gratuitos). Versão `0.12.0-m12`.
+
+### D-2026-10-01-54 — Nada que emita evento pode rodar dentro da event loop do Bubble Tea (deadlock)
+
+- **Contexto**: o smoke do M12 no Inspiron **travou a TUI inteira** ao selecionar um modelo. O
+  `SIGQUIT` mostrou a cadeia exata: `handlePickerKey(Enter)` → `Loop.SwitchModel` (chamado de
+  dentro de `Update`) → `loop.emit` → observer → `tea.Program.Send` → bloqueado. `Send` espera canal
+  disponível e, chamado de dentro da própria event loop, **ninguém pode drenar**: deadlock
+  permanente, sem timeout e sem erro na tela.
+- **Decisão**: qualquer operação que possa emitir evento passa a rodar como `tea.Cmd`, nunca inline
+  em `Update`. Vale para `switchModelCmd` (picker e `/model`) e `switchProviderCmd` (`/provider`) —
+  os dois últimos eram **latentes desde o M8/M9** e só travavam quando havia mensagens pendentes.
+- **Prevenção**: testes exigem o comando de troca e verificam que o modelo **ainda** é o anterior
+  dentro de `Update` — o caminho síncrono quebra o teste.
+- **Consequência**: correção de disponibilidade da UI, não só do M12.
+
+### D-2026-10-01-55 — Comando de barra limpa a linha de input na TUI
+
+- **Contexto**: o mesmo smoke mostrou a linha `> /modelsoi` — o texto do comando permanecia no
+  input, e o que o operador digitasse depois era **colado** nele. `submit()` chamava
+  `resetPrompt()` só no caminho de prompt normal; o caminho de comando retornava antes. Bug do
+  M8/M9, invisível no REPL (cada linha é independente) e evidente na TUI.
+- **Decisão**: `submit()` captura a linha, reseta o prompt e só então despacha `handleCommand`.
+  Teste de regressão garante que, após um comando, o input começa vazio.
