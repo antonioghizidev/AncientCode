@@ -191,8 +191,19 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `0.12.0-m12`. Host 17/17, WSL `-race` 17/17, `gofmt`/`vet` limpos, `GOAMD64=v1` ok. Smoke Inspiron:
   REPL e TUI listam/filtram/selecionam e um turno real responde com o modelo escolhido. Ver
   `docs/session-2026-10-01-m12-catalogo-modelos.md`.
-- **Próximo**: abrir PR `m12-catalogo-modelos` → `main`. **Backlog Web** (SSE + shell-HTTP +
-  `Approver` por canal + auth/TLS/CSRF) — reusa o contrato M8/M12; **agendamento depende do usuário**.
+- **Próximo**: abrir PR `m12-catalogo-modelos` → `main`. **M13 especificado, não iniciado**
+  (`specs/milestones/13-m13-painel-sessao.md`, a pedido do usuário em 2026-10-02): (1) **painel de
+  sessão corta** prompt e resposta — causa raiz dupla: `runeCap` no paint
+  (`tui_panels.go:553`) **e** `truncatedLine`/`lineCap=90` no append (`tui.go:647`), que perde o texto
+  **irreversivelmente** (corrigir só o paint não recupera); entrega = projeção com quebra de linha +
+  continuação indentada, e remoção do corte no append; (2) **animação de atividade** — spinner
+  Braille via `tea.Tick` só enquanto `inTurn`, com movimento como sinal de vida e degradação ASCII
+  honesta (nunca spinner parado); (3) **interromper/corrigir/continuar** — `Esc` cancela em voo
+  (hoje só `Ctrl+C`), cancelar **devolve o prompt** ao input (hoje é descartado), `↑` reedita em vez
+  de só preencher, `/continue` reenvia o cancelado (fail-closed). Fora de escopo: `undo` completo de
+  prompts executados (repetiria efeitos de tools sem rollback) — fase própria.
+- **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) — reusa o contrato
+  M8/M12; **agendamento depende do usuário**.
 
 ## Como trabalhar (resumo da metodologia)
 
