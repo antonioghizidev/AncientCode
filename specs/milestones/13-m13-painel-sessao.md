@@ -1,0 +1,180 @@
+# M13 — Painel de sessão legível, animação de atividade e controle do turno
+
+**Status**: ⏸ pendente (especificado a pedido do usuário em 2026-10-02, após o M12)
+**Depende de**: M12 (`m12-catalogo-modelos`)
+**Sessão de referência**: (a preencher ao fechar)
+
+## 1. Objetivo
+
+Tornar o **painel de sessão** da TUI capaz de mostrar prompts e respostas longas **por inteiro**,
+tornar o estado "o modelo está trabalhando" **perceptível sem leitura**, e dar ao operador
+controle sobre o turno em andamento: **interromper, corrigir o prompt e continuar de onde parou**.
+
+Hoje a sessão é um log truncado e estático: em 60% da largura, com 40% reservado à atividade, uma
+resposta de shell como `nproc` + `lscpu` + `free -h` não cabe — e o operador não tem como saber
+nem ler o resto, nem se o turno está andando, nem se congelou.
+
+> **Escopo apenas de UI.** Nada aqui pode afrouxar gate, sanitização, redação ou o teto de
+> iterações do loop (`internal/loop`). Cancelar um turno é **o mesmo** `turnCancel` que já existe.
+
+## 2. motivating example (observado no Inspiron, 2026-10-02)
+
+```
+│> verifique o hardware deste computador e me informe: Chipset, processador, memória ram, swap, e armaz
+│< Aqui está o resumo do hardware que consegui levantar neste sistema:## Processador- **M…
+```
+
+Duas perdas de informação em **uma** linha: o prompt é cortado no meio de "armazenamento" e a
+resposta perde o sumário inteiro. O painel não oferece rolagem lateral nem quebra — o texto
+**inexistente** é irrecuperável.
+
+## 3. Causa raiz (medida no código, não estimada)
+
+| Local | Comportamento | Efeito |
+|---|---|---|
+| `cmd/ancientai/tui_panels.go:553` | `runeCap(lineAt(sess, sessOff+i), sessBody)` | **corte duro** na largura do painel; sem `…`, sem marcação |
+| `cmd/ancientai/tui.go:647` | `truncatedLine` corta a `lineCap = 90` runes **no append** | perda **irreversível**: o texto nunca chega ao painel |
+| `cmd/ancientai/tui_panels.go:525` | `renderPanels` recebe `[]string` já achatado | o painel é um viewport de 1 linha = 1 linha lógica |
+| `cmd/ancientai/tui.go:681` | nenhum ticker; `m.statusTone()` é estático por fase | sem sinal temporal de "trabalhando" |
+| `cmd/ancientai/tui.go:214-223` | `Ctrl+C` cancela, mas o texto do prompt foi descartado no submit | para retomar, o operador **retypes** o prompt |
+
+Ou seja: a falha do item 1 é **dupla** (corte no append + corte no paint) e o pior deles é o
+primeiro — corrigir só o paint **não** recupera o que já foi perdido.
+
+## 4. Escopo / entregáveis
+
+### 4.1 Painel de sessão lê inteiro (quebra de linha)
+
+- [ ] `sessionLines()` introduz a projeção: cada linha lógica do `m.session` vira **N linhas físicas**
+      por `wrapText`, respeitando a largura interna real do painel.
+- [ ] **Indentação de continuação**: a quebra marca a continuação (2 espaços ou `↳`) para o operador
+      distinguir continuação de novo parágrafo.
+- [ ] **Preservar o prefixo semântico**: `> prompt` e `< resposta` mantêm o marcador; a quebra
+      acontece **depois** dele.
+- [ ] **Remover `truncatedLine` no append** (`tui.go:647`): o `m.session` guarda o texto **inteiro**;
+      o corte passa a ser responsabilidade **exclusiva** da projeção.
+- [ ] `lineCap` deixa de existir como teto **silencioso**; se algum teto for mantido, ele é aplicado
+      no **append** com marcação visível (`… [N chars]`) e é configurável.
+- [ ] **O gate humano não pode ser afetado**: o detalhe do gate já usa `wrapText` com `maxLines`
+      (tui_panels.go:355) — Approvar exige ver o payload **completo**. Este item **não** pode reduzir
+      a visibilidade do gate nem aumentar `maxLines` do gate acima do que a tela comporta.
+
+### 4.2 Rolagem lateral (defensiva, não substitui a quebra)
+
+- [ ] `Tab`/`←→`/`Home`/`End` já alternam foco e rolam **verticalmente**. Acrescentar rolagem
+      **horizontal** por painel (`Shift+←/→`, ou `h`/`l`), necessária para: linhas sem espaço
+      (caminho longo, URL, JSON de uma linha) que a quebra não desfaz.
+- [ ] Indicador de posição horizontal junto ao scrollbar vertical (`col 37/120`), senão o operador
+      não descobre que existe mais texto à direita.
+
+### 4.3 Animação de atividade
+
+- [ ] Spinner **na linha de status do painel de atividade**, frames `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` (Braille),
+      com `tea.Tick` de ~100 ms **apenas enquanto `m.inTurn`** — zero CPU parado.
+- [ ] Movimento **é vida**: o operador distingue "processando" de "congelado" pelo **movimento
+      vertical do texto** das fases (`modelo: aguardando` → `recebendo tokens`), não só por glyph.
+- [ ] Fim do turno → spinner **desaparece** (sem frame residual) e o rodapé volta ao tom anterior.
+- [ ] **Degradação honesta**: se `TERM` não suportar os frames, mostra alternância ASCII
+      (`|/-\`); nunca um spinner **parado**, que seria pior que nenhum.
+- [ ] **Segurança**: o frame é ASCII/Unicode de fonte fixa, nunca conteúdo remoto; `sanitize`
+      continua aplicado a toda linha.
+
+### 4.4 Interromper, corrigir, continuar
+
+- [ ] **`Esc` cancela o turno em andamento** (hoje só `Ctrl+C` faz). Sem turno, `Esc` **não** sai da
+      aplicação — trocar `Esc` por "sair" seria uma regressão de gesto.
+- [ ] **Cancelar devolve o prompt**: `m.input` é reposto com o texto exato do turno cancelado, cursor
+      no fim, e a linha `! turno cancelado — edite e reenvie` entra na sessão. Hoje o prompt é
+      **descartado** e o operador retyped tudo.
+- [ ] **`Ctrl+R` / `↑` para reeditar**: navegar `promptHist` já existe (`histStep`, tui.go:485) e hoje
+      é **preenchimento**; passa a ser **reedição** — o texto volta ao input editável, e o envio
+      **não** duplica a entrada no histórico.
+- [ ] **`continue` após cancelamento acidental**: `/continue` reenvia o **último prompt** cujo turno
+      foi cancelado, sem retipar. Não reenvia se o turno **completou** (senão duplica efeitos de
+      tools).
+- [ ] **`Ctrl+C` mantém o comportamento atual**: 1º = cancela o turno; 2º (sem turno) = sai. Não
+      inventar "cancelar e sair" num toque só.
+- [ ] **Auditoria**: cancelamento é registrada como evento observável (`PhaseTurnCancelled`), para que
+      `abortado` e `congelado` fiquem distinguíveis **no audit** e não só na tela.
+
+## 5. Contratos (interfaces públicas)
+
+```go
+// projeção pura (testável sem terminal)
+func sessionLines(sess []string, width int) []string   // quebra + indentação de continuação
+func hscrollRange(total, width, off int) (lo, hi int)  // janela horizontal, clampada
+func spinnerFrame(n int, ascii bool) rune
+
+// estado
+type tuiModel struct {
+    // ... existentes
+    hoff        map[panelID]int // rolagem horizontal por painel
+    frame       int             // contador do spinner (par, não renderizado)
+    cancelled   []cancelInfo    // turnos cancelados, para /continue
+}
+
+// eventos (novos, no vocabulário de D-35)
+PhaseTurnCancelled   // turno interrompido pelo operador
+```
+
+Sem novos campos em `Approver`, sem mudança em `internal/loop`, sem dependência nova: Bubble Tea
+já entrega `tea.Tick`, e Braille é texto.
+
+## 6. Requisitos de segurança deste milestone
+
+- [ ] **Nenhum texto não confiável pula `sanitize`/`redact`**. A quebra de linha opera sobre a
+      projeção **já** redigida; o conteúdo remoto nunca é reescrito para caber.
+- [ ] **Gate não pode ficar mais ilegível** que hoje: o payload do Approver permanece completo na
+      tela. Teste que falha se o gate passar a truncar silenciosamente.
+- [ ] **O rodapé `>`80% continua mandão**: quebra de linha não pode sequestrar altura do painel de
+      atividade sem respeitar `fixedRows`.
+- [ ] **Cancelar não deixa tool órfã**: o `turnCancel` é o mesmo do M9/M11; nada de estado meio
+      executado. Turno cancelado **não** é sucesso no audit.
+- [ ] **`/continue` é fail-closed**: sem histórico de cancelamento, responde erro e **não** reenvia
+      nada.
+- [ ] **Spinner não vaza segredo**: frames são literais do código, nunca derivados de resposta.
+
+## 7. Testes obrigatórios
+
+### Funcionais
+- [ ] Prompt de 400 caracteres em painel de 55 células: **nenhum** carácter perdido após a projeção
+      (concatena as linhas físicas == linha lógica).
+- [ ] Resposta multilinha com `\n` preservado: a contagem de linhas lógicas não muda.
+- [ ] `Ctrl+C` em voo → prompt **de volta** no input, cursor no fim, linha de aviso na sessão.
+- [ ] `Esc` em voo cancela; `Esc` **sem** turno não sai.
+- [ ] `↑` no input recupera o prompt editável; reenviar **não** duplica `promptHist`.
+- [ ] `/continue` após cancelamento reenvia **uma** vez; a segunda recusa com "nada a continuar".
+- [ ] Spinner avança a cada tick **apenas** com `inTurn`; frame seguinte some ao fim do turno.
+- [ ] `TERM=dumb` → spinner ASCII, nunca travado.
+- [ ] Rolagem horizontal em linha sem espaços (caminho de 200 chars) revela o fim com `End`.
+
+### Segurança (obrigatórios — devem falhar se a proteção for removida)
+- [ ] `TestSessionProjectionNeverDropsUntrustedContent`: `\x1b[2J` num payload longo **não** escapa da
+      projeção e **não** reaparece no `View()`.
+- [ ] `TestGateStillShowsFullPayloadAfterWrap`: remover a quebra **não** pode truncar o detalhe do
+      gate (falha se alguém "economizar" linhas no gate para caber a animação).
+- [ ] `TestCancelIsAuditedNotCountedAsSuccess`: turno cancelado gera evento de cancelamento e
+      **nenhum** `tool` executado é marcado como concluído.
+- [ ] `TestContinueRefusesWithoutCancellation`.
+- [ ] `TestSpinnerNeverContainsPayload`: nenhum frame contém texto de resposta.
+
+## 8. Critérios de aceite (DoD)
+
+- [ ] Prompt e resposta longos **legíveis por inteiro** sem corte silencioso (verificado em pty real
+      no Inspiron, não só em teste).
+- [ ] Operador distingue "processando" / "parou" / "congelou" **sem ler texto**.
+- [ ] Cancelar → corrigir → reenviar **sem redigitar**, no REPL e na TUI.
+- [ ] **Todos os testes passam**: `go test -count=1 ./...` e `go test -race -count=1 ./...` (WSL).
+- [ ] `gofmt`/`go vet`/`go build` (`GOAMD64=v1`) limpos.
+- [ ] `docs/DECISOES.md` atualizado; nota de sessão; `docs/MANUAL.md` com as teclas novas.
+- [ ] Smoke no Inspiron: sessão com resposta longa legível, spinner visível em pty, `Esc` cancela,
+      prompt retorna, `↑` reedita.
+
+## 9. Fora de escopo
+
+- **`undo` completo de prompts já executados** (como o "edit previous message" do Claude Code /
+  opencode): reenviar um prompt antigo **repete efeitos de tools** sem rollback. Fica para fase
+  própria, com semântica de rebranching explícita e aviso ao operador — **não** neste milestone.
+- Reformatar o painel como `bubbletea/viewport` com scroll nativo (mudança grande de layout; a
+  projeção pura é testável e cabe no orçamento de 4 GB).
+- Reavaliar a proporção 60/40 dos painéis; este milestone conserta **conteúdo**, não geometria.
