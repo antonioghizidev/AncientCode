@@ -221,7 +221,7 @@ Levantado pelo usuário em 2026-10-02 durante o M13. **Nada aqui deve ser implem
 mesmo que pareça simples: mexer em histórico e orçamento de contexto **durante** a mudança de layout
 mistura duas causas e nenhuma delas fica verificável. Anotado para a sessão de specs seguinte.
 
-### 10.0 Separação conceitual: **histórico** ≠ **contexto** (pedido do usuário)
+### 10.0 Separação conceitual: **histórico** ≠ **contexto**, e ≠ **sessão**
 
 O usuário está certo, e a medição no código **fortalece** o argumento. Hoje os dois termos são
 confundidos na nomenclatura, e é por isso que `/compact`, `/new` e `--cleanup` parecem a mesma
@@ -239,18 +239,39 @@ coisa quando não são.
 histórico **do disco a cada turno** e aplicam `reduceHist` em seguida. Ou seja, **o contexto não é
 estado — é função do histórico**. Não existe "contexto acumulado" em lugar nenhum.
 
-Consequência de design para a spec:
+### 10.0.1 `/new` **idêntico ao do opencode** — o que isso implica (decisão do usuário, 2026-10-02)
 
-- **`/compact` e `/new` só podem tocar no contexto**, nunca no arquivo. Isso é o que os diferencia
-  de `--reset`/`--cleanup` e o que os torna reversíveis e seguros.
-- O histórico **permanece legível** (na tela e no disco) depois de `/new` — o operador não perde o
-  registro, ele só libera espaço.
-- O termo "reset" precisa sair da linguagem desses comandos: `/reset` **hoje apaga o arquivo**
-  (`store.Reset()` → `os.Remove`), que é a operação destrutiva, e `/new` é a não-destrutiva.
-  Manter os dois com nomes parecidos é armadilha de mnemonic.
-- Como o contexto é **rederivado** por turno, `/new` precisa de um mecanismo explícito de
-  "âncora" (ex.: `Store.SetAnchor`/sessão lógica nova) — **não** basta apagar mensagens em memória,
-  porque o próximo turno recarrega do disco e volta tudo.
+O usuário pediu explicitamente paridade com o opencode. Consultando a documentação do opencode
+(`dev.opencode.ai/docs/tui`, `docs/cli`) e o fonte (`opencode-ai/opencode`), o comportamento real é:
+
+- `/new` — "Start a new session", **alias `/clear`**, keybind `ctrl+x n` (na TUI web, `Ctrl+N`).
+- `/compact` — "Summarize the current session and **create a new one with the summary**".
+- `/sessions` — "List and switch between sessions", **aliases `/resume` e `/continue`**.
+- `--fork` (CLI) — cria uma sessão nova a partir de uma existente, para não destruir a original.
+- autocompact — dispara por uso de contexto (≈95% da janela) e **também cria sessão nova** com o
+  resumo; desativável por `OPENCODE_DISABLE_AUTOCOMPACT`.
+
+**A correção que isso traz:** eu tinha deixado em aberto a pergunta "o `/new` mantém a mesma sessão
+lógica ou abre uma sessão nova?". A resposta é **sessão nova** — e isso vale para os **três**
+comandos. No opencode, a unidade é a **sessão**, e o contexto é derivado dela.
+
+Consequências para o AncientAI, que **já tem a peça que falta**: `--resume <id>` (M5) reutiliza um
+`.jsonl` existente. Então:
+
+- [ ] `/new` **cria uma sessão nova** (`sessions/<id>.jsonl`), não apaga nada. A anterior continua
+      intacta e recuperável.
+- [ ] `/new` **não** é "limpar o contexto da sessão atual": é "começar outra sessão". Isso elimina a
+      necessidade da **âncora persistida** que eu tinha derivada antes (§10.0) — não há âncora
+      porque o arquivo **muda**. `/new` é então trivialmente reversível, o que é o ponto.
+- [ ] Precisa existir o par **listar/trocar de sessão** (`/sessions`, alias `/resume`), senão o
+      operador cria a sessão nova e **perde o acesso** à antiga — o que seria uma perda de
+      registro, exatamente o que o usuário quer evitar. **Este é o entregável de maior risco.**
+- [ ] `/compact` também cria sessão nova, com o resumo — coerente com o opencode, e significa que
+      o resumo **é** o primeiro turno da sessão nova (sem camada de derivação separada).
+- [ ] `Ctrl+N` como keybind de `/new`, seguindo o padrão do opencode.
+- [ ] `/reset` (o que hoje **apaga** o `.jsonl`) passa a ser o comando perigoso e sem equivalente no
+      opencode — considerar renomear para algo inequívoco (`/reset` que apaga é armadilha de
+      mnemonic ao lado de `/new` que preserva).
 
 ### 10.1 `/compact` — compactar o contexto
 
@@ -265,43 +286,44 @@ nada no lugar, e o modelo recebe um buraco.
       marcação de untrusted injetada pelo M6/M7. Resumo **não** pode virar canal de injeção.
 - [ ] `/compact` é **explícito** (ação do operador) e **auditado**: o audit registra que houve
       compactação, com bytes antes/depois.
-- [ ] **O arquivo da sessão não é reescrito.** O resumo vive como camada de derivação; o histórico
-      completo continua no `.jsonl` e no painel de sessão. É isto que separa `/compact` de
-      `--reset`.
-- [ ] **Falha é fail-closed**: se o resumo falhar, o histórico **original** permanece intacto.
+- [ ] **Cria sessão nova com o resumo** (paridade opencode, §10.0.1), em vez de reescrever a atual. O
+      `.jsonl` original fica **intacto**: é o que separa `/compact` de `/reset`.
+- [ ] **Falha é fail-closed**: se o resumo falhar, a sessão atual permanece intacta e nenhuma sessão
+      nova é criada.
 - [ ] **Pergunta de design a resolver na spec**: `/compact` pede um LLM extra (custo + latência) ou
-      resume localmente por extração (heurística, sem custo, perde nuance)? Provavelmente os dois,
-      com o explícito como padrão.
+      resume localmente por extração (heurística, sem custo, perde nuance)? No opencode é LLM
+      (≈95% de gatilho). Provavelmente LLM, com caminho local como degradação.
 
-### 10.2 `/new` — liberar o contexto, preservar o histórico
+### 10.2 `/new` — nova sessão (paridade opencode)
 
-- [ ] `/new` **não** toca no `sessions/<id>.jsonl` e **não** apaga o painel de sessão. O que muda é
-      apenas o que vai no próximo request: o modelo passa a ver uma sessão vazia.
-- [ ] **Por isso precisa de âcora explícita** (§10.0): como `run` recarrega do disco a cada turno,
-      `/new` exige um marcador persistido de "a partir daqui o contexto começa limpo" — apagar em
-      memória seria desfeito no turno seguinte.
-- [ ] Confirmação obrigatória quando há **turno em andamento** (descartar trabalho em voo é perda
-      real) — via o gate humano, não um `y/n` solto.
-- [ ] Nada de config, nada de audit (o audit é append-only, `internal/audit`): `/new` é ação de
-      contexto, não de registro.
-- [ ] A pergunta de spec: **`/new` recomeça também a sessão *lógica*** (o nome exibido no painel
-      passa a ser `sessão 2`)? Se sim, `/resume` precisa saber qual é a âncora ativa.
+Ver §10.0.1: `/new` **cria sessão nova**, preservando a anterior. Não é "limpar o contexto da sessão
+atual".
+
+- [ ] `/new` cria `sessions/<novo-id>.jsonl` e passa a apontar para ele. Nada é apagado.
+- [ ] Alias `/clear`, exatamente como no opencode.
+- [ ] Keybind `Ctrl+N` na TUI e REPL, seguindo o padrão do opencode.
+- [ ] Confirmação via gate quando há **turno em andamento** (descartar trabalho em voo é perda real).
+- [ ] **Entregável crítico**: `/sessions` para listar e trocar de sessão (alias `/resume`). Sem isso
+      o `/new` cria a sessão nova e o operador **perde o acesso** à antiga — o oposto do objetivo.
+- [ ] Teste de não-regressão: após `/new`, a sessão anterior **continua em disco e é recuperável**
+      com `--resume <id> antigo` (falha se o `os.Remove` do `Store.Reset()` for chamado por engano).
 
 ### 10.3 `/autocompact` — compactação automática por tamanho, configurável
 
-- [ ] Dispara `/compact` automaticamente quando o uso de contexto passar de um **limite
-      configurável** (hoje o único número é `session_context_bytes`, que é **bytes de histórico**,
-      não fração de janela do modelo — são grandezas diferentes e a spec precisa separar).
-- [ ] `ContextUsage` (`internal/loop/interaction.go:76`) já produz `pct` de uso, com cap 100; é a
-      base do gatilho. O rodapé já mostra `!` acima de 80% (M9) — o gatilho pode reaproveitar o
-      mesmo sinal.
+- [ ] Mesmo comportamento do `/compact` no opencode: cria **sessão nova** com o resumo (não compacta
+      a sessão atual in-place), e deixa rastro visível (linha na sessão + tom no rodapé).
+- [ ] Gatilho por **uso de contexto**, não por bytes brutos: `ContextUsage`
+      (`internal/loop/interaction.go:76`) já produz `pct` com cap 100. O opencode usa ≈95%.
+- [ ] **Ponto de spec obrigatório:** `session_context_bytes` mede **bytes de histórico** e
+      `ContextUsage.pct` mede **fração da janela do modelo** — são grandezas diferentes e hoje só a
+      primeira está no YAML. O novo limite precisa ser a segunda (ou as duas, com papel explícito).
 - [ ] **Ordem entre truncar e resumir** é o ponto delicado: hoje `reduceHist` roda a cada turno e
-      descarta. Com resumo automático, o resumo precisa acontecer **antes** do descarte, senão o
+      **descarta**. Com resumo automático, o resumo precisa acontecer **antes** do descarte, senão o
       operador recebe um buraco em vez de um resumo. **Decisão de spec obrigatória.**
 - [ ] Config no YAML, validada no startup como o resto (fail-closed na config insegura):
       `autocompact.enabled`, `autocompact.threshold_pct`, com piso razoável (evitar compactar a cada
       turno em janela pequena).
 - [ ] **Nunca compacta o turno em andamento**, e **nunca** durante um gate aberto (o operador está
       decidindo com base no histórico visível — muda-lo debaixo dele é erro).
-- [ ] Interrompendo o modelo: o operador precisa saber que houve compactação automática (linha na
-      sessão + tom no rodapé), senão parece perda de contexto sem explicação.
+- [ ] Auto-compactar **durante um turno** é o caso mais perigoso: o gate decide sobre um contexto
+      que muda sozinho. Precisa de teste que garanta que o snapshot do gate é estável.

@@ -204,18 +204,19 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   preencher, `/continue` reenvia o cancelado (fail-closed). Fora de escopo: `undo` completo de
   prompts executados (repetiria efeitos de tools sem rollback) — fase própria.
 - **Backlog anotado para a PRÓXIMA sessão de specs** (pedido do usuário em 2026-10-02; **não
-  implementar no M13**, seção 10 da spec M13): **`/compact`** (hoje só existe **truncamento**:
-  `reduceHist`/`model.ReduceMessages` em `internal/loop/loop.go:278` **descarta** turnos antigos
-  quando `session_context_bytes > 0` — o modelo recebe um buraco, não um resumo), **`/new`** (limpar
-  contexto sem tocar em config nem no audit append-only; confirmar se há turno em voo) e
-  **`/autocompact`** por tamanho, com config YAML validada. **Separar histórico de contexto**
-  (§10.0): histórico = `sessions/<id>.jsonl` append-only, controlado por `--cleanup` (apaga por
-  mtime) e `--reset`/`/reset` (`store.Reset()` = `os.Remove`); contexto = `reduceHist(Load())`,
-  **rederivado a cada turno** (`loop.go:185/202/266`), nunca salvo. Logo `/compact` e `/new` só
-  podem mexer no contexto — e `/new` precisa de **âncora persistida**, senão o próximo turno
-  recarrega do disco e volta tudo. Ponto a decidir na spec: `session_context_bytes` mede **bytes de
-  histórico** e `ContextUsage.pct` mede **fração da janela** — grandezas diferentes; e a ordem
-  truncar-vs-resumir precisa ser invertida, senão o automático produz buraco.
+  implementar no M13**, seção 10 da spec M13): **`/compact`**, **`/new`** e **`/autocompact`** —
+  **paridade com o opencode** (decisão do usuário em 2026-10-02, medida em `dev.opencode.ai/docs/tui`
+  e no fonte `opencode-ai/opencode`): lá a unidade é a **sessão**, e os três criam **sessão nova**
+  (`/new` = "start a new session", alias `/clear`, `Ctrl+N`; `/compact` = "summarize … and create a
+  new one with the summary"; autocompact ≈95% da janela, também cria sessão nova). Isso **resolve** a
+  pergunta da âncora: `/new` **não** é limpar o contexto da sessão atual, é trocar de `.jsonl`, logo
+  é trivialmente reversível. **Risco principal: sem `/sessions` (listar/trocar, alias `/resume`) o
+  operador perde o acesso à sessão anterior** — AncientAI já tem `--resume` (M5). Contexto hoje
+  **não é estado**: `loop.go:185/202/266` recarrega do disco a cada turno e aplica `reduceHist` (§10.0).
+  Ponto a decidir na spec: `session_context_bytes` mede **bytes de histórico** e `ContextUsage.pct`
+  mede **fração da janela** — grandezas diferentes; e a ordem truncar-vs-resumir precisa ser
+  invertida, senão o automático produz buraco. `/reset` (que **apaga** o `.jsonl`) fica como o
+  comando perigoso sem equivalente no opencode — candidato a renomear.
 - **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) — reusa o contrato
   M8/M12; **agendamento depende do usuário**.
 
