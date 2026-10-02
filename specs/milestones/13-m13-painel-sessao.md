@@ -10,6 +10,10 @@ Tornar o **painel de sessão** da TUI capaz de mostrar prompts e respostas longa
 tornar o estado "o modelo está trabalhando" **perceptível sem leitura**, e dar ao operador
 controle sobre o turno em andamento: **interromper, corrigir o prompt e continuar de onde parou**.
 
+O painel de **atividade** sofre do mesmo corte e também ganha quebra de linha — e deixa de ocupar
+40% da largura, porque 40% para linhas curtas de evento é espaço desperdiçado quando a conversa é o
+que precisa de espaço.
+
 Hoje a sessão é um log truncado e estático: em 60% da largura, com 40% reservado à atividade, uma
 resposta de shell como `nproc` + `lscpu` + `free -h` não cabe — e o operador não tem como saber
 nem ler o resto, nem se o turno está andando, nem se congelou.
@@ -32,9 +36,10 @@ resposta perde o sumário inteiro. O painel não oferece rolagem lateral nem que
 
 | Local | Comportamento | Efeito |
 |---|---|---|
-| `cmd/ancientai/tui_panels.go:553` | `runeCap(lineAt(sess, sessOff+i), sessBody)` | **corte duro** na largura do painel; sem `…`, sem marcação |
+| `cmd/ancientai/tui_panels.go:553` | `runeCap(lineAt(sess, sessOff+i), sessBody)` — e o mesmo para `act` | **corte duro** na largura do painel; sem `…`, sem marcação, **nos dois painéis** |
 | `cmd/ancientai/tui.go:647` | `truncatedLine` corta a `lineCap = 90` runes **no append** | perda **irreversível**: o texto nunca chega ao painel |
 | `cmd/ancientai/tui_panels.go:525` | `renderPanels` recebe `[]string` já achatado | o painel é um viewport de 1 linha = 1 linha lógica |
+| `cmd/ancientai/tui_panels.go:216` (`panelWidths`) | 60/40 fixo, `min = 12` | sessão com ~55 células: pouco mais que 2/3 do terminal para a conversa; e o piso de 12 é curto demais para o catálogo do M12 |
 | `cmd/ancientai/tui.go:681` | nenhum ticker; `m.statusTone()` é estático por fase | sem sinal temporal de "trabalhando" |
 | `cmd/ancientai/tui.go:214-223` | `Ctrl+C` cancela, mas o texto do prompt foi descartado no submit | para retomar, o operador **retypes** o prompt |
 
@@ -43,14 +48,20 @@ primeiro — corrigir só o paint **não** recupera o que já foi perdido.
 
 ## 4. Escopo / entregáveis
 
-### 4.1 Painel de sessão lê inteiro (quebra de linha)
+### 4.1 Ambos os painéis leem inteiro (quebra de linha)
 
-- [ ] `sessionLines()` introduz a projeção: cada linha lógica do `m.session` vira **N linhas físicas**
-      por `wrapText`, respeitando a largura interna real do painel.
+Vale para o painel de sessão **e** para o de atividade. O motivo é o mesmo nos dois: a atividade
+carrega payloads longos (argumentos redigidos de `shell`, saída de tool, erro de provider) e perder
+a cauda de um erro é perder a causa.
+
+- [ ] **Projeção única e compartilhada**: `panelLines(lines []string, width int) []string` quebra
+      sessão e atividade. Uma implementação, um conjunto de testes, nenhum drift entre os dois.
+- [ ] `sessionLines()` passa a usar `panelLines()`; o picker (`pickerLines`) e o gate (`gateLines`)
+      também, porque nomes de modelo do M12 e detalhe de tool sofrem do mesmo corte.
 - [ ] **Indentação de continuação**: a quebra marca a continuação (2 espaços ou `↳`) para o operador
       distinguir continuação de novo parágrafo.
-- [ ] **Preservar o prefixo semântico**: `> prompt` e `< resposta` mantêm o marcador; a quebra
-      acontece **depois** dele.
+- [ ] **Preservar o prefixo semântico**: `> prompt`, `< resposta` e as linhas de evento mantêm o
+      marcador; a quebra acontece **depois** dele.
 - [ ] **Remover `truncatedLine` no append** (`tui.go:647`): o `m.session` guarda o texto **inteiro**;
       o corte passa a ser responsabilidade **exclusiva** da projeção.
 - [ ] `lineCap` deixa de existir como teto **silencioso**; se algum teto for mantido, ele é aplicado
@@ -59,7 +70,22 @@ primeiro — corrigir só o paint **não** recupera o que já foi perdido.
       (tui_panels.go:355) — Approvar exige ver o payload **completo**. Este item **não** pode reduzir
       a visibilidade do gate nem aumentar `maxLines` do gate acima do que a tela comporta.
 
-### 4.2 Rolagem lateral (defensiva, não substitui a quebra)
+### 4.2 Geometria: a atividade deixa de ocupar 40%
+
+Medido no Inspiron: com sessão em 60% (~55 células úteis) e atividade em 40%, **nenhuma** das duas
+lê um resumo de hardware com folga. A atividade não precisa de 40% para cumprir o papel dela — ela
+mostra linhas curtas de evento (`tool ok 0.00s`, `gate: shell`), o spinner e, quando aberto, o
+catálogo do M12.
+
+- [ ] **Sessão 70% / atividade 30%**. `panelWidths`/`panelInnerWidths` já exigem soma exata: a
+      mudança é ajuste de proporção, não uma exceção ao invariante.
+- [ ] **Clamp por largura absoluta**: a atividade tem **mínimo** de ~28 células (o catálogo do M12 e o
+      detalhe do gate precisam de largura para não virar pilha de `↳`) e a sessão fica com o
+      restante. Proporção pura não pode gerar coluna de 4 células em terminal estreito.
+- [ ] O scrollbar e o indicador `col N/M` continuam com 1 célula, para caber na coluna menor.
+- [ ] Teste que falha se a soma deixar de ser exata **ou** se alguma coluna cair abaixo do mínimo.
+
+### 4.3 Rolagem lateral (defensiva, não substitui a quebra)
 
 - [ ] `Tab`/`←→`/`Home`/`End` já alternam foco e rolam **verticalmente**. Acrescentar rolagem
       **horizontal** por painel (`Shift+←/→`, ou `h`/`l`), necessária para: linhas sem espaço
@@ -67,7 +93,7 @@ primeiro — corrigir só o paint **não** recupera o que já foi perdido.
 - [ ] Indicador de posição horizontal junto ao scrollbar vertical (`col 37/120`), senão o operador
       não descobre que existe mais texto à direita.
 
-### 4.3 Animação de atividade
+### 4.4 Animação de atividade
 
 - [ ] Spinner **na linha de status do painel de atividade**, frames `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` (Braille),
       com `tea.Tick` de ~100 ms **apenas enquanto `m.inTurn`** — zero CPU parado.
@@ -79,7 +105,7 @@ primeiro — corrigir só o paint **não** recupera o que já foi perdido.
 - [ ] **Segurança**: o frame é ASCII/Unicode de fonte fixa, nunca conteúdo remoto; `sanitize`
       continua aplicado a toda linha.
 
-### 4.4 Interromper, corrigir, continuar
+### 4.5 Interromper, corrigir, continuar
 
 - [ ] **`Esc` cancela o turno em andamento** (hoje só `Ctrl+C` faz). Sem turno, `Esc` **não** sai da
       aplicação — trocar `Esc` por "sair" seria uma regressão de gesto.
@@ -100,10 +126,12 @@ primeiro — corrigir só o paint **não** recupera o que já foi perdido.
 ## 5. Contratos (interfaces públicas)
 
 ```go
-// projeção pura (testável sem terminal)
-func sessionLines(sess []string, width int) []string   // quebra + indentação de continuação
+// projeção pura (testável sem terminal) — compartilhada pelos dois painéis
+func panelLines(lines []string, width int) []string    // quebra + indentação de continuação
+func sessionLines(sess []string, width int) []string  // aplica panelLines ao painel de sessão
 func hscrollRange(total, width, off int) (lo, hi int)  // janela horizontal, clampada
 func spinnerFrame(n int, ascii bool) rune
+func panelWidthsFor(total int) (sess, act int)         // 70/30 com clamp de mínimo
 
 // estado
 type tuiModel struct {
@@ -137,9 +165,13 @@ já entrega `tea.Tick`, e Braille é texto.
 ## 7. Testes obrigatórios
 
 ### Funcionais
-- [ ] Prompt de 400 caracteres em painel de 55 células: **nenhum** carácter perdido após a projeção
-      (concatena as linhas físicas == linha lógica).
+- [ ] Prompt de 400 caracteres em painel de ~70 células: **nenhum** carácter perdido após a projeção
+      (concatenar as linhas físicas, tirando indentação, == linha lógica).
+- [ ] **Atividade**: linha de evento de 200 caracteres (saída de tool) quebra em N linhas e a
+      concatenação devolve o texto inteiro — sem `…` silencioso.
 - [ ] Resposta multilinha com `\n` preservado: a contagem de linhas lógicas não muda.
+- [ ] **Geometria**: `panelWidthsFor` devolve soma exata em 40, 80, 100, 200 colunas; nenhuma coluna
+      abaixo do mínimo (~28 para a atividade) em terminal estreito.
 - [ ] `Ctrl+C` em voo → prompt **de volta** no input, cursor no fim, linha de aviso na sessão.
 - [ ] `Esc` em voo cancela; `Esc` **sem** turno não sai.
 - [ ] `↑` no input recupera o prompt editável; reenviar **não** duplica `promptHist`.
@@ -149,10 +181,11 @@ já entrega `tea.Tick`, e Braille é texto.
 - [ ] Rolagem horizontal em linha sem espaços (caminho de 200 chars) revela o fim com `End`.
 
 ### Segurança (obrigatórios — devem falhar se a proteção for removida)
-- [ ] `TestSessionProjectionNeverDropsUntrustedContent`: `\x1b[2J` num payload longo **não** escapa da
-      projeção e **não** reaparece no `View()`.
+- [ ] `TestPanelProjectionNeverDropsUntrustedContent`: `\x1b[2J` num payload longo **não** escapa da
+      projeção e **não** reaparece no `View()` — vale para **os dois** painéis.
 - [ ] `TestGateStillShowsFullPayloadAfterWrap`: remover a quebra **não** pode truncar o detalhe do
-      gate (falha se alguém "economizar" linhas no gate para caber a animação).
+      gate (falha se alguém "economizar" linhas no gate para caber a animação ou a nova geometria).
+- [ ] `TestPanelWidthsNeverBelowMinimum`: largura de terminal estreito não gera coluna ilegível.
 - [ ] `TestCancelIsAuditedNotCountedAsSuccess`: turno cancelado gera evento de cancelamento e
       **nenhum** `tool` executado é marcado como concluído.
 - [ ] `TestContinueRefusesWithoutCancellation`.
@@ -160,8 +193,10 @@ já entrega `tea.Tick`, e Braille é texto.
 
 ## 8. Critérios de aceite (DoD)
 
-- [ ] Prompt e resposta longos **legíveis por inteiro** sem corte silencioso (verificado em pty real
-      no Inspiron, não só em teste).
+- [ ] Prompt e resposta longos **legíveis por inteiro** sem corte silencioso, **nos dois painéis**
+      (verificado em pty real no Inspiron, não só em teste).
+- [ ] Atividade em ~30% da largura com quebra de linha funcional, e com piso que não a torna
+      ilegível em terminal estreito.
 - [ ] Operador distingue "processando" / "parou" / "congelou" **sem ler texto**.
 - [ ] Cancelar → corrigir → reenviar **sem redigitar**, no REPL e na TUI.
 - [ ] **Todos os testes passam**: `go test -count=1 ./...` e `go test -race -count=1 ./...` (WSL).

@@ -171,7 +171,7 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `shell` estava inutilizável (schema `cmd` vs struct `json:"n"`). **Era falso** — vi a saída
   corrompida do `rg -r` (flag de *replace*) e a tratei como conteúdo do arquivo. Schema, struct e
   mensagem de erro usam `cmd` consistentemente. Nenhum trabalho pendente daí; não levar adiante.
-- **M12 concluído (branch `m12-catalogo-modelos`)** (D-2026-10-01-53/54/55): faltava **listar os
+- **M12 concluído e mergeado** (`efeee64`, PR #5; branch `m12-catalogo-modelos`) (D-2026-10-01-53/54/55): faltava **listar os
   modelos do provedor e escolher um**. Medido no Inspiron: NIM 81 modelos devolvendo só
   `id`/`object`/`owned_by`; OpenRouter 464 com `architecture`/`pricing`/`supported_parameters` —
   logo a mesma filtragem tem fidelidades diferentes. **Três camadas** (D-53): (1) grátis, exclusão
@@ -191,16 +191,17 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `0.12.0-m12`. Host 17/17, WSL `-race` 17/17, `gofmt`/`vet` limpos, `GOAMD64=v1` ok. Smoke Inspiron:
   REPL e TUI listam/filtram/selecionam e um turno real responde com o modelo escolhido. Ver
   `docs/session-2026-10-01-m12-catalogo-modelos.md`.
-- **Próximo**: abrir PR `m12-catalogo-modelos` → `main`. **M13 especificado, não iniciado**
-  (`specs/milestones/13-m13-painel-sessao.md`, a pedido do usuário em 2026-10-02): (1) **painel de
-  sessão corta** prompt e resposta — causa raiz dupla: `runeCap` no paint
-  (`tui_panels.go:553`) **e** `truncatedLine`/`lineCap=90` no append (`tui.go:647`), que perde o texto
-  **irreversivelmente** (corrigir só o paint não recupera); entrega = projeção com quebra de linha +
-  continuação indentada, e remoção do corte no append; (2) **animação de atividade** — spinner
-  Braille via `tea.Tick` só enquanto `inTurn`, com movimento como sinal de vida e degradação ASCII
-  honesta (nunca spinner parado); (3) **interromper/corrigir/continuar** — `Esc` cancela em voo
-  (hoje só `Ctrl+C`), cancelar **devolve o prompt** ao input (hoje é descartado), `↑` reedita em vez
-  de só preencher, `/continue` reenvia o cancelado (fail-closed). Fora de escopo: `undo` completo de
+- **M12 mergeado** em `main` (`efeee64`, PR #5). **M13 em andamento** (branch
+  `m13-painel-sessao`, `specs/milestones/13-m13-painel-sessao.md`, pedido do usuário em 2026-10-02):
+  (1) **ambos os painéis cortam** prompt/resposta e evento de tool — causa raiz dupla: `runeCap` no
+  paint (`tui_panels.go:553`) **e** `truncatedLine`/`lineCap=90` no append (`tui.go:647`), que perde
+  texto **irreversivelmente**; entrega = `panelLines` compartilhado (quebra + continuação indentada)
+  e remoção do corte no append; (2) **geometria** — 60/40 → **70/30**, com piso de ~28 células para
+  a atividade (o `min=12` de `panelWidths` é curto para o catálogo do M12) e soma exata preservada;
+  (3) **animação** — spinner Braille via `tea.Tick` só enquanto `inTurn`, degradação ASCII honesta
+  (nunca spinner parado); (4) **interromper/corrigir/continuar** — `Esc` cancela em voo (hoje só
+  `Ctrl+C`), cancelar **devolve o prompt** ao input (hoje é descartado), `↑` reedita em vez de só
+  preencher, `/continue` reenvia o cancelado (fail-closed). Fora de escopo: `undo` completo de
   prompts executados (repetiria efeitos de tools sem rollback) — fase própria.
 - **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) — reusa o contrato
   M8/M12; **agendamento depende do usuário**.
