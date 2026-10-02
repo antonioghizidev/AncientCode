@@ -203,6 +203,15 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `Ctrl+C`), cancelar **devolve o prompt** ao input (hoje é descartado), `↑` reedita em vez de só
   preencher, `/continue` reenvia o cancelado (fail-closed). Fora de escopo: `undo` completo de
   prompts executados (repetiria efeitos de tools sem rollback) — fase própria.
+- **Backlog anotado para a PRÓXIMA sessão de specs** (pedido do usuário em 2026-10-02; **não
+  implementar no M13**, seção 10 da spec M13): **`/compact`** (hoje só existe **truncamento**:
+  `reduceHist`/`model.ReduceMessages` em `internal/loop/loop.go:278` **descarta** turnos antigos
+  quando `session_context_bytes > 0` — o modelo recebe um buraco, não um resumo), **`/new`** (limpar
+  contexto sem tocar em config nem no audit append-only; confirmar se há turno em voo) e
+  **`/autocompact`** por tamanho, com config YAML validada. Ponto a decidir na spec: hoje
+  `session_context_bytes` mede **bytes de histórico** e `ContextUsage.pct` mede **fração da janela**
+  — grandezas diferentes; e a ordem truncar-vs-resumir precisa ser invertida, senão o automático
+  produz buraco.
 - **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) — reusa o contrato
   M8/M12; **agendamento depende do usuário**.
 

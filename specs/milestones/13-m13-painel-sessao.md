@@ -212,4 +212,58 @@ já entrega `tea.Tick`, e Braille é texto.
   própria, com semântica de rebranching explícita e aviso ao operador — **não** neste milestone.
 - Reformatar o painel como `bubbletea/viewport` com scroll nativo (mudança grande de layout; a
   projeção pura é testável e cabe no orçamento de 4 GB).
-- Reavaliar a proporção 60/40 dos painéis; este milestone conserta **conteúdo**, não geometria.
+
+> A proporção dos painéis **entrou** neste milestone (item 4.2, 70/30) a pedido do usuário.
+
+## 10. Backlog anotado (próxima sessão de specs, **não** especificar agora)
+
+Levantado pelo usuário em 2026-10-02 durante o M13. **Nada aqui deve ser implementado no M13**,
+mesmo que pareça simples: mexer em histórico e orçamento de contexto **durante** a mudança de layout
+mistura duas causas e nenhuma delas fica verificável. Anotado para a sessão de specs seguinte.
+
+### 10.1 `/compact` — compactar o contexto
+
+Hoje existe **apenas truncamento**: `reduceHist` (`internal/loop/loop.go:278`) chama
+`model.ReduceMessages`, que **descarta** turnos antigos quando `session_context_bytes > 0` (0 =
+sem truncar, default fail-closed). Isso não é compactar: o operador perde a decisão e a saída sem
+nada no lugar, e o modelo recebe um buraco.
+
+- [ ] `/compact` produz um **resumo** do histórico e **substitui** os turnos por esse resumo +
+      os últimos turnos intactos (âncora recente preservada).
+- [ ] O resumo passa pelo **mesmo** caminho de conteúdo não confiável: `redact` + `sanitize`, e a
+      marcação de untrusted injetada pelo M6/M7. Resumo **não** pode virar canal de injeção.
+- [ ] `/compact` é **explícito** (ação do operador) e **auditado**: o audit registra que houve
+      compactação, com bytes antes/depois.
+- [ ] **Falha é fail-closed**: se o resumo falhar, o histórico **original** permanece intacto.
+- [ ] **Pregunta de design a resolver na spec**: `/compact` pede um LLM extra (custo + latência) ou
+      resume localmente por extração (heurística, sem custo, perde nuance)? Provavelmente os dois,
+      com o explícito como padrão.
+
+### 10.2 `/new` — limpar o contexto
+
+- [ ] `/new` começa uma sessão limpa: histórico de mensagens **e** prompts anteriores zerados, sem
+      tocar em config, sem tocar no audit JSONL (append-only, `internal/audit`).
+- [ ] Deve **confirmar** quando o turno em andamento existe (descartar um turno em voo é perda de
+      trabalho) — ou-negação explícita no gate.
+- [ ] A pergunta óbvia: **`/new` também limpa a sessão no disco?** A resposta operacional é
+      **não por default** (`--cleanup` explícito já existe desde o M5), senão o comando vira um
+      `rm` com nome de atalho.
+
+### 10.3 `/autocompact` — compactação automática por tamanho, configurável
+
+- [ ] Dispara `/compact` automaticamente quando o uso de contexto passar de um **limite
+      configurável** (hoje o único número é `session_context_bytes`, que é **bytes de histórico**,
+      não fração de janela do modelo — são grandezas diferentes e a spec precisa separar).
+- [ ] `ContextUsage` (`internal/loop/interaction.go:76`) já produz `pct` de uso, com cap 100; é a
+      base do gatilho. O rodapé já mostra `!` acima de 80% (M9) — o gatilho pode reaproveitar o
+      mesmo sinal.
+- [ ] **Ordem entre truncar e resumir** é o ponto delicado: hoje `reduceHist` roda a cada turno e
+      descarta. Com resumo automático, o resumo precisa acontecer **antes** do descarte, senão o
+      operador recebe um buraco em vez de um resumo. **Decisão de spec obrigatória.**
+- [ ] Config no YAML, validada no startup como o resto (fail-closed na config insegura):
+      `autocompact.enabled`, `autocompact.threshold_pct`, com piso razoável (evitar compactar a cada
+      turno em janela pequena).
+- [ ] **Nunca compacta o turno em andamento**, e **nunca** durante um gate aberto (o operador está
+      decidindo com base no histórico visível — muda-lo debaixo dele é erro).
+- [ ] Interrompendo o modelo: o operador precisa saber que houve compactação automática (linha na
+      sessão + tom no rodapé), senão parece perda de contexto sem explicação.
