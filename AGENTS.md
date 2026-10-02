@@ -208,10 +208,14 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `reduceHist`/`model.ReduceMessages` em `internal/loop/loop.go:278` **descarta** turnos antigos
   quando `session_context_bytes > 0` — o modelo recebe um buraco, não um resumo), **`/new`** (limpar
   contexto sem tocar em config nem no audit append-only; confirmar se há turno em voo) e
-  **`/autocompact`** por tamanho, com config YAML validada. Ponto a decidir na spec: hoje
-  `session_context_bytes` mede **bytes de histórico** e `ContextUsage.pct` mede **fração da janela**
-  — grandezas diferentes; e a ordem truncar-vs-resumir precisa ser invertida, senão o automático
-  produz buraco.
+  **`/autocompact`** por tamanho, com config YAML validada. **Separar histórico de contexto**
+  (§10.0): histórico = `sessions/<id>.jsonl` append-only, controlado por `--cleanup` (apaga por
+  mtime) e `--reset`/`/reset` (`store.Reset()` = `os.Remove`); contexto = `reduceHist(Load())`,
+  **rederivado a cada turno** (`loop.go:185/202/266`), nunca salvo. Logo `/compact` e `/new` só
+  podem mexer no contexto — e `/new` precisa de **âncora persistida**, senão o próximo turno
+  recarrega do disco e volta tudo. Ponto a decidir na spec: `session_context_bytes` mede **bytes de
+  histórico** e `ContextUsage.pct` mede **fração da janela** — grandezas diferentes; e a ordem
+  truncar-vs-resumir precisa ser invertida, senão o automático produz buraco.
 - **Backlog Web** (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) — reusa o contrato
   M8/M12; **agendamento depende do usuário**.
 

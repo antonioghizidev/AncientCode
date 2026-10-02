@@ -221,6 +221,37 @@ Levantado pelo usuário em 2026-10-02 durante o M13. **Nada aqui deve ser implem
 mesmo que pareça simples: mexer em histórico e orçamento de contexto **durante** a mudança de layout
 mistura duas causas e nenhuma delas fica verificável. Anotado para a sessão de specs seguinte.
 
+### 10.0 Separação conceitual: **histórico** ≠ **contexto** (pedido do usuário)
+
+O usuário está certo, e a medição no código **fortalece** o argumento. Hoje os dois termos são
+confundidos na nomenclatura, e é por isso que `/compact`, `/new` e `--cleanup` parecem a mesma
+coisa quando não são.
+
+| | **Histórico** | **Contexto** |
+|---|---|---|
+| **O que é** | o registro append-only do que aconteceu | o recorte do histórico que vai **no request** ao modelo |
+| **Onde vive** | `sessions/<id>.jsonl` (`model.Store`, `internal/model/store.go`) | `reduceHist(Load())`, recalculado **a cada turno** |
+| **Persiste** | sim, até `--cleanup`/`--reset` | **não** — é derivado, nunca salvo |
+| **Perder é** | perder registro | só liberar espaço |
+| **Hoje é controlado por** | `--cleanup` (apaga por mtime), `--reset`/`/reset` (`store.Reset()` = `os.Remove`) | `session_context_bytes` (0 = off) |
+
+**Descoberta que reforça a separação:** `internal/loop/loop.go:185`, `:202` e `:266` carregam o
+histórico **do disco a cada turno** e aplicam `reduceHist` em seguida. Ou seja, **o contexto não é
+estado — é função do histórico**. Não existe "contexto acumulado" em lugar nenhum.
+
+Consequência de design para a spec:
+
+- **`/compact` e `/new` só podem tocar no contexto**, nunca no arquivo. Isso é o que os diferencia
+  de `--reset`/`--cleanup` e o que os torna reversíveis e seguros.
+- O histórico **permanece legível** (na tela e no disco) depois de `/new` — o operador não perde o
+  registro, ele só libera espaço.
+- O termo "reset" precisa sair da linguagem desses comandos: `/reset` **hoje apaga o arquivo**
+  (`store.Reset()` → `os.Remove`), que é a operação destrutiva, e `/new` é a não-destrutiva.
+  Manter os dois com nomes parecidos é armadilha de mnemonic.
+- Como o contexto é **rederivado** por turno, `/new` precisa de um mecanismo explícito de
+  "âncora" (ex.: `Store.SetAnchor`/sessão lógica nova) — **não** basta apagar mensagens em memória,
+  porque o próximo turno recarrega do disco e volta tudo.
+
 ### 10.1 `/compact` — compactar o contexto
 
 Hoje existe **apenas truncamento**: `reduceHist` (`internal/loop/loop.go:278`) chama
@@ -234,20 +265,27 @@ nada no lugar, e o modelo recebe um buraco.
       marcação de untrusted injetada pelo M6/M7. Resumo **não** pode virar canal de injeção.
 - [ ] `/compact` é **explícito** (ação do operador) e **auditado**: o audit registra que houve
       compactação, com bytes antes/depois.
+- [ ] **O arquivo da sessão não é reescrito.** O resumo vive como camada de derivação; o histórico
+      completo continua no `.jsonl` e no painel de sessão. É isto que separa `/compact` de
+      `--reset`.
 - [ ] **Falha é fail-closed**: se o resumo falhar, o histórico **original** permanece intacto.
-- [ ] **Pregunta de design a resolver na spec**: `/compact` pede um LLM extra (custo + latência) ou
+- [ ] **Pergunta de design a resolver na spec**: `/compact` pede um LLM extra (custo + latência) ou
       resume localmente por extração (heurística, sem custo, perde nuance)? Provavelmente os dois,
       com o explícito como padrão.
 
-### 10.2 `/new` — limpar o contexto
+### 10.2 `/new` — liberar o contexto, preservar o histórico
 
-- [ ] `/new` começa uma sessão limpa: histórico de mensagens **e** prompts anteriores zerados, sem
-      tocar em config, sem tocar no audit JSONL (append-only, `internal/audit`).
-- [ ] Deve **confirmar** quando o turno em andamento existe (descartar um turno em voo é perda de
-      trabalho) — ou-negação explícita no gate.
-- [ ] A pergunta óbvia: **`/new` também limpa a sessão no disco?** A resposta operacional é
-      **não por default** (`--cleanup` explícito já existe desde o M5), senão o comando vira um
-      `rm` com nome de atalho.
+- [ ] `/new` **não** toca no `sessions/<id>.jsonl` e **não** apaga o painel de sessão. O que muda é
+      apenas o que vai no próximo request: o modelo passa a ver uma sessão vazia.
+- [ ] **Por isso precisa de âcora explícita** (§10.0): como `run` recarrega do disco a cada turno,
+      `/new` exige um marcador persistido de "a partir daqui o contexto começa limpo" — apagar em
+      memória seria desfeito no turno seguinte.
+- [ ] Confirmação obrigatória quando há **turno em andamento** (descartar trabalho em voo é perda
+      real) — via o gate humano, não um `y/n` solto.
+- [ ] Nada de config, nada de audit (o audit é append-only, `internal/audit`): `/new` é ação de
+      contexto, não de registro.
+- [ ] A pergunta de spec: **`/new` recomeça também a sessão *lógica*** (o nome exibido no painel
+      passa a ser `sessão 2`)? Se sim, `/resume` precisa saber qual é a âncora ativa.
 
 ### 10.3 `/autocompact` — compactação automática por tamanho, configurável
 
