@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"ancientai/internal/loop"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
 )
 
 // gateResult is what a Decide call returns internally (it can be threaded

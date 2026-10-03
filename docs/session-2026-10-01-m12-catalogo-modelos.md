@@ -70,7 +70,7 @@ oferecer em silêncio um modelo que não faz tool calling.
 | `internal/provider` | parse, dedup, limite de leitura, sanitização, chave fora de erro | ✅ |
 | `internal/catalog` | classificação, precedência, filtros, ranking, `free` só com preço | ✅ |
 | `internal/loop` | `ListModels`, fail-closed, `SelectModel` fora de faixa | ✅ |
-| `cmd/ancientai` | parser, teclado do picker, alternância assíncrona, input limpo | ✅ |
+| `cmd/ancientcode` | parser, teclado do picker, alternância assíncrona, input limpo | ✅ |
 | Host serial (17 pacotes) | suíte completa | ✅ 0 falhas |
 | WSL `-race` (17 pacotes) | detector de corrida | ✅ 0 races |
 | `gofmt` (blob commitado) / `go vet` | estático | ✅ |

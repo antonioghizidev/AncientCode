@@ -3,7 +3,7 @@ package model
 import (
 	"testing"
 
-	"ancientai/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
 )
 
 func TestEstimateBytesMatchesTurnBytes(t *testing.T) {

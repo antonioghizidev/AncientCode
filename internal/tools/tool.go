@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"ancientai/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
 )
 
 // MaxArgsBytes bounds the size of a single tool-call argument document. The

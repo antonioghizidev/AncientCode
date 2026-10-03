@@ -3,7 +3,7 @@ package catalog
 import (
 	"testing"
 
-	"ancientai/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
 )
 
 func nvidiaStyle() []provider.ModelInfo {

@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"ancientai/internal/sandbox"
-	"ancientai/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/sandbox"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
 )
 
 // maxCmdBytes bounds the size of the command string.

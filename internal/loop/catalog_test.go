@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"ancientai/internal/catalog"
-	"ancientai/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/catalog"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
 )
 
 // catalogProvider is a fake provider that can both list a catalog and report the

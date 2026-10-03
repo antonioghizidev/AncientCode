@@ -18,8 +18,8 @@ sem AVX.
       de `tool_calls`; erros redigidos preservando sentinela; limites de leitura.
 - [x] `internal/model` — Store JSONL 0600 append-only, redação na escrita e na leitura.
 - [x] `internal/loop` — turno M1; fail-closed se o modelo pedir tools.
-- [x] `cmd/ancientai` — REPL (`-config`, `-session`, `-reset`, `-version`).
-- [x] `ancientai.example.yaml`, `.gitignore` (segredos, binários, sessions, `.obsidian/`).
+- [x] `cmd/ancientcode` — REPL (`-config`, `-session`, `-reset`, `-version`).
+- [x] `ancientcode.example.yaml`, `.gitignore` (segredos, binários, sessions, `.obsidian/`).
 
 ## 3. Contratos
 
@@ -65,7 +65,7 @@ sem AVX.
 - [x] `gofmt`/`go vet`/`go build` limpos.
 - [x] `docs/DECISOES.md` atualizado (D-01..D-12).
 - [x] Nota de sessão: `docs/session-2026-09-14-m1.md`.
-- [x] Artefato do notebook compilado: `dist/ancientai` com `GOAMD64=v1`/`CGO_ENABLED=0`.
+- [x] Artefato do notebook compilado: `dist/ancientcode` com `GOAMD64=v1`/`CGO_ENABLED=0`.
 - [x] Status atualizado no `docs/SPEC.md` (§12).
 - ⏳ **Aceite final (exigência fora do gate M1)**: smoke test no notebook alvo com chave real
   ("responda em uma frase") via OpenRouter e NVIDIA.

@@ -10,8 +10,8 @@ import (
 	"errors"
 	"fmt"
 
-	"ancientai/internal/catalog"
-	"ancientai/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/catalog"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
 )
 
 // modelLister is the optional provider capability for listing the catalog.

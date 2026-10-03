@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"ancientai/internal/redact"
+	"github.com/antonioghizidev/ancientcode/internal/redact"
 )
 
 // maxResponseBytesDefault bounds the SSE response body read to fail closed on
@@ -172,7 +172,7 @@ func (c *Client) Chat(ctx context.Context, msgs []ChatMessage, tools []ToolDef, 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+key)
-	req.Header.Set("User-Agent", "ancientai/0.1")
+	req.Header.Set("User-Agent", "ancientcode/0.1")
 
 	resp, err := c.http.Do(req)
 	if err != nil {

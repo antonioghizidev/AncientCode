@@ -4,7 +4,7 @@
 
 ## Projeto
 
-**AncientAI** — harness de agente de IA para terminal em hardware **sem AVX** (Dell Inspiron
+**AncientCode** — harness de agente de IA para terminal em hardware **sem AVX** (Dell Inspiron
 1545 / Core 2 Duo / 4 GB RAM / Linux server minimal). Cliente fino em **Go**: o modelo roda no
 provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible). Binário único,
 `CGO_ENABLED=0`, `GOAMD64=v1` (sem SSE pós-SSE2).
@@ -51,14 +51,14 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   review read-only + strict-child, edit_file com aprovação, docker real, apt real (exit 100
   sem root, propagado), `--cleanup`/`--resume`/`--reset`/`--run` verificados. Defeito do
   preview `edit_file` corrigido (diff LCS stdlib, D-2026-09-16-29, teste de regressão).
-  Ajustes de implantação: `run_user` exige harness no usuário dedicado `ancientai` ou
+  Ajustes de implantação: `run_user` exige harness no usuário dedicado `ancientcode` ou
   privilégio (D-2026-09-16-30); apt não-root sem efeito, docker ok via grupo
   (D-2026-09-16-31).
 - **M6 pós-commit (NVIDIA NIM, usuário dedicado)**: validação real no Inspiron como
-  `ancientai` com provider NVIDIA (`nvidia/nemotron-3.5-lightning-30b-a3b`). Provider NIM
+  `ancientcode` com provider NVIDIA (`nvidia/nemotron-3.5-lightning-30b-a3b`). Provider NIM
   vivo (o slug `:free` 404 nos directs NIM; o `-30b-a3b` responde); cold start passou de
   2 min → timeout provider 5 min (D-2026-09-16-32); write/shell **com efeito** executados e
-  auditados (`ask→allow→executed`, owner `ancientai`, guarda de chaining M2 negou `;` e o
+  auditados (`ask→allow→executed`, owner `ancientcode`, guarda de chaining M2 negou `;` e o
   modelo decompôs). Defeito de re-root de caminho absoluto em `write_file` corrigido —
   tools de arquivo recusam absoluto, fail-closed (D-2026-09-16-33). Pareamento:
   nemotron/NIM → `toolbox_mode: run` com ask (D-2026-09-16-34); `plan` para modelos que
@@ -69,25 +69,25 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `modelo: recebendo tokens...` (SSE onEvent) → `gate humano: aguardando sua aprovacao...`,
   com limpeza `""` (D-2026-09-16-35). Teto de turno alinhado ao provider (5 min). Tests:
   `TestStatusHookStreamsPhases`/`TestStatusHookReportsHumanGate`. Binário Linux `0.6.0-m6-ind`
-  (`GOAMD64=v1`) em `/home/ancientai/ancientai-0.6.0-m6-ind` no Inspiron (o `m6` estava em
+  (`GOAMD64=v1`) em `/home/ancientcode/ancientcode-0.6.0-m6-ind` no Inspiron (o `m6` estava em
   uso por sessão aberta). Ver `docs/session-2026-09-16-indicadores.md`.
 - **M7 concluído (Skills, §11.1)** — branch `m7-skills` (D-2026-09-16-38..41): pacote
   `internal/skills` (frontmatter YAML estrito KnownFields, `name`==dir, limites 256 KiB/64 KiB,
   nome `^[a-z0-9]+(?:-[a-z0-9]+)*$`, scripts strict-child, `--verify-skill` com stamp
-  `.ancientai-verified` + `origin_hash`); tool `skill_run` via `sandbox.ExecVector` (vetor puro,
+  `.ancientcode-verified` + `origin_hash`); tool `skill_run` via `sandbox.ExecVector` (vetor puro,
   sem shell; recusa `run_user`≠atual/root; ask; argv ≤64/16 KiB); loop: `SetSkills`+`SetSkill`
   (allowed_tools validado no registry, fail-closed), `enabledTools` **intersect** com a união
   (skill restringe, nunca concede), `policyFor(skill_run)=ask`, injeção no system prompt com
-  marcadores untrusted; config `skills_dir` (default `~/.config/ancientai/skills`) +
-  `tool_timeouts.skill_run` (60s). Binário `0.7.0-m7-ind` (`dist/ancientai`, GOAMD64=v1).
+  marcadores untrusted; config `skills_dir` (default `~/.config/ancientcode/skills`) +
+  `tool_timeouts.skill_run` (60s). Binário `0.7.0-m7-ind` (`dist/ancientcode`, GOAMD64=v1).
   Host serial 16/16 e Linux WSL `-race` 16/16; 5 testes de segurança do milestone obrigatórios.
   Ver `docs/session-2026-09-16-m7.md`.
-- **M7 pós-commit (validação no Inspiron)**: smoke real como `ancientai` com NVIDIA NIM
+- **M7 pós-commit (validação no Inspiron)**: smoke real como `ancientcode` com NVIDIA NIM
   (`docs/session-2026-09-16-inspiron-m7.md`): skill `smoke` com `origin` + `scripts/status.sh`;
-  load sem stamp recusado; `--verify-skill` grava `.ancientai-verified`; tamper no SKILL.md →
+  load sem stamp recusado; `--verify-skill` grava `.ancientcode-verified`; tamper no SKILL.md →
   carga recusada até re-verify; `skill_run` em sessão NIM real com ask→allow→executed (93 ms,
   efeito gravado, audit `status=executed policy=ask`); `--run` recusa skill scriptada. Binário
-  `0.7.0-m7-ind` em `/home/ancientai/ancientai-0.7.0-m7-ind`.
+  `0.7.0-m7-ind` em `/home/ancientcode/ancientcode-0.7.0-m7-ind`.
 - **M8 concluído (interação prompt, branch `m8-interacao-prompt`)**: domínio stdlib
   (D-2026-09-17-42..47): observer de eventos transport-agnóstico (`SetObserver`, `Phase`
   append-only, `Event` JSON estável `phase/tool/detail/dur/at`, `detail` redigido no emit,
@@ -108,7 +108,7 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `/provider` em raw, `/exit` limpo). Defeito do cursor no emit pty corrigido + teste de
   regressão (D-2026-09-17-48, `cf57fa9`). Ver `docs/session-2026-09-17-inspiron-m8.md`.
 - **M9 concluído (TUI, branch `m9-tui`)** (D-2026-09-17-49): Bubble Tea **v1.3.10 pinado,
-  delivery-only** em `cmd/ancientai` (flag `--tui`, TTY-only: stdin+stdout char device; recusa
+  delivery-only** em `cmd/ancientcode` (flag `--tui`, TTY-only: stdin+stdout char device; recusa
   pipe/`--run`; versão `0.9.0-m9`). `tui_panels.go` stdlib-puro (ctxBar 5 células, buildFooter
   2 linhas `>80% → !`, activityFromEvent re-reda, readAuditTail, buildView, canUseTUI);
   `tui_gate.go` = `loop.Approver` com diálogo único serializado + veto `d` + fail-closed em ctx
@@ -117,7 +117,7 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   → eventos + bridge do gate. REPL default e formatos de pipe/`--run` inalterados; núcleo
   `internal/*` continua stdlib (enforcement `TestLoopMustNotImportCmdOrUI`). Host 16/16, WSL
   `-race` 16/16, vet/build `GOAMD64=v1` limpos. Ver `docs/session-2026-09-18-m9-tui.md`.
-- **M9 pós-commit (validação no Inspiron)**: smoke real como `ancientai` com NVIDIA NIM via pty
+- **M9 pós-commit (validação no Inspiron)**: smoke real como `ancientcode` com NVIDIA NIM via pty
   Python (`tui_drv.py`) numa sessão SSH: respondendo as queries do terminal Bubble Tea (OSC11 +
   DSR) destrava o modelo de input no pty cru (defeito do cenário de teste descoberto — não do
   produto); Enter = `\r`. Validações: **gate ask `y`** → audit `write_file status=executed
@@ -128,7 +128,7 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   **C-c em voo** → `erro: provider: SSE read: context canceled`, 0 registros de tool no audit,
   arquivo NÃO criado, loop vivo após; **`/provider`** → `base_url: https://integrate.api.
   nvidia.c…` no painel; **`/model`** → modelo NIM ativo; **`/exit`** → saída limpa (restaura
-  alt-screen). Guarda de pipe: `echo ola | ancientai --tui` → `erro: --tui exige stdin E stdout
+  alt-screen). Guarda de pipe: `echo ola | ancientcode --tui` → `erro: --tui exige stdin E stdout
   TTY (pipes/arquivos recusados)` RC=2. Artefatos de teste removidos. Ver
   `docs/session-2026-09-18-inspiron-m9.md`.
 - **M10 concluído (branch `m10-tui-paineis`)** (D-2026-09-30-50): o M9 foi aceito no design
@@ -146,7 +146,7 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   M9, que acrescentava espaços ao fim e quebrava edição no meio da linha. Gate/observer/parser/
   redação intactos; `tuiGate` segue o único `Approver`. Versão `0.10.0-m10`. Host serial 16/16,
   WSL `-race` 16/16 (Go 1.27 instalado no WSL), `gofmt`/`vet` limpos, `GOAMD64=v1` build ok.
-  **Smoke Inspiron** (pty real + NIM, binário `/home/ancientai/ancientai-0.10.0-m10`): moldura
+  **Smoke Inspiron** (pty real + NIM, binário `/home/ancientcode/ancientcode-0.10.0-m10`): moldura
   completa, scrollbar (verificada com terminal de 11 linhas), marcador `▸`, rodapé; gate `y` →
   audit `write_file executed policy=ask decision=allow` + arquivo criado; gate `d` → `denied` +
   arquivo não criado. Artefatos removidos. Ver `docs/session-2026-09-30-m10-tui-paineis.md`.
@@ -210,7 +210,7 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   cortava o payload em 2 linhas **e** `fixedRows` reservava 1 linha para um diálogo de 3, empurrando
   o prompt para fora da tela (D-60, defeito do M11); (e) rodapé fatiando **bytes** (UTF-8 partido);
   (f) cancelamento pintado como **erro** vermelho. Versão `0.13.0-m13`. Host 17/17 (127 testes em
-  `cmd/ancientai`), WSL `-race` 17/17 (**sequencial por pacote**: em paralelo sobre `/mnt/d` o
+  `cmd/ancientcode`), WSL `-race` 17/17 (**sequencial por pacote**: em paralelo sobre `/mnt/d` o
   pacote estoura o orçamento sem ser falha real), `gofmt`/`vet` limpos, `GOAMD64=v1` ok. Smoke
   Inspiron: prompt de 152 caracteres em 3 linhas com continuação, spinner animando, `Esc` cancela e
   devolve o prompt, gate aberto com input visível. **Não validado**: integridade bit-a-bit via
@@ -225,7 +225,7 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   new one with the summary"; autocompact ≈95% da janela, também cria sessão nova). Isso **resolve** a
   pergunta da âncora: `/new` **não** é limpar o contexto da sessão atual, é trocar de `.jsonl`, logo
   é trivialmente reversível. **Risco principal: sem `/sessions` (listar/trocar, alias `/resume`) o
-  operador perde o acesso à sessão anterior** — AncientAI já tem `--resume` (M5). Contexto hoje
+  operador perde o acesso à sessão anterior** — AncientCode já tem `--resume` (M5). Contexto hoje
   **não é estado**: `loop.go:185/202/266` recarrega do disco a cada turno e aplica `reduceHist` (§10.0).
   Ponto a decidir na spec: `session_context_bytes` mede **bytes de histórico** e `ContextUsage.pct`
   mede **fração da janela** — grandezas diferentes; e a ordem truncar-vs-resumir precisa ser
@@ -273,5 +273,5 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
 ```sh
 go test -count=1 ./...                      # suíte completa (gate)
 go vet ./...                                # estático
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 go build -trimpath -ldflags="-s -w" -o dist/ancientai ./cmd/ancientai
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 go build -trimpath -ldflags="-s -w" -o dist/ancientcode ./cmd/ancientcode
 ```

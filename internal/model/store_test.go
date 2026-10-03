@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"ancientai/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
 )
 
 const testSecret = "sk-abcdefGHIJKLMNOPQRSTUVWXyz123456"

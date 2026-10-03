@@ -1,4 +1,4 @@
-# Registro de decisões — AncientAI
+# Registro de decisões — AncientCode
 
 Registro contínuo de decisões tomadas durante o desenvolvimento (ADR lite).
 Formato: cada entrada tem data, contexto, decisão, alternativa e consequência.
@@ -26,10 +26,10 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   (HTTP, JSON, SSH, execução) usa stdlib.
 - **Consequência**: superfície de supply-chain mínima; `go.sum` cobre hashes.
 
-### D-2026-09-14-03 — Módulo Go nomeado "ancientai"
+### D-2026-09-14-03 — Módulo Go nomeado "ancientcode"
 
-- **Decisão**: `module ancientai` (sem domínio). Repositório local sem remoto.
-- **Consequência**: import paths curtos (`ancientai/internal/...`); fácil renomear depois
+- **Decisão**: `module github.com/antonioghizidev/ancientcode` (sem domínio). Repositório local sem remoto.
+- **Consequência**: import paths curtos (`github.com/antonioghizidev/ancientcode/internal/...`); fácil renomear depois
   para um domínio se o repo ganhar remoto.
 
 ### D-2026-09-14-04 — Chave de API lida do ambiente a cada request
@@ -416,14 +416,14 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   usuário errado). Um modelo "free" chegou a *inventar* a saída `uid=1000(admin)` na narração
   (ótima demonstração do princípio "output do modelo é untrusted").
 - **Decisão**: confirmado o modelo de implantação: o harness roda **como o próprio usuário
-  dedicado** `ancientai` (SPEC: o processo principal nunca roda como root), com
+  dedicado** `ancientcode` (SPEC: o processo principal nunca roda como root), com
   `run_user == usuário atual` para execução direta contida (workdir/timeout/output/root de
   arquivos `code_root`). `root` continua hard-block; `su` segue para operações onde o processo
   detém privilégio legítimo (CI/root administrada).
 - **Alternativa**: permitir `run_user` vazio no harness não-root (silencioso downgrade — vetado,
   contraria SPEC §5.2); alimentar senha para `su` (segredo em args — vetado, M6 scan).
 - **Consequência**: o cloud-surfing de permissão isolada é de responsabilidade do deployment
-  (systemd/`sudo -u ancientai` / usuário dedicado); o sandbox mantém isolamento por
+  (systemd/`sudo -u ancientcode` / usuário dedicado); o sandbox mantém isolamento por
   workdir/timeout/output + whitelist; execução efetiva como usuário indevido é impossível
   (fail-closed).
 
@@ -457,9 +457,9 @@ As decisões que alteram a SPEC devem ser refletidas lá.
 ### D-2026-09-16-33 — Tools de arquivos recusam caminho absoluto (fail-closed), contrato root-relativo
 
 - **Contexto**: validação real no Inspiron — o modelo passou um caminho **absoluto**
-  (`/opt/ancientai/code/smoke-nvidia.txt`) a `write_file`. O contrato da tool é "path relativo
+  (`/opt/ancientcode/code/smoke-nvidia.txt`) a `write_file`. O contrato da tool é "path relativo
   à raiz", mas `filepath.Join(root, rel)` **re-root** o caminho absoluto (Go não descarta o
-  segundo elemento absoluto no Join), gravando em `code_root/opt/ancientai/code/...` e
+  segundo elemento absoluto no Join), gravando em `code_root/opt/ancientcode/code/...` e
   **devolvendo sucesso** — o usuário e o audit viam "executado" num arquivo que não estava onde
   o modelo prometia.
 - **Decisão**: `Files.resolve`/`resolveWrite` passam a recusar `filepath.IsAbs(rel)` com erro
@@ -511,7 +511,7 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   conexão: `>>> modelo: aguardando o primeiro token...` → limpeza → `erro:` com o motivo. Novos
   testes: `TestStatusHookStreamsPhases` e `TestStatusHookReportsHumanGate` (loop).
   Binário Linux `0.6.0-m6-ind` (`GOAMD64=v1`) cruzado e implantado em
-  `/home/ancientai/ancientai-0.6.0-m6-ind` no Inspiron.
+  `/home/ancientcode/ancientcode-0.6.0-m6-ind` no Inspiron.
 
 ## 2026-09-16 — TUI + recursos de interação (backlog, pós-M7)
 
@@ -522,7 +522,7 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   chamadas de tool, gate humano) e, futuramente, painel de agentes ativos. O loop já é
   UI-agnostic (SetStatus D-35 + Approver), então a TUI é um consumidor novo, não uma refatoração.
 - **Decisão**: adotar `charmbracelet/bubbletea` (+ `x/term`, transitivo) **somente na camada de
-  render/input** do `cmd/ancientai` (`--tui` opcional; o REPL de texto continua default e
+  render/input** do `cmd/ancientcode` (`--tui` opcional; o REPL de texto continua default e
   compartilha o mesmo observador de eventos). Justificativa da dependência em atendimento à
   constituição: interação terminal (raw mode, mouse, redraw, resolução de colunas) é domínio
   maduro; ANSI manual stdlib seria manutenção nossa permanente e bugado em dispositivos
@@ -611,7 +611,7 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   baixada)" e "versionamento: mudanças exigem re-revisão do operador".
 - **Decisão**: skill com frontmatter `origin` ≠ "" é tratada como **confiável só após verificação
   explícita do operador**: `--verify-skill <name>` grava um stamp JSON
-  (`.ancientai-verified`) com sha256 do `SKILL.md` e de cada script. No load/uso sem stamp
+  (`.ancientcode-verified`) com sha256 do `SKILL.md` e de cada script. No load/uso sem stamp
   (ou stamp com hash divergente) → skill **recusada fail-closed**, com instrução de verificação.
   Re-mudança do conteúdo após a verificação → hash diverge → recusada (re-exige `--verify-skill`).
 - **Alternativa**: confiar no conteúdo baixado sem verificação (vetado pela SPEC); rede-verificar
@@ -730,7 +730,7 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   (`\r> \x1b[K`, `recebendo tokens`), não por timing — evita falso positivo de "pronto".
 - **Alternativa**: mandar ANSI de posicionamento absoluto (mais frágil no pty), ou dormir fixo
   por passo (instável com NIM fria).
-- **Consequência**: cursor exato no tty real; teste de regressão no host (`cmd/ancientai`,
+- **Consequência**: cursor exato no tty real; teste de regressão no host (`cmd/ancientcode`,
   determinístico).
 
 ### D-2026-09-17-49 — Bubble Tea v1.3.10 pinado para a TUI M9 (delivery-only)
@@ -739,7 +739,7 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   Bubble Tea; a constituição §8 exige dependência mínima/justificada e revisão manual do diff de
   versão — registrar o pin e o escopo aqui.
 - **Decisão**: adicionar `github.com/charmbracelet/bubbletea v1.3.10` (mais recente estável no
-  momento, 2026-09) **somente em `cmd/ancientai`** (`tui.go`/`tui_gate.go`/`tui_panels.go`). O
+  momento, 2026-09) **somente em `cmd/ancientcode`** (`tui.go`/`tui_gate.go`/`tui_panels.go`). O
   núcleo (`internal/*`) continua 100% stdlib — enforcement pelo teste arquitetural do M8
   (`TestLoopMustNotImportCmdOrUI`). Transitives trazidos (`x/term`, `lipgloss`, `ansi`,
   `termenv`, `go-isatty`, etc.) são Go puro, compatíveis com `GOAMD64=v1`/`CGO_ENABLED=0` —

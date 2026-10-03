@@ -9,7 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"ancientai/internal/loop"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
 )
 
 // M13 — animação de atividade e controle do turno. O pedido do operador: com a

@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"ancientai/internal/catalog"
-	"ancientai/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/catalog"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
 )
 
 // pickerCatalog builds a catalog with the two shapes measured in production.

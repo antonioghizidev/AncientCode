@@ -14,7 +14,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"ancientai/internal/catalog"
+	"github.com/antonioghizidev/ancientcode/internal/catalog"
 )
 
 // catalogTimeout bounds the catalog fetch: the picker must never hang waiting

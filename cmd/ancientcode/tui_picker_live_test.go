@@ -8,10 +8,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"ancientai/internal/config"
-	"ancientai/internal/loop"
-	"ancientai/internal/model"
-	"ancientai/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/config"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
+	"github.com/antonioghizidev/ancientcode/internal/model"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
 )
 
 // switchableCatalogProvider is a real provider from the TUI's point of view: it

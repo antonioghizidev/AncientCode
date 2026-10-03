@@ -13,8 +13,8 @@ então avaliar M7.
 ## O que foi feito
 
 - **Setup de acesso**: chave ed25519 de dev instalada para `USUARIO`; conectividade OK.
-- **Ambiente alvo**: binário `dist/ancientai` (0.6.0-m6) copiado e executando; usuário
-  `ancientai` (uid 1001) criado; `/opt/ancientai/code` com dono `root:ancientai`, `g+rwX`
+- **Ambiente alvo**: binário `dist/ancientcode` (0.6.0-m6) copiado e executando; usuário
+  `ancientcode` (uid 1001) criado; `/opt/ancientcode/code` com dono `root:ancientcode`, `g+rwX`
   e setgid; exports de `OPENROUTER_API_KEY` no `~/.bashrc` do USUARIO (guard interativo de
   `.bashrc` impede source em `ssh host cmd`; smokes carregam as vars via `awk`).
 - **Smoke A** (config/startup): config validada fail-closed (code_root strict-child do
@@ -29,14 +29,14 @@ então avaliar M7.
   checksum do arquivo permaneceu — read-only comprovado em hardware real.
 - **Smoke D** (edit_file real): gating M6 em ação — o modelo relatou no plano que
   `edit_file` não estava disponível (estava oculto) e, após o `y`, executou com aprovação;
-  arquivo editado (`Hello AncientAI!`), audit `executed`. Revelou o **defeito do preview**
+  arquivo editado (`Hello AncientCode!`), audit `executed`. Revelou o **defeito do preview**
   (`+package internal` duplicado) → **corrigido** (D-2026-09-16-29, LCS stdlib) e binário
   re-implantado.
-- **Smoke E** (shell + run_user): com `run_user: ancientai` e harness rodando como USUARIO,
-  `su - ancientai -c 'id'` pediu senha → `Authentication failure` exit 1, `id` **nunca
+- **Smoke E** (shell + run_user): com `run_user: ancientcode` e harness rodando como USUARIO,
+  `su - ancientcode -c 'id'` pediu senha → `Authentication failure` exit 1, `id` **nunca
   rodou** (fail-secure). O modelo *inventou* `uid=1000(admin)` na narração do resultado —
   validação ao vivo de que output de modelo é untrusted. Conclusão: implantar o harness **no
-  usuário dedicado `ancientai`** (D-2026-09-16-30). Com `run_user == atual`, o executor roda
+  usuário dedicado `ancientcode`** (D-2026-09-16-30). Com `run_user == atual`, o executor roda
   direto (validado de ponta a ponta no caminho docker).
 - **Smoke F** (docker real): `docker ps` via tool listou os containers projeto reais;
   2 chamadas aprovadas+executadas+auditadas (<150 ms cada).
@@ -81,7 +81,7 @@ implantação como usuário dedicado.
 
 ## Próximos passos
 
-1. Deploy no usuário dedicado: `sudo -u ancientai` (ou login) e revalidar `shell` e `apt`
+1. Deploy no usuário dedicado: `sudo -u ancientcode` (ou login) e revalidar `shell` e `apt`
    com efeito real (3–5 min; depende do reset do quota free do OpenRouter ou de crédito).
 2. Rodar um turno `--resume` completo quando o quota voltar (validar continuidade real da
    conversa, não só a preservação do arquivo).

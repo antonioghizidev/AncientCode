@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"ancientai/internal/model"
-	"ancientai/internal/provider"
-	"ancientai/internal/redact"
+	"github.com/antonioghizidev/ancientcode/internal/model"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/redact"
 )
 
 const promptHistoryCap = 20 // D-37: ≥10 prompts kept in memory, redacted.

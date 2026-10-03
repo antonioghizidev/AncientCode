@@ -36,12 +36,12 @@ resposta perde o sumário inteiro. O painel não oferece rolagem lateral nem que
 
 | Local | Comportamento | Efeito |
 |---|---|---|
-| `cmd/ancientai/tui_panels.go:553` | `runeCap(lineAt(sess, sessOff+i), sessBody)` — e o mesmo para `act` | **corte duro** na largura do painel; sem `…`, sem marcação, **nos dois painéis** |
-| `cmd/ancientai/tui.go:647` | `truncatedLine` corta a `lineCap = 90` runes **no append** | perda **irreversível**: o texto nunca chega ao painel |
-| `cmd/ancientai/tui_panels.go:525` | `renderPanels` recebe `[]string` já achatado | o painel é um viewport de 1 linha = 1 linha lógica |
-| `cmd/ancientai/tui_panels.go:216` (`panelWidths`) | 60/40 fixo, `min = 12` | sessão com ~55 células: pouco mais que 2/3 do terminal para a conversa; e o piso de 12 é curto demais para o catálogo do M12 |
-| `cmd/ancientai/tui.go:681` | nenhum ticker; `m.statusTone()` é estático por fase | sem sinal temporal de "trabalhando" |
-| `cmd/ancientai/tui.go:214-223` | `Ctrl+C` cancela, mas o texto do prompt foi descartado no submit | para retomar, o operador **retypes** o prompt |
+| `cmd/ancientcode/tui_panels.go:553` | `runeCap(lineAt(sess, sessOff+i), sessBody)` — e o mesmo para `act` | **corte duro** na largura do painel; sem `…`, sem marcação, **nos dois painéis** |
+| `cmd/ancientcode/tui.go:647` | `truncatedLine` corta a `lineCap = 90` runes **no append** | perda **irreversível**: o texto nunca chega ao painel |
+| `cmd/ancientcode/tui_panels.go:525` | `renderPanels` recebe `[]string` já achatado | o painel é um viewport de 1 linha = 1 linha lógica |
+| `cmd/ancientcode/tui_panels.go:216` (`panelWidths`) | 60/40 fixo, `min = 12` | sessão com ~55 células: pouco mais que 2/3 do terminal para a conversa; e o piso de 12 é curto demais para o catálogo do M12 |
+| `cmd/ancientcode/tui.go:681` | nenhum ticker; `m.statusTone()` é estático por fase | sem sinal temporal de "trabalhando" |
+| `cmd/ancientcode/tui.go:214-223` | `Ctrl+C` cancela, mas o texto do prompt foi descartado no submit | para retomar, o operador **retypes** o prompt |
 
 Ou seja: a falha do item 1 é **dupla** (corte no append + corte no paint) e o pior deles é o
 primeiro — corrigir só o paint **não** recupera o que já foi perdido.
@@ -255,7 +255,7 @@ O usuário pediu explicitamente paridade com o opencode. Consultando a documenta
 lógica ou abre uma sessão nova?". A resposta é **sessão nova** — e isso vale para os **três**
 comandos. No opencode, a unidade é a **sessão**, e o contexto é derivado dela.
 
-Consequências para o AncientAI, que **já tem a peça que falta**: `--resume <id>` (M5) reutiliza um
+Consequências para o AncientCode, que **já tem a peça que falta**: `--resume <id>` (M5) reutiliza um
 `.jsonl` existente. Então:
 
 - [x] `/new` **cria uma sessão nova** (`sessions/<id>.jsonl`), não apaga nada. A anterior continua

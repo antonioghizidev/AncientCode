@@ -29,14 +29,14 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"ancientai/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
 )
 
 const (
 	// skillFileName is the canonical mainfest name inside a skill directory.
 	skillFileName = "SKILL.md"
 	// StampName is the operator-verification stamp written by --verify-skill.
-	StampName = ".ancientai-verified"
+	StampName = ".ancientcode-verified"
 	// maxSkillBytes bounds SKILL.md (the model controls its size indirectly).
 	maxSkillBytes = 256 << 10 // 256 KiB
 	// maxScriptBytes bounds a single skill script.

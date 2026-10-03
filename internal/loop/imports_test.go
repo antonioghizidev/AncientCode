@@ -11,7 +11,7 @@ import (
 
 // TestLoopMustNotImportCmdOrUI is the M8 build-time architectural rule: the
 // core (internal/*) must never depend on a frontend (cmd/*) nor on UI
-// libraries (e.g. bubbletea). The M9 TUI lives entirely in cmd/ancientai; a
+// libraries (e.g. bubbletea). The M9 TUI lives entirely in cmd/ancientcode; a
 // future web UI may add transports without touching this package.
 func TestLoopMustNotImportCmdOrUI(t *testing.T) {
 	entries, err := os.ReadDir(".")
@@ -29,7 +29,7 @@ func TestLoopMustNotImportCmdOrUI(t *testing.T) {
 		}
 		for _, imp := range f.Imports {
 			p := strings.Trim(imp.Path.Value, `"`)
-			if strings.HasPrefix(p, "ancientai/cmd/") {
+			if strings.HasPrefix(p, "ancientcode/cmd/") {
 				t.Errorf("%s imports frontend %q — core must never depend on a delivery layer", e.Name(), p)
 			}
 			if strings.Contains(p, "charmbracelet") {

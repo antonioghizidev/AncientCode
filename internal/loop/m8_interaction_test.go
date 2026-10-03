@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"ancientai/internal/config"
-	"ancientai/internal/model"
-	"ancientai/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/config"
+	"github.com/antonioghizidev/ancientcode/internal/model"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
 )
 
 // switchableProvider is scriptedProvider + the M8 runtime-switch contract.

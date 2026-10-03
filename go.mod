@@ -1,4 +1,4 @@
-module ancientai
+module github.com/antonioghizidev/ancientcode
 
 go 1.27.0
 

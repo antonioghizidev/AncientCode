@@ -1,4 +1,4 @@
-# AncientAI — Especificação Técnica
+# AncientCode — Especificação Técnica
 
 > Harness de agente de IA para terminal, projetado para rodar em hardware sem suporte a AVX
 > (Dell Inspiron 1545, Intel Core 2 Duo, 4 GB RAM, GNU/Linux server minimal).
@@ -64,7 +64,7 @@ Build na máquina de desenvolvimento, deploy por cópia de binário no notebook:
 
 ```sh
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 \
-  go build -trimpath -ldflags="-s -w" -o ancientai ./cmd/ancientai
+  go build -trimpath -ldflags="-s -w" -o ancientcode ./cmd/ancientcode
 ```
 
 - `GOAMD64=v1`: impede que o compilador emita instruções pós-SSE2 (também define a garantia por contrato, evitando que uma build futura introduza AVX por acidente).
@@ -109,7 +109,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 \
 ### 3.2 Estrutura de diretórios
 
 ```
-cmd/ancientai/main.go         # entrada: parse de CLI, carrega config, REPL
+cmd/ancientcode/main.go         # entrada: parse de CLI, carrega config, REPL
 internal/config/              # leitura de yaml + env vars + validação
 internal/provider/            # adaptadores de provedor e parser SSE
 internal/loop/                # loop de agente + modo plano + retries
@@ -241,7 +241,7 @@ Toda execução passa por **4 camadas independentes**:
    - `deny` → recusa.
 4. **Sanbox físico (execução)**:
    - diretório de trabalho fixo (configurado) — escrita fora dele bloqueada por padrão;
-   - usuário não-privilegiado dedicado (ex.: `ancientai`) via `su`/`sudo -u` — o processo principal NUNCA roda como root;
+   - usuário não-privilegiado dedicado (ex.: `ancientcode`) via `su`/`sudo -u` — o processo principal NUNCA roda como root;
    - `context.WithTimeout` por tool (ex.: docker 60 s, apt 180 s);
    - limite de saída (~64 KB) com truncamento e preservação das últimas N linhas;
    - limite de memória/CPU opcional via `ulimit`/`systemd` para tarefas longas.
@@ -393,15 +393,15 @@ Config alvo: `.golangci.yml` com `enable-all` reduzido às famílias de seguran�
 ## 8. Configuração (modelo)
 
 ```yaml
-# ancientai.yaml (não versionado; use ancientai.example.yaml no repo)
+# ancientcode.yaml (não versionado; use ancientcode.example.yaml no repo)
 provider: openrouter        # openrouter | nvidia | litellm
 base_url: https://openrouter.ai/api/v1
 api_key_env: OPENROUTER_API_KEY
 model: anthropic/claude-sonnet-4-5
 # execution
-workdir: /home/ancientai/tasks
-code_root: /home/ancientai/code          # raiz das tools de codificação (§10.3)
-run_user: ancientai          # usuário do sandbox (nunca root)
+workdir: /home/ancientcode/tasks
+code_root: /home/ancientcode/code          # raiz das tools de codificação (§10.3)
+run_user: ancientcode          # usuário do sandbox (nunca root)
 shell_tool: disabled         # disabled | enabled (com ask obrigatório)
 toolbox_mode: plan           # plan (default) | run
 tool_timeouts: {docker: 60s, apt: 180s, shell: 30s}
@@ -414,7 +414,7 @@ approval:
 # provider fallback
 json_mode_fallback: auto     # auto | always | never
 # skills (M7, §11.1) e agentes paralelos [futuro] (§11.2)
-# skills_dir: ~/.config/ancientai/skills
+# skills_dir: ~/.config/ancientcode/skills
 # max_parallel: 2
 ```
 
@@ -485,7 +485,7 @@ para reuso).
 `skills_dir` na config, e injeção com marcadores untrusted. Ver `specs/milestones/07-m7-skills.md`
 e `docs/session-2026-09-16-m7.md`.
 
-- **Formato**: diretório `~/.config/ancientai/skills/<skill>/` contendo `SKILL.md`
+- **Formato**: diretório `~/.config/ancientcode/skills/<skill>/` contendo `SKILL.md`
   (YAML frontmatter: `name`, `description`, `allowed_tools`) e, opcionalmente, scripts no sandbox.
 - **Carregamento**: `--skill <name>` injeta o conteúdo no system prompt e registra as tools
   declaradas; a skill é um **input do usuário**, processada pelas mesmas políticas.
@@ -534,7 +534,7 @@ e `docs/session-2026-09-16-m7.md`.
 
 - [x] config + client OpenAI-compat (OpenRouter + NVIDIA) + SSE + REPL básico
 - **Aceite**: no notebook alvo, `go build` local roda e responde a "responda em uma frase" via ambos os provedores; `GOAMD64=v1` verificado com `lscpu | grep avx` = ausente.
-- **Status**: implementação e testes concluídos (66 casos, 0 falhas); binário `dist/ancientai` cross-compilado com `GOAMD64=v1` e `CGO_ENABLED=0`. Aceite final pendente do smoke test real no notebook alvo (deploy + chaves). Ver `docs/session-2026-09-14-m1.md`.
+- **Status**: implementação e testes concluídos (66 casos, 0 falhas); binário `dist/ancientcode` cross-compilado com `GOAMD64=v1` e `CGO_ENABLED=0`. Aceite final pendente do smoke test real no notebook alvo (deploy + chaves). Ver `docs/session-2026-09-14-m1.md`.
 
 ### Milestone 2 — Tool loop
 - [ ] registry de tools, `shell` (desabilitado por padrão), `files`, parse de tool_calls nativos + fallback JSON

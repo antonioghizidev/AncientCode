@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"ancientai/internal/config"
-	"ancientai/internal/model"
-	"ancientai/internal/provider"
-	"ancientai/internal/tools"
-	"ancientai/internal/tools/files"
+	"github.com/antonioghizidev/ancientcode/internal/config"
+	"github.com/antonioghizidev/ancientcode/internal/model"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/tools/files"
 )
 
 const testSecret = "sk-abcdefGHIJKLMNOPQRSTUVWXyz123456"

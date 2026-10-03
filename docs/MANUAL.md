@@ -1,4 +1,4 @@
-# AncientAI — Manual do Usuário
+# AncientCode — Manual do Usuário
 
 > Harness de agente de IA para o terminal. Notebook antigo (Core 2 Duo, sem AVX): o peso da
 > inteligência fica no provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM — contrato
@@ -6,25 +6,25 @@
 
 ## 1. Execução
 
-Baixe o binário `ancientai` (um único arquivo, Linux amd64, `GOAMD64=v1`) e configure:
+Baixe o binário `ancientcode` (um único arquivo, Linux amd64, `GOAMD64=v1`) e configure:
 
 ```sh
 export NVIDIA_API_KEY=...            # ou OPENROUTER_API_KEY
-./ancientai                          # REPL interativo (modo padrão)
-./ancientai --tui                    # interface gráfica em terminal (M9)
-./ancientai --version                # imprime a versão e sai
+./ancientcode                          # REPL interativo (modo padrão)
+./ancientcode --tui                    # interface gráfica em terminal (M9)
+./ancientcode --version                # imprime a versão e sai
 ```
 
-A configuração fica em `ancientai.yaml` (ou outra com `--config`). Exemplo mínimo:
+A configuração fica em `ancientcode.yaml` (ou outra com `--config`). Exemplo mínimo:
 
 ```yaml
 provider: nvidia
 base_url: https://integrate.api.nvidia.com/v1
 model: nvidia/nemotron-3.5-lightning-30b-a3b
 api_key_env: NVIDIA_API_KEY
-workdir: /opt/ancientai
-code_root: /opt/ancientai/code
-run_user: ancientai
+workdir: /opt/ancientcode
+code_root: /opt/ancientcode/code
+run_user: ancientcode
 toolbox_mode: run          # run (tools imediatas) ou plan (planeja antes)
 approval:
   default: ask             # toda tool mutante pede aprovação
@@ -48,17 +48,17 @@ approval:
 Dê um prompt e o modelo responde:
 
 ```
-ancientai 0.9.0-m9 — provider=nvidia model=nvidia/nemotron-3.5-lightning-30b-a3b session=default.jsonl
+ancientcode 0.9.0-m9 — provider=nvidia model=nvidia/nemotron-3.5-lightning-30b-a3b session=default.jsonl
 toolbox_mode=run (plan: nada mutante executa sem o seu 'y')
 comandos: /exit /quit /reset /help /historico (!N repete) /retry /continue /model [nome] /provider [nome] /context | no plano: y aprova e executa, feedback:<msg> replaneja
-> liste os arquivos em /opt/ancientai/code
+> liste os arquivos em /opt/ancientcode/code
 ```
 
 Se o modelo quiser rodar uma ferramenta mutante, aparece o **gate de aprovação**:
 
 ```
 [aprovacao] tool "write_file"
-  write_file path=/opt/ancientai/code/relatorio.txt
+  write_file path=/opt/ancientcode/code/relatorio.txt
 executar? [y/N, d = negar sempre] y
 ```
 
@@ -113,7 +113,7 @@ mesmas políticas, mesma auditoria, mesmo `Approver` — só muda a cara.
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 [aprovar] write_file | y aprova, n nega, d nega sempre
 > escreva o arquivo relatorio.txt▏
-ancientai 0.10.0-m10 | nvidia | nvidia/nemotron-3.5-lightning-30b-a3b | run | default.jsonl
+ancientcode 0.10.0-m10 | nvidia | nvidia/nemotron-3.5-lightning-30b-a3b | run | default.jsonl
 ctx ▓░░░░ 20% | ◎ ok
 ```
 
@@ -139,7 +139,7 @@ O rodapé mostra: versão | provedor | modelo | modo | sessão (linha 1); medido
 células + indicador de saúde (linha 2):
 
 ```
-ancientai 0.10.0-m10 | nvidia | nvidia/nemotron-3.5-lightning-30b-a3b | run | default.jsonl
+ancientcode 0.10.0-m10 | nvidia | nvidia/nemotron-3.5-lightning-30b-a3b | run | default.jsonl
 ctx ▓░░░░ 20% | ◎ ok
 ```
 
@@ -364,7 +364,7 @@ redigidos, só hash da saída):
 ```
 
 Sessões ficam em `workdir/sessions/<id>.jsonl`; limpeza só explícita:
-`./ancientai --cleanup 30`.
+`./ancientcode --cleanup 30`.
 
 ## 5. Dicas de segurança
 

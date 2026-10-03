@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"ancientai/internal/loop"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
 )
 
 // The TUI Model must map each key to the correct core command (spec 09 §5).
@@ -235,7 +235,7 @@ func TestModelViewRendersFooterAndPanels(t *testing.T) {
 	if !strings.Contains(view, "nova msg") {
 		t.Errorf("prompt missing: %q", view)
 	}
-	if !strings.Contains(view, "ancientai 0.9.0-m9") {
+	if !strings.Contains(view, "ancientcode 0.9.0-m9") {
 		t.Errorf("footer missing: %q", view)
 	}
 	if !strings.Contains(view, "42%") {

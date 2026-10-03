@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"ancientai/internal/audit"
-	"ancientai/internal/config"
-	"ancientai/internal/provider"
-	"ancientai/internal/tools"
-	"ancientai/internal/tools/files"
-	"ancientai/internal/tools/shell"
+	"github.com/antonioghizidev/ancientcode/internal/audit"
+	"github.com/antonioghizidev/ancientcode/internal/config"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/tools/files"
+	"github.com/antonioghizidev/ancientcode/internal/tools/shell"
 )
 
 // registryWithShell builds a registry with the filesystem tools plus the shell

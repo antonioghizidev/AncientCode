@@ -8,14 +8,14 @@
 
 Entregar `--tui` no estilo lazydocker/lazygit **como mais um frontend sobre o mesmo core** que o
 REPL do M8: painel de sessão, painel de atividade, janela de prompt e footer com estado.
-**Bubble Tea vive apenas em `cmd/ancientai` (delivery)**; `internal/loop` permanece 100% stdlib (D-36).
+**Bubble Tea vive apenas em `cmd/ancientcode` (delivery)**; `internal/loop` permanece 100% stdlib (D-36).
 Paridade completa com o prompt (D-37): cada recurso tem **uma** semântica no domínio (M8), a TUI só
 renderiza.
 
 ## 2. Camadas e regras de arquitetura
 
 ```
-cmd/ancientai
+cmd/ancientcode
   tui.go       → programa Bubble Tea (Model/Update/View)
   tui_gate.go  → Approver dialog (mesma interface do gate)
   tui_panels.go→ projeção de eventos + leitura do audit (append-only, já redigido)
@@ -45,7 +45,7 @@ internal/loop  → NÃO muda por causa da TUI; consumido, nunca possuído (DIP/O
 ├───────────────────────────────┴──────────────────────────────┤
 │ > [________________________] ↵  (↑/↓ histórico, r/c, C-c)   │
 ├──────────────────────────────────────────────────────────────┤
-│ ancientai 0.9.0-m9 | nvidia/nemotron… | run | default.jsonl  │
+│ ancientcode 0.9.0-m9 | nvidia/nemotron… | run | default.jsonl  │
 │ ctx ▓▓▓░░ 42% | ◉ ok            ← footer (estado + medidor)  │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -85,7 +85,7 @@ internal/loop  → NÃO muda por causa da TUI; consumido, nunca possuído (DIP/O
 ## 6. Dependência Bubble Tea (D-36, pinada)
 
 - Adicionar `github.com/charmbracelet/bubbletea` + `code.maelström.dev/x/term` pinadas em `go.mod`,
-  **somente importadas em `cmd/ancientai`** (padrão `internal/loop` sem dependência nova). Viável no
+  **somente importadas em `cmd/ancientcode`** (padrão `internal/loop` sem dependência nova). Viável no
   Inspiron sem AVX (Go puro, `GOAMD64=v1`, ~+2–3 MB, console tty basta).
 - Justificativa da dependência registrada em DECISOES (atendendo a constituição) na execução.
 

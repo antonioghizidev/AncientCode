@@ -61,7 +61,7 @@ go test -count=1 ./...
 
 - Quando o ambiente tiver toolchain C (Linux/CI): `go test -race -count=1 ./...`.
 - Quando o milestone exigir build do artefato do notebook:
-  `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 go build -trimpath -ldflags="-s -w" -o dist/ancientai ./cmd/ancientai`.
+  `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 go build -trimpath -ldflags="-s -w" -o dist/ancientcode ./cmd/ancientcode`.
 
 ### Fase 5 — Documentação
 

@@ -15,7 +15,7 @@ import (
 	"os/exec"
 	"time"
 
-	"ancientai/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
 )
 
 // execCommand is the process launcher — injectable in tests (helper-process

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	"ancientai/internal/config"
-	"ancientai/internal/provider"
-	"ancientai/internal/tools"
-	"ancientai/internal/tools/code"
-	"ancientai/internal/tools/files"
+	"github.com/antonioghizidev/ancientcode/internal/config"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/tools/code"
+	"github.com/antonioghizidev/ancientcode/internal/tools/files"
 )
 
 // testRegistryM6 registers the filesystem tools plus the code-agent tools,

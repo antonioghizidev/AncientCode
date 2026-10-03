@@ -1,4 +1,4 @@
-// Command ancientai is the REPL entry point (SPEC §3.3). It wires the
+// Command ancientcode is the REPL entry point (SPEC §3.3). It wires the
 // configuration, the provider adapter, the session store and the loop. Output
 // and errors are secret-safe by construction: config validation never prints
 // key values, and every error returned by the loop is already redacted.
@@ -23,25 +23,25 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ancientai/internal/audit"
-	"ancientai/internal/catalog"
-	"ancientai/internal/config"
-	"ancientai/internal/loop"
-	"ancientai/internal/model"
-	"ancientai/internal/provider"
-	"ancientai/internal/sandbox"
-	"ancientai/internal/skills"
-	"ancientai/internal/tools"
-	"ancientai/internal/tools/apttools"
-	"ancientai/internal/tools/code"
-	"ancientai/internal/tools/docker"
-	"ancientai/internal/tools/files"
-	"ancientai/internal/tools/shell"
-	skillstool "ancientai/internal/tools/skills"
+	"github.com/antonioghizidev/ancientcode/internal/audit"
+	"github.com/antonioghizidev/ancientcode/internal/catalog"
+	"github.com/antonioghizidev/ancientcode/internal/config"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
+	"github.com/antonioghizidev/ancientcode/internal/model"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/sandbox"
+	"github.com/antonioghizidev/ancientcode/internal/skills"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/tools/apttools"
+	"github.com/antonioghizidev/ancientcode/internal/tools/code"
+	"github.com/antonioghizidev/ancientcode/internal/tools/docker"
+	"github.com/antonioghizidev/ancientcode/internal/tools/files"
+	"github.com/antonioghizidev/ancientcode/internal/tools/shell"
+	skillstool "github.com/antonioghizidev/ancientcode/internal/tools/skills"
 )
 
 var (
-	flagConfig      = flag.String("config", "ancientai.yaml", "path to the YAML configuration (may not exist)")
+	flagConfig      = flag.String("config", "ancientcode.yaml", "path to the YAML configuration (may not exist)")
 	flagSession     = flag.String("session", "default", "session id -> <workdir>/sessions/<id>.jsonl")
 	flagResume      = flag.String("resume", "", "resume session <id>: reutiliza sessions/<id>.jsonl sem reset (M5 §9)")
 	flagReset       = flag.Bool("reset", false, "truncate the session file before starting")
@@ -169,13 +169,24 @@ func cleanupSessions(workdir string, days int) ([]string, error) {
 func main() {
 	flag.Parse()
 	if *flagVersion {
-		fmt.Printf("ancientai %s\n", version)
+		fmt.Printf("ancientcode %s\n", version)
 		return
 	}
 
 	cfg, err := config.Load(*flagConfig)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "config:", err)
+		// Name the config that was consulted. A missing file is legal (defaults
+		// apply), so the failure usually shows up later as "api_key_env is not
+		// set" — which reads like a missing secret when the real cause is that the
+		// config file is not where this binary looks for it. Renaming the project
+		// moved the default from ancientai.yaml to ancientcode.yaml, so an operator
+		// with the old file gets exactly that confusion.
+		fmt.Fprintf(os.Stderr, "config: %v (consulted: %s)\n", err, *flagConfig)
+		if _, statErr := os.Stat(*flagConfig); os.IsNotExist(statErr) {
+			fmt.Fprintf(os.Stderr,
+				"dica: %s nao existe; copie ancientcode.example.yaml para %s ou aponte --config\n",
+				*flagConfig, *flagConfig)
+		}
 		os.Exit(1)
 	}
 	// M7: explicit operator verification of a downloaded skill (SPEC §11.1).
@@ -185,7 +196,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "verify-skill:", err)
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stderr, "verify-skill: %q verificada (stamp .ancientai-verified escrito em %s)\n",
+		fmt.Fprintf(os.Stderr, "verify-skill: %q verificada (stamp .ancientcode-verified escrito em %s)\n",
 			*flagVerifySkill, cfg.SkillsDir)
 		os.Exit(0)
 	}
@@ -404,7 +415,7 @@ func main() {
 		agent.SetObserver(func(ev loop.Event) { renderStatus(ev.Phase.Label()) })
 	}
 
-	fmt.Fprintf(os.Stderr, "ancientai %s — provider=%s model=%s session=%s\n",
+	fmt.Fprintf(os.Stderr, "ancientcode %s — provider=%s model=%s session=%s\n",
 		version, cfg.Provider, cfg.Model, filepath.Base(sessionPath))
 	fmt.Fprintf(os.Stderr, "toolbox_mode=%s (plan: nada mutante executa sem o seu 'y')\n%s\n",
 		cfg.ToolboxMode, helpText)

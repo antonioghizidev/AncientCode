@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"ancientai/internal/catalog"
-	"ancientai/internal/loop"
+	"github.com/antonioghizidev/ancientcode/internal/catalog"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
 )
 
 // loopModel is the core the picker drives (the same *loop.Loop the REPL uses).

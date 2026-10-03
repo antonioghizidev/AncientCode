@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"ancientai/internal/provider"
-	"ancientai/internal/redact"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/redact"
 )
 
 // Store is an append-only, mutex-guarded session file.

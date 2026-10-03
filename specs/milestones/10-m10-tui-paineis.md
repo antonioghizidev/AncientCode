@@ -33,7 +33,7 @@ observer de eventos, parser de `/comandos`, redação e auditoria — zero mudan
 
 ## 3. Contratos (render)
 
-Projeções puras em `cmd/ancientai/tui_panels.go` (só stdlib, determinísticas, sem TTY):
+Projeções puras em `cmd/ancientcode/tui_panels.go` (só stdlib, determinísticas, sem TTY):
 
 - `renderPanels(sess, act, sessOff, actOff, width, rows, focus) []string` — moldura dupla
   (sessão ~60% à esquerda, atividade à direita) com borda vertical compartilhada `┬`/`┴`;
@@ -85,7 +85,7 @@ Projeções puras em `cmd/ancientai/tui_panels.go` (só stdlib, determinísticas
 ## 6. Critérios de aceite (DoD)
 
 - [x] Suíte completa verde no host serial (16 pacotes, 0 falhas), `gofmt`/`go vet` limpos,
-      `GOAMD64=v1` build ok (`dist/ancientai`, 8.458.400 bytes, versão `0.10.0-m10`).
+      `GOAMD64=v1` build ok (`dist/ancientcode`, 8.458.400 bytes, versão `0.10.0-m10`).
 - [x] WSL `-race` 16/16 (Go 1.27, toolchain baixado; nenhuma data race).
 - [x] Smoke no Inspiron (pty real + NIM, binário `0.10.0-m10`): moldura completa
       (`┌┐└┘┬┴│`), scrollbar presente quando o conteúdo transborda (verificado com terminal de

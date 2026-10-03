@@ -10,7 +10,7 @@ import (
 func writeTempConfig(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "ancientai.yaml")
+	path := filepath.Join(dir, "ancientcode.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -47,8 +47,8 @@ func TestLoadDefaultsAndMinimalFile(t *testing.T) {
 	if cfg.ShellTool != "disabled" {
 		t.Errorf("shell_tool = %q, want disabled", cfg.ShellTool)
 	}
-	if cfg.RunUser != "ancientai" {
-		t.Errorf("run_user = %q, want ancientai", cfg.RunUser)
+	if cfg.RunUser != "ancientcode" {
+		t.Errorf("run_user = %q, want ancientcode", cfg.RunUser)
 	}
 	if cfg.ToolboxMode != "plan" {
 		t.Errorf("toolbox_mode = %q, want plan", cfg.ToolboxMode)
@@ -207,7 +207,7 @@ func TestValidateCodeRootInsideWorkdir(t *testing.T) {
 	}
 }
 
-// TestDefaultSkillsDir: M7 skills_dir defaults to <home>/.config/ancientai/skills
+// TestDefaultSkillsDir: M7 skills_dir defaults to <home>/.config/ancientcode/skills
 // (SPEC §11.1) and honors an explicit override.
 func TestDefaultSkillsDir(t *testing.T) {
 	base, err := os.MkdirTemp("", "aai-skills-")
@@ -227,7 +227,7 @@ func TestDefaultSkillsDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(home, ".config", "ancientai", "skills")
+	want := filepath.Join(home, ".config", "ancientcode", "skills")
 	if cfg.SkillsDir != want {
 		t.Errorf("default skills_dir = %q, want %q", cfg.SkillsDir, want)
 	}
@@ -249,8 +249,8 @@ func TestValidateRejectsBadTimeout(t *testing.T) {
 }
 
 func TestEnvOverridesFile(t *testing.T) {
-	t.Setenv("ANCIENTAI_MODEL", "env/model")
-	t.Setenv("ANCIENTAI_BASE_URL", "https://override.example.com/v1")
+	t.Setenv("ANCIENTCODE_MODEL", "env/model")
+	t.Setenv("ANCIENTCODE_BASE_URL", "https://override.example.com/v1")
 	cfg, err := loadWithKey(t, "model: file/model")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -265,7 +265,7 @@ func TestEnvOverridesFile(t *testing.T) {
 
 func TestMissingConfigFileIsNotAnError(t *testing.T) {
 	t.Setenv(defaultAPIKeyEnv[ProviderOpenRouter], "sk-abcdefGHIJKLMNOPQRSTUVWXyz123456")
-	t.Setenv("ANCIENTAI_MODEL", "env/model")
+	t.Setenv("ANCIENTCODE_MODEL", "env/model")
 	cfg, err := Load(filepath.Join(t.TempDir(), "does-not-exist.yaml"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)

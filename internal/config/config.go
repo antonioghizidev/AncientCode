@@ -1,4 +1,4 @@
-// Package config loads and validates the AncientAI configuration.
+// Package config loads and validates the AncientCode configuration.
 //
 // Security contract (SPEC §8 and §5.4):
 //   - The configuration NEVER holds an API key value — only the NAME of the
@@ -124,7 +124,7 @@ func applyDefaults(c *Config) {
 		if err != nil {
 			home = "."
 		}
-		c.Workdir = filepath.Join(home, "ancientai")
+		c.Workdir = filepath.Join(home, "ancientcode")
 	}
 	if c.CodeRoot == "" {
 		c.CodeRoot = filepath.Join(c.Workdir, "code")
@@ -134,10 +134,10 @@ func applyDefaults(c *Config) {
 		if err != nil {
 			home = filepath.Dir(c.Workdir)
 		}
-		c.SkillsDir = filepath.Join(home, ".config", "ancientai", "skills")
+		c.SkillsDir = filepath.Join(home, ".config", "ancientcode", "skills")
 	}
 	if c.RunUser == "" {
-		c.RunUser = "ancientai"
+		c.RunUser = "ancientcode"
 	}
 	if c.ShellTool == "" {
 		c.ShellTool = "disabled"
@@ -175,16 +175,16 @@ func applyDefaults(c *Config) {
 }
 
 func applyEnvOverrides(c *Config) {
-	if v := os.Getenv("ANCIENTAI_PROVIDER"); v != "" {
+	if v := os.Getenv("ANCIENTCODE_PROVIDER"); v != "" {
 		c.Provider = v
 	}
-	if v := os.Getenv("ANCIENTAI_BASE_URL"); v != "" {
+	if v := os.Getenv("ANCIENTCODE_BASE_URL"); v != "" {
 		c.BaseURL = v
 	}
-	if v := os.Getenv("ANCIENTAI_MODEL"); v != "" {
+	if v := os.Getenv("ANCIENTCODE_MODEL"); v != "" {
 		c.Model = v
 	}
-	if v := os.Getenv("ANCIENTAI_WORKDIR"); v != "" {
+	if v := os.Getenv("ANCIENTCODE_WORKDIR"); v != "" {
 		c.Workdir = v
 	}
 }
@@ -200,7 +200,7 @@ func (c *Config) Validate() error {
 	}
 
 	if strings.TrimSpace(c.Model) == "" {
-		return errors.New("config: model is required (set `model` or ANCIENTAI_MODEL)")
+		return errors.New("config: model is required (set `model` or ANCIENTCODE_MODEL)")
 	}
 
 	if strings.TrimSpace(c.APIKeyEnv) == "" {
