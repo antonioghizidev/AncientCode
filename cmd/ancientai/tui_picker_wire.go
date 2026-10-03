@@ -133,9 +133,7 @@ func (m *tuiModel) applyModelSwitch(msg modelSwitchedMsg) {
 	}
 	m.model = msg.id
 	m.banner = ""
-	m.session = append(m.session,
-		"model: "+redactModelLine(m.model)+" (vale nesta sessao — nao persiste no yaml)")
-	m.capSession()
+	m.appendSession("model: " + redactModelLine(m.model) + " (vale nesta sessao — nao persiste no yaml)")
 }
 
 // switchProviderCmd switches provider asynchronously, for the same reason as
@@ -165,9 +163,7 @@ func (m *tuiModel) applyProviderSwitch(msg providerSwitchedMsg) {
 		m.provider = m.agent.CurrentProviderBaseURL()
 	}
 	m.banner = ""
-	m.session = append(m.session,
-		"provider: "+strings.ToLower(strings.TrimSpace(msg.name))+" ativo (vale nesta sessao)")
-	m.capSession()
+	m.appendSession("provider: " + strings.ToLower(strings.TrimSpace(msg.name)) + " ativo (vale nesta sessao)")
 }
 
 // openPicker starts the catalog fetch and shows the panel.
@@ -177,8 +173,7 @@ func (m *tuiModel) openPicker(opts catalogOpts) tea.Cmd {
 		return nil
 	}
 	m.picker = &picker{opts: opts, active: m.agent.CurrentModel(), loading: true}
-	m.session = append(m.session, "  abrindo catalogo de modelos do provedor…")
-	m.capSession()
+	m.appendSession("  abrindo catalogo de modelos do provedor…")
 	return openPickerCmd(m)
 }
 
@@ -200,21 +195,15 @@ func (m *tuiModel) pickerFetched(msg pickerMsg) tea.Cmd {
 	p.freeAvailable = catalog.FreeFilterAvailable(msg.entries)
 	p.visible()
 	c := catalog.Summarize(p.all, p.vis)
-	m.session = append(m.session,
-		"  catalogo: "+itoa(c.Total)+" modelos no provedor, "+
-			itoa(c.Visible)+" uteis para este agente")
-	m.capSession()
+	m.appendSession(
+		"  catalogo: " + itoa(c.Total) + " modelos no provedor, " +
+			itoa(c.Visible) + " uteis para este agente")
 	return nil
 }
 
 // redactModelLine is the second-pass guard used when echoing provider strings
 // into the session panel (the provider layer already redacted them).
 func redactModelLine(s string) string { return sanitizeLine(s) }
-
-// capSession keeps the session panel within its bound after appends.
-func (m *tuiModel) capSession() {
-	m.session = capLines(m.session, maxSessionLines)
-}
 
 // trimQueryPrefix is used by tests and by the picker to normalize a query typed
 // with stray separators.

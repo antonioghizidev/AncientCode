@@ -67,8 +67,7 @@ func TestModelSubmitRunsTurn(t *testing.T) {
 	}
 	// The command is invoked by the Bubble Tea runtime: call it in-process and
 	// feed its result back through Update, exactly as the runtime would.
-	msg := gotCmd()
-	m, _ = upd(m, msg)
+	m = feedTurn(t, m, gotCmd)
 	if gotCmd != nil && !sessHas(m, "< resposta") {
 		t.Errorf("session panel missing assistant response: %v", m.session)
 	}
@@ -87,8 +86,7 @@ func TestModelRetryKeyCallsContinue(t *testing.T) {
 	if gotCmd == nil {
 		t.Fatal("r with banner must return continue command")
 	}
-	msg := gotCmd()
-	m, _ = upd(m, msg)
+	m = feedTurn(t, m, gotCmd)
 	if f.continues != 1 {
 		t.Fatalf("Continue called %d times, want 1", f.continues)
 	}
@@ -223,8 +221,16 @@ func TestModelViewRendersFooterAndPanels(t *testing.T) {
 	if !strings.Contains(view, "> oi") {
 		t.Errorf("session missing: %q", view)
 	}
-	if !strings.Contains(view, "* modelo: recebendo tokens...") {
-		t.Errorf("activity missing: %q", view)
+	// M13: the activity panel wraps instead of cutting. The event is longer than
+	// the narrower activity body, so it appears as a first row plus an indented
+	// continuation — and NO character of it is lost.
+	actBody := m.actBodyWidth()
+	phys := panelLines(m.activity, actBody)
+	if !strings.Contains(view, phys[0]) {
+		t.Errorf("activity first row missing: %q", view)
+	}
+	if len(phys) > 1 && !strings.Contains(view, strings.TrimSpace(strings.TrimPrefix(phys[1], contMark))) {
+		t.Errorf("activity continuation missing (the line was cut, not wrapped): %q", view)
 	}
 	if !strings.Contains(view, "nova msg") {
 		t.Errorf("prompt missing: %q", view)
@@ -343,7 +349,7 @@ func TestModelFollowsBottomWhileChatting(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Enter must return a turn command")
 	}
-	m, _ = upd(m, cmd())
+	m = feedTurn(t, m, cmd)
 	if m.sessionOff != len(m.session)-m.panelContentRows() {
 		t.Errorf("new answer must be visible at the bottom, off=%d (len=%d)",
 			m.sessionOff, len(m.session))
@@ -358,7 +364,7 @@ func TestModelFollowsBottomWhileChatting(t *testing.T) {
 	m.input = "outra"
 	m.cursor = len(m.input)
 	m, cmd = upd(m, tea.KeyMsg{Type: tea.KeyEnter})
-	m, _ = upd(m, cmd())
+	m = feedTurn(t, m, cmd)
 	if m.sessionOff != frozen {
 		t.Errorf("scrolled-up viewport must stay put: %d → %d", frozen, m.sessionOff)
 	}
@@ -411,10 +417,51 @@ func findQuit(cmd tea.Cmd) bool {
 	}
 	// tea.Quit is a function; calling it returns tea.QuitMsg.
 	if msg := cmd(); msg != nil {
-		_, ok := msg.(tea.QuitMsg)
-		return ok
+		if _, ok := msg.(tea.QuitMsg); ok {
+			return true
+		}
 	}
 	return false
+}
+
+// turnMsgs drains a command the way the Bubble Tea runtime would and returns the
+// messages it produces. M13: submit now returns a tea.Batch (the turn plus the
+// spinner tick), so tests must unwrap instead of assuming a single message. The
+// spinner tick blocks on a timer, so only non-tick messages are collected.
+func turnMsgs(cmd tea.Cmd) []tea.Msg {
+	var out []tea.Msg
+	var walk func(tea.Cmd)
+	walk = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		msg := c()
+		switch b := msg.(type) {
+		case tea.BatchMsg:
+			for _, inner := range b {
+				walk(inner)
+			}
+		case nil:
+		default:
+			// spinner ticks arrive only after a delay; calling them here would
+			// block for the whole interval, so they are skipped by type.
+			if _, isTick := msg.(spinTickMsg); !isTick {
+				out = append(out, msg)
+			}
+		}
+	}
+	walk(cmd)
+	return out
+}
+
+// feedTurn runs the command and feeds every message it produces back through
+// Update, exactly as the runtime would.
+func feedTurn(t *testing.T, m *tuiModel, cmd tea.Cmd) *tuiModel {
+	t.Helper()
+	for _, msg := range turnMsgs(cmd) {
+		m, _ = upd(m, msg)
+	}
+	return m
 }
 
 func sessHas(m *tuiModel, want string) bool {

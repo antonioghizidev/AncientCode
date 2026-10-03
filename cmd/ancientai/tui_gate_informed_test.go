@@ -162,7 +162,7 @@ func TestTurnErrorGoesToSessionHistory(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Enter must return a turn command")
 	}
-	m, _ = upd(m, cmd())
+	m = feedTurn(t, m, cmd)
 
 	if m.banner == "" {
 		t.Fatal("a failed turn must set the banner")
@@ -247,10 +247,14 @@ func TestGateDetailSanitizes(t *testing.T) {
 func TestFixedRowsSharedByProjectionAndNavigation(t *testing.T) {
 	// The panel height and the navigation viewport must agree, or the scroll
 	// keys would move by a different amount than what is drawn.
-	for _, tc := range []struct{ gate, banner bool }{
+	//
+	// M13: the gate reservation is its REAL height, not a boolean — reserving one
+	// row for a dialog that renders three pushed the prompt off the screen.
+	for _, tc := range []struct {
+		gate, banner bool
+	}{
 		{false, false}, {true, false}, {false, true}, {true, true},
 	} {
-		want := fixedRows(tc.gate, tc.banner)
 		m := mkModel(t, nil)
 		m.height = 30
 		if tc.gate {
@@ -259,6 +263,7 @@ func TestFixedRowsSharedByProjectionAndNavigation(t *testing.T) {
 		if tc.banner {
 			m.banner = "erro: x"
 		}
+		want := fixedRows(len(m.gateLines()), tc.banner)
 		panelRows := m.height - want
 		if panelRows < 3 {
 			panelRows = 3
@@ -266,6 +271,27 @@ func TestFixedRowsSharedByProjectionAndNavigation(t *testing.T) {
 		if got := m.panelContentRows(); got != panelRows-2 {
 			t.Errorf("gate=%v banner=%v: panelContentRows=%d, projection uses %d",
 				tc.gate, tc.banner, got, panelRows-2)
+		}
+	}
+}
+
+// O gate tem que caber inteiro na tela:rompt, rodapé e pelo menos uma faixa de
+// painel. Antes do M13 ele crescia sem reserva e empurrava o input para fora.
+func TestOpenGateNeverPushesThePromptOffScreen(t *testing.T) {
+	for _, h := range []int{14, 20, 30, 60} {
+		m := mkModel(t, nil)
+		m.height = h
+		m.dialog = &gateOpen{Tool: "shell", Summary: "shell: " + strings.Repeat("df -h ", 60)}
+		lines := strings.Split(m.View(), "\n")
+		// divider + prompt + 2 footer rows must all be on screen.
+		if len(lines) > h {
+			t.Errorf("height %d: view rendered %d rows — the prompt was pushed off", h, len(lines))
+		}
+		if !strings.Contains(m.View(), "[aprovar] shell") {
+			t.Errorf("height %d: the gate dialog itself is missing", h)
+		}
+		if !strings.Contains(m.View(), "> ") {
+			t.Errorf("height %d: the input line is missing", h)
 		}
 	}
 }

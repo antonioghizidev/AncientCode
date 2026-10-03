@@ -82,13 +82,18 @@ func ctxBar(pct int) string {
 // buildFooter returns the two footer lines (state + meter, D-37). Line 1
 // carries version|provider model|mode|session; line 2 the ctx bar and health.
 // The model name and session are truncated to keep the header bounded.
+//
+// M13: the cap is applied in RUNES, not bytes. Byte slicing could cut a UTF-8
+// sequence in half and paint invalid bytes — line 2 ends with "✗ erro" (a
+// 3-byte glyph) and line 1 carries provider/model names that may be non-ASCII,
+// so this was reachable.
 func buildFooter(f footerInfo) []string {
 	line1 := fmt.Sprintf("ancientai %s | %s | %s | %s", f.Version, f.Provider, f.Model, f.Toolbox)
 	if f.Session != "" {
 		line1 += " | " + f.Session
 	}
-	if len(line1) > lineCap {
-		line1 = line1[:lineCap-2] + ".."
+	if n := len([]rune(line1)); n > lineCap {
+		line1 = string([]rune(line1)[:lineCap-2]) + ".."
 	}
 
 	statusTxt := "\u25c9 ok" // ok
@@ -106,8 +111,8 @@ func buildFooter(f footerInfo) []string {
 	if f.Usage.Pct > footerWarnPct {
 		line2 += " !"
 	}
-	if len(line2) > lineCap {
-		line2 = line2[:lineCap]
+	if n := len([]rune(line2)); n > lineCap {
+		line2 = string([]rune(line2)[:lineCap])
 	}
 	return []string{line1, line2}
 }
@@ -151,6 +156,9 @@ func activityFromEvent(ev loop.Event) string {
 			head += fmt.Sprintf(" %.2fs", ev.Dur.Seconds())
 		}
 		return head
+	case loop.PhaseTurnCancelled:
+		// M13: an aborted turn must be visible as aborted, never as a silent stop.
+		return "! " + sanitize(redact.Redact(ev.Detail))
 	case loop.PhaseTurnError:
 		head = "* " + ev.Tool
 		if head == "* " {
@@ -205,23 +213,146 @@ type viewData struct {
 	Focus       panelID
 	SessionOff  int // viewport top offset for the session panel
 	ActivityOff int // viewport top offset for the activity panel
+	SessHOff    int // M13: horizontal scroll of the session panel
+	ActHOff     int // M13: horizontal scroll of the activity panel
 	GateLines   []string
 	Banner      string // error/info line shown above the prompt (M11)
 }
 
+// contMark is the continuation indent: two spaces under the text, so the
+// operator can tell a wrapped continuation from a new logical line.
+const contMark = "  "
+
+// panelLines projects logical panel lines into physical ones that FIT `width`
+// cells, preserving the semantic prefix ("> " prompt, "< " answer) on the first
+// physical line and indenting continuations under it.
+//
+// M13: this replaced `runeCap` in the paint, which silently cut every line at
+// the panel width and made long prompts and long tool output unreadable. The
+// contract tested is that no cell of the logical line is lost — concatenation of
+// the output equals the input.
+func panelLines(lines []string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	out := make([]string, 0, len(lines))
+	for _, logical := range lines {
+		// A logical line may itself hold several physical lines (tool output).
+		for _, part := range strings.Split(logical, "\n") {
+			out = append(out, wrapOne(part, width)...)
+		}
+	}
+	return out
+}
+
+// wrapOne wraps a single logical line, keeping the "> " / "< " prefix on the
+// first physical line and indenting the continuations under the text.
+func wrapOne(line string, width int) []string {
+	prefix := ""
+	body := line
+	for _, p := range []string{"> ", "< "} {
+		if strings.HasPrefix(line, p) {
+			prefix, body = p, line[len(p):]
+			break
+		}
+	}
+	if width <= len([]rune(prefix)) {
+		// Degenerate width: the prefix alone fills the body. Keep the prefix
+		// visible and wrap the rest at 1 cell rather than losing the marker.
+		width = 1
+	}
+	// The first physical line starts after the prefix; continuations start after
+	// the continuation indent. Both must leave the line inside `width` — sizing
+	// the continuation off the prefix is how a plain line overflows by 2 cells.
+	first := width - len([]rune(prefix))
+	cont := width - len([]rune(contMark))
+	if cont < 1 {
+		cont = 1
+	}
+	r := []rune(body)
+	if len(r) <= first {
+		return []string{prefix + body}
+	}
+	out := []string{prefix + string(r[:first])}
+	r = r[first:]
+	for len(r) > cont {
+		out = append(out, contMark+string(r[:cont]))
+		r = r[cont:]
+	}
+	return append(out, contMark+string(r))
+}
+
+// hscrollRange maps a horizontal offset into the window [lo,hi) of a line of
+// `total` cells shown `width` cells at a time. It clamps both ends, so the
+// operator can always reach the final cell (defensive: wrapping handles most
+// long lines, but a path or a JSON blob with no spaces does not wrap usefully).
+func hscrollRange(total, width, off int) (lo, hi int) {
+	if width < 1 {
+		width = 1
+	}
+	if total < 0 {
+		total = 0
+	}
+	maxOff := total - width
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	if off < 0 {
+		off = 0
+	}
+	if off > maxOff {
+		off = maxOff
+	}
+	lo = off
+	hi = off + width
+	if hi > total {
+		hi = total
+	}
+	return lo, hi
+}
+
+// spinnerFramesBraille are the ten dot-cycle frames of the Braille spinner, used
+// while a turn is in flight. They are literals in this file on purpose: a frame
+// is never derived from model output or tool content.
+var spinnerFramesBraille = []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
+
+// spinnerFramesASCII is the honest degradation for terminals without Braille.
+// A STOPPED spinner would be worse than none — it would confirm the freeze the
+// operator is trying to rule out — so this must also cycle.
+var spinnerFramesASCII = []rune{'|', '/', '-', '\\'}
+
+// spinnerFrame returns the spinner glyph for tick `n`. `ascii` selects the
+// degradation set. The index wraps, so a long turn never runs off the table.
+func spinnerFrame(n int, ascii bool) rune {
+	frames := spinnerFramesBraille
+	if ascii {
+		frames = spinnerFramesASCII
+	}
+	if len(frames) == 0 {
+		return '?'
+	}
+	i := n % len(frames)
+	if i < 0 {
+		i += len(frames)
+	}
+	return frames[i]
+}
+
 // panelWidths splits the total width into the two panel allocations: session
-// gets ~60%, activity the rest. The two allocations always sum back to width
-// (both frames share the middle vertical border). Minimums keep the frames
-// legible on tiny terminals.
+// gets ~70%, activity the rest (M13: the conversation needs the room; activity
+// carries short event lines, a spinner and, when open, the M12 catalog). The two
+// allocations always sum back to width (both frames share the middle vertical
+// border). The activity floor is what keeps the catalog and the gate detail
+// readable instead of a column of one character per line.
 func panelWidths(width int) (sess, act int) {
-	sess = width * 6 / 10
-	min := 12
-	if sess < min {
-		sess = min
+	const minActivity = 28
+	sess = width * 7 / 10
+	if sess < minActivity {
+		sess = minActivity
 	}
 	act = width - sess
-	if act < min {
-		act = min
+	if act < minActivity {
+		act = minActivity
 		sess = width - act
 	}
 	if sess < 1 {
@@ -317,6 +448,14 @@ func sanitize(s string) string {
 	b.Grow(len(s))
 	for _, r := range s {
 		switch {
+		case r == '\n':
+			// M13: PRESERVED, not dropped. It is a C0 control character, so the
+			// original rule ate it — which silently collapsed multi-line tool
+			// output (and any answer with paragraphs) into ONE very long line
+			// that then had to be wrapped by width instead of by line. The line
+			// structure is data, not an escape sequence: it cannot move the
+			// cursor, and panelLines splits on it.
+			b.WriteByte('\n')
 		case r == '\t':
 			b.WriteByte(' ')
 		case r < 0x20 || r == 0x7f:
@@ -464,11 +603,14 @@ func wrapText(s string, width, maxLines int) []string {
 // (divider + prompt + 2 footer lines, plus one row each for an open gate dialog
 // and for the error banner). Single source of truth so the projection and the
 // scroll navigation agree on how tall the panels are.
-func fixedRows(gateOpen, banner bool) int {
+//
+// M13: `gateRows` is the ACTUAL height of the gate, not a boolean. It used to be
+// reserved as one row while gateLines() could render three, so an open gate
+// pushed the prompt and the footer off the bottom of the screen — the one moment
+// where the operator must not lose the input line.
+func fixedRows(gateRows int, banner bool) int {
 	n := 4 // divider + prompt + footer(2)
-	if gateOpen {
-		n++
-	}
+	n += gateRows
 	if banner {
 		n++
 	}
@@ -512,17 +654,24 @@ func padRight(s string, n int) string {
 }
 
 // renderPanels draws the lazydocker-style double panel (M10): session on the
-// left (~60%), activity on the right, sharing one vertical border, each with
+// left (~70%), activity on the right, sharing one vertical border, each with
 // a box-drawing frame and a scrollbar column on its inner right edge. It
 // returns `rows` lines: top border + content rows + bottom border. The
 // focused panel's title is rendered in the highlight color.
 //
-//	┌── sessão ───────────┬── atividade ────────┐
-//	│ > oi               │ │ ● modelo: recebendo │
-//	│ < vou executar     │ │ tool: shell ok 0.0  │
-//	│                    █│                   ░ │
-//	└────────────────────┴──────────────────────┘
-func renderPanels(sess, act []string, sessOff, actOff, width, rows int, focus panelID) []string {
+// M13: the incoming lines are ALREADY wrapped to the panel body (panelLines), so
+// this function no longer truncates — a `runeCap` here used to cut every line at
+// the panel width, which made long prompts and long tool output unreadable.
+// Lines that still overflow the body are scrolled horizontally instead.
+//
+//	┌── sessão ───────────────┬── atividade ────┐
+//	│ > oi                   │ ⠹ modelo: recv… │
+//	│ < vou executar         │ tool: shell ok  │
+//	│   retorno longo que    │ 0.0s            │
+//	│   quebra em várias     │                 │
+//	│                    █  │              ░ │
+//	└────────────────────────┴─────────────────┘
+func renderPanels(sess, act []string, sessOff, actOff, width, rows int, focus panelID, sessH, actH int) []string {
 	if width < 8 {
 		width = 8
 	}
@@ -530,18 +679,20 @@ func renderPanels(sess, act []string, sessOff, actOff, width, rows int, focus pa
 		rows = 3
 	}
 	sessInner, actInner := panelInnerWidths(width)
+	visible := rows - 2
+	sessBody, actBody := sessInner-1, actInner-1
 
 	// Top border: title segments joined by the shared vertical border ┬. The
 	// focused panel gets a ▸ marker plus the highlight color so the scroll
 	// target is obvious even without color.
-	sessTerm := panelTitle("sessão", sessInner, focus == panelSession)
-	actTerm := panelTitle("atividade", actInner, focus == panelActivity)
+	sessTerm := panelTitle("sessão", sessInner, focus == panelSession,
+		hscrollHint(sess, sessBody, sessH, sessOff))
+	actTerm := panelTitle("atividade", actInner, focus == panelActivity,
+		hscrollHint(act, actBody, actH, actOff))
 	top := "┌" + sessTerm + "┬" + actTerm + "┐"
 
 	bottom := "└" + strings.Repeat("─", sessInner) + "┴" + strings.Repeat("─", actInner) + "┘"
 
-	visible := rows - 2
-	sessBody, actBody := sessInner-1, actInner-1
 	sThumb, sScroll := scrollThumb(sessOff, len(sess), visible)
 	aThumb, aScroll := scrollThumb(actOff, len(act), visible)
 	sBar := scrollbarCol(visible, sThumb, sScroll)
@@ -550,8 +701,11 @@ func renderPanels(sess, act []string, sessOff, actOff, width, rows int, focus pa
 	lines := make([]string, 0, rows)
 	lines = append(lines, top)
 	for i := 0; i < visible; i++ {
-		sCell := runeCap(sanitize(lineAt(sess, sessOff+i)), sessBody)
-		aCell := runeCap(sanitize(lineAt(act, actOff+i)), actBody)
+		// sanitize stays here as defence in depth (M11): the projection already
+		// sanitized, but a control sequence must never reach the terminal even if
+		// a future path forgets to.
+		sCell := hslice(sanitize(lineAt(sess, sessOff+i)), sessBody, sessH)
+		aCell := hslice(sanitize(lineAt(act, actOff+i)), actBody, actH)
 		lines = append(lines,
 			"│"+padRight(sCell, sessBody)+string(sBar[i])+"│"+
 				padRight(aCell, actBody)+string(aBar[i])+"│")
@@ -560,19 +714,88 @@ func renderPanels(sess, act []string, sessOff, actOff, width, rows int, focus pa
 	return lines
 }
 
+// hslice returns the horizontal window of s that fits `width` cells at offset
+// `off`, padded to exactly `width`. Unlike runeCap it does not lose the tail:
+// the operator can reach it with the horizontal keys. Wrapping normally handles
+// long lines, but a path, a URL or a one-line JSON has no break opportunity.
+func hslice(s string, width, off int) string {
+	if width < 1 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= width {
+		return s
+	}
+	lo, hi := hscrollRange(len(r), width, off)
+	return string(r[lo:hi])
+}
+
 // panelTitle renders one panel's top-border segment: an optional ▸ marker for
 // the focused panel, the title centered over a `─` fill, wrapped in the
-// highlight color when focused.
-func panelTitle(title string, n int, focused bool) string {
+// highlight color when focused. `hint` is the M13 horizontal-scroll position
+// (`col 40/200`), empty when nothing overflows sideways.
+func panelTitle(title string, n int, focused bool, hint string) string {
 	label := title
 	if focused {
 		label = focusMark + " " + title
 	}
 	seg := centered(label, n)
+	// The hint rides on the RIGHT of the title so it never displaces the panel
+	// name, and it is dropped automatically if there is no room.
+	if hint != "" {
+		fill := strings.Count(seg, "─")
+		if fill > len(hint)+2 {
+			seg = seg[:len(seg)-len(hint)] + " " + hint
+		}
+	}
 	if focused {
 		return focusCyan + seg + focusEnd
 	}
 	return seg
+}
+
+// maxPanelRows bounds how much of a panel hscrollHint scans for a wider line.
+// The hint is a hint: it must not cost a full pass over 200 lines every frame.
+const maxPanelRows = 40
+
+// termSupportsBraille reports whether the terminal is likely to render the
+// Braille spinner frames. Conservative on purpose: unknown terminals get the
+// ASCII cycle, which still animates.
+func termSupportsBraille() bool {
+	term := os.Getenv("TERM")
+	if term == "" || term == "dumb" {
+		return false
+	}
+	if strings.Contains(term, "linux") || strings.Contains(term, "dumb") {
+		// The Linux console has no Braille block; it would paint "?" or mojibake.
+		return false
+	}
+	return true
+}
+
+// hscrollHint reports the horizontal position when the panel has content wider
+// than its body. Without it the operator cannot tell that a line continues past
+// the right edge — which is exactly the case wrapping cannot fix (a path, a URL,
+// a one-line JSON).
+func hscrollHint(lines []string, body, off, first int) string {
+	end := first + maxPanelRows
+	if end > len(lines) {
+		end = len(lines)
+	}
+	total := 0
+	for i := first; i < end; i++ {
+		if n := len([]rune(lines[i])); n > total {
+			total = n
+		}
+	}
+	if total <= body || off <= 0 {
+		return ""
+	}
+	lo, hi := hscrollRange(total, body, off)
+	if hi < total {
+		return "col " + itoa(lo+1) + "-" + itoa(hi) + "/" + itoa(total)
+	}
+	return "col " + itoa(lo+1) + "/" + itoa(total)
 }
 
 // lineAt returns lines[i] or "" for out-of-range indexes.
@@ -597,12 +820,12 @@ func buildView(v viewData) string {
 	}
 	// Fixed rows below the panels come from the shared budget (see fixedRows)
 	// so the drawn height and the scroll navigation never diverge.
-	panelRows := v.Height - fixedRows(len(v.GateLines) > 0, v.Banner != "")
+	panelRows := v.Height - fixedRows(len(v.GateLines), v.Banner != "")
 	if panelRows < 3 {
 		panelRows = 3 // top border + 1 content row + bottom border
 	}
 
-	panels := renderPanels(v.Session, v.Activity, v.SessionOff, v.ActivityOff, v.Width, panelRows, v.Focus)
+	panels := renderPanels(v.Session, v.Activity, v.SessionOff, v.ActivityOff, v.Width, panelRows, v.Focus, v.SessHOff, v.ActHOff)
 
 	var b strings.Builder
 	for i, l := range panels {

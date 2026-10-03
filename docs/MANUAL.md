@@ -296,7 +296,65 @@ model: deepseek/deepseek-chat (vale nesta sessao — nao persiste no yaml)
 > como `tools?` e a UI avisa `provedor nao informa preco: filtro --free indisponivel aqui` em vez
 > de mostrar uma lista vazia. Nada é suposto — quando não se sabe, aparece `?`.
 
-## 4. Auditoria e limpeza
+### 4.1 Teclas da TUI
+
+| Tecla | Efeito |
+|---|---|
+| `Enter` | envia o prompt |
+| **`Esc`** | **interrompe o turno em andamento** (sem turno, não faz nada) |
+| `Ctrl+C` | 1º interrompe o turno; 2º (sem turno) sai |
+| `↑` `↓` | no prompt: navega/edita prompts anteriores; com painel focado: rola o painel |
+| `Tab` / `Shift+Tab` | alterna o foco entre os dois painéis |
+| `Shift+←` / `Shift+→` | rolagem **horizontal** do painel focado |
+| `PgUp` / `PgDown` | rola uma página |
+| `Home` / `End` | topo/fim do painel (ou início/fim da linha no prompt) |
+| `r` | retenta o último turno — **só com a linha de entrada vazia** |
+| `c` | limpa o banner de erro — **só com a linha de entrada vazia** |
+| `/` | comando (mesmo parser do REPL) |
+
+> `r` e `c` só são atalhos quando **não há nada digitado**. Com texto na linha, `r` é a letra `r`.
+
+### 4.2 Ler respostas longas
+
+Os dois painéis **quebram linha** (continuação indentada com dois espaços) e guardam o texto
+inteiro — nada é cortado em silêncio. A rolagem é **vertical por linha física**, então uma resposta
+de 40 linhas se lê linha a linha com `↑`/`↓`.
+
+A atividade ocupa ~30% da largura e tem um piso de 28 células (o catálogo de modelos e o detalhe do
+gate precisam de largura para não virarem uma pilha de `↳`).
+
+**Colunas mais largas que o painel** — um caminho, uma URL, um JSON de uma linha — não têm ponto de
+quebra; para elas use `Shift+←`/`Shift+→`. O título do painel mostra a posição
+(`col 40/120`) quando há texto à direita.
+
+### 4.3 Sinais de que o turno está em andamento
+
+- Um **spinner** (`⠹ processando…`) no topo do painel de atividade, que só existe **dentro** de um
+  turno. Terminal sem Braille recebe a versão ASCII (`|/-\`), que também gira.
+- Um spinner **parado** não existe: ele confirmaria justamente o congelamento que o spinner serve
+  para descartar.
+
+### 4.4 Interromper, corrigir, continuar
+
+| Situação | O que fazer |
+|---|---|
+| o agente foi pela rota errada | `Esc` — o prompt **volta para a linha de entrada**, cursor no fim |
+| corrigir e reenviar | edite e `Enter` |
+| repetir sem retipar | `/continue` — reenvia o prompt **cancelado** |
+| cancelamento acidental | `/continue` de novo |
+
+`/continue` **avisa quais tools já executaram** antes de reenviar, porque reenviar o prompt repete
+o efeito delas:
+
+```
+! turno cancelado (Esc) — edite e reenvie | tools que ja executaram: write_file, shell
+atencao: reenviando; ja executaram: write_file, shell
+```
+
+Cancelar **não** é registrado como erro: o turno interrompido é um estado próprio, e o rodapé não
+fica vermelho.
+
+## 5. Auditoria e limpeza
 
 Todo comando mutante com decisão vai para `workdir/audit.jsonl` (append-only, argumentos
 redigidos, só hash da saída):
