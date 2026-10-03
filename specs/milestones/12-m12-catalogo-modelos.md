@@ -38,7 +38,7 @@ e **OpenRouter 464 modelos** (`architecture`, `context_length`, `pricing`, `supp
       pela posição da última lista.
 - [x] TUI: `/models` abre **painel dedicado**: digitação filtra, `↑↓` move, `Enter` seleciona,
       `Esc`/`Ctrl+C` cancela, `Ctrl+F` alterna só gratuitos, contadores no rodapé do painel.
-- [x] `ProviderNames` inalterado; `/provider` e `/model <nome>` seguem funcionando (trocas agora **ass�ncronas**: D-54).
+- [x] `ProviderNames` inalterado; `/provider` e `/model <nome>` seguem funcionando (trocas agora **assíncronas**: D-54).
 
 ## 4. Requisitos de segurança
 

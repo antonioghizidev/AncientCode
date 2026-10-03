@@ -876,93 +876,106 @@ As decisÃµes que alteram a SPEC devem ser refletidas lÃ¡.
 - **DecisÃ£o**: `submit()` captura a linha, reseta o prompt e sÃ³ entÃ£o despacha `handleCommand`.
   Teste de regressÃ£o garante que, apÃ³s um comando, o input comeÃ§a vazio.
 
-### D-2026-10-02-56 — O painel projeta; o modelo guarda o texto inteiro. Offset em linhas físicas.
+### D-2026-10-02-56 â€” O painel projeta; o modelo guarda o texto inteiro. Offset em linhas fÃ­sicas
 
-- **Contexto**: o operador reportou que o painel de sessão "inviabilizava o propósito": um prompt
-  sobre hardware e a resposta eram cortados no meio. Medido no código, a perda era **dupla**:
+- **Contexto**: o operador reportou que o painel de sessÃ£o "inviabilizava o propÃ³sito": um prompt
+  sobre hardware e a resposta eram cortados no meio. Medido no cÃ³digo, a perda era **dupla**:
   `runeCap` no paint (`tui_panels.go:553`) e `truncatedLine`/`lineCap=90` **no append**
-  (`tui.go:647`). A segunda é a grave: o texto morria antes de qualquer projeção, então
-  consertar só o desenho não recuperava nada.
-- **Decisão**:
-  - **`panelLines` é a única projeção**, compartilhada por sessão, atividade, picker e gate. Uma
-    implementação, um conjunto de testes, nenhum drift entre painéis. Quebra por caractere (o
-    ponto de quebra é um espaço e se perde; o invariante testado é "nenhum caractere some").
-  - **A continuação é indentada** (`  `): sem isso, o operador não distingue continuação de
-    linha nova. O prefixo `> `/`< ` fica na primeira linha física, nunca na continuação.
-  - **O offset de viewport conta linhas FÍSICAS.** Com offset lógico, uma resposta de 40 linhas
-    conta como *uma*: `?` pulava a resposta inteira — exatamente a reclamação que abriu o
-    milestone. `View()` é 10x/s, então a projeção é recalculada por frame (200 linhas × 100 ms
-    é irrelevante no Core 2 Duo) e `appendSession`/`appendActivity` são os **únicos** pontos que
-    escrevem nas fatias lógicas.
-  - **A rolagem horizontal é defensiva, não substituta**: `Shift+?/?` mais o indicador
-    `col 40/120` no título, porque caminho/URL/JSON de uma linha não têm ponto de quebra.
-- **Consequência**: `truncatedLine` e `lineCap` sumiram do append; `runeCap` saiu do paint dos
-  painéis. Geometria 70/30 com **piso de 28 células** para a atividade: o `min=12` anterior
-  transformava o catálogo do M12 e o detalhe do gate numa pilha de `?`.
+  (`tui.go:647`). A segunda Ã© a grave: o texto morria antes de qualquer projeÃ§Ã£o, entÃ£o
+  consertar sÃ³ o desenho nÃ£o recuperava nada.
+- **DecisÃ£o**:
+  - **`panelLines` Ã© a Ãºnica projeÃ§Ã£o**, compartilhada por sessÃ£o, atividade, picker e gate. Uma
+    implementaÃ§Ã£o, um conjunto de testes, nenhum drift entre painÃ©is. Quebra por caractere (o
+    ponto de quebra Ã© um espaÃ§o e se perde; o invariante testado Ã© "nenhum caractere some").
+  - **A continuaÃ§Ã£o Ã© indentada** (`  `): sem isso, o operador nÃ£o distingue continuaÃ§Ã£o de
+    linha nova. O prefixo `> `/`< ` fica na primeira linha fÃ­sica, nunca na continuaÃ§Ã£o.
+  - **O offset de viewport conta linhas fÃ­sicas.** Com offset lÃ³gico, uma resposta de 40 linhas
+    conta como *uma*: `â†“` pulava a resposta inteira â€” exatamente a reclamaÃ§Ã£o que abriu o
+    milestone. `View()` roda 10x/s, entÃ£o a projeÃ§Ã£o Ã© recalculada por frame (200 linhas a 100 ms
+    Ã© irrelevante no Core 2 Duo) e `appendSession`/`appendActivity` sÃ£o os **Ãºnicos** pontos que
+    escrevem nas fatias lÃ³gicas.
+  - **A rolagem horizontal Ã© defensiva, nÃ£o substituta**: `Shift+â†/â†’` mais o indicador
+    `col 40/120` no tÃ­tulo, porque caminho, URL e JSON de uma linha nÃ£o tÃªm ponto de quebra.
+- **ConsequÃªncia**: `truncatedLine` e `lineCap` sumiram do append; `runeCap` saiu do paint dos
+  painÃ©is. Geometria 70/30 com **piso de 28 cÃ©lulas** para a atividade: o `min=12` anterior
+  transformava o catÃ¡logo do M12 e o detalhe do gate numa pilha de `â†³`.
 
-### D-2026-10-02-57 — `View()` é puro: não pode mutar o modelo
+### D-2026-10-02-57 â€” `View()` Ã© puro: nÃ£o pode mutar o modelo
 
-- **Contexto**: `View()` é chamado pelo renderizador ~10x/s. O spinner era prefixado **em
-  `m.activity`** e o slice devolvido ao modelo — a cada frame entrava uma linha e a mais antiga
-  (o evento real) saía. Durante um turno, o painel de atividade ficava só com spinner e o log de
-  eventos era destruído. Já era um defecto de M12 (`m.activityOff = 0` no `View`).
-- **Decisão**: `View()` monta listas **locais** para desenhar e não escreve em nenhum campo do
-  modelo. O spinner é prependido na lista de exibição; `m.activity` continua sendo o log.
-  Teste de regressão chama `View()` 40 vezes e exige o log intacto.
+- **Contexto**: `View()` Ã© chamado pelo renderizador ~10x/s. O spinner era prefixado **em
+  `m.activity`** e o slice devolvido ao modelo â€” a cada frame entrava uma linha e a mais antiga
+  (o evento real) saÃ­a. Durante um turno, o painel de atividade ficava sÃ³ com spinner e o log de
+  eventos era destruÃ­do. JÃ¡ era um defeito de M12 (`m.activityOff = 0` no `View`).
+- **DecisÃ£o**: `View()` monta listas **locais** para desenhar e nÃ£o escreve em nenhum campo do
+  modelo. O spinner Ã© prependido na lista de exibiÃ§Ã£o; `m.activity` continua sendo o log.
+  Teste de regressÃ£o chama `View()` 40 vezes e exige o log intacto.
 
-### D-2026-10-02-58 — `sanitize` preserva `\n`: estrutura de linha é dado, não escape
+### D-2026-10-02-58 â€” `sanitize` preserva `\n`: estrutura de linha Ã© dado, nÃ£o escape
 
-- **Contexto**: `sanitize` descartava todo caractere C0, e `\n` é C0. Saída multilinha de tool e
-  respostas com parágrafo eram **colapsadas numa linha só** — que aí dependia de quebra por
+- **Contexto**: `sanitize` descartava todo caractere C0, e `\n` Ã© C0. SaÃ­da multilinha de tool e
+  respostas com parÃ¡grafo eram **colapsadas numa linha sÃ³** â€” que aÃ­ dependia de quebra por
   largura e de rolagem lateral para ser lida. Nenhum teste cobria isso, porque os testes de
-  sanitização usavam `\x1b` (que continua descartado).
-- **Decisão**: `\n` é preservado; `\t` vira espaço; os demais C0, DEL e C1 seguem descartados. A
-  justificativa é de propriedade: `\n` não move o cursor nem inicia sequência — é estrutura.
-  `panelLines` já separava por `\n`, então a projeção passa a receber o que o operador produziu.
+  sanitizaÃ§Ã£o usavam `\x1b` (que continua descartado).
+- **DecisÃ£o**: `\n` Ã© preservado; `\t` vira espaÃ§o; os demais C0, DEL e C1 seguem descartados. A
+  justificativa Ã© de propriedade: `\n` nÃ£o move o cursor nem inicia sequÃªncia â€” Ã© estrutura.
+  `panelLines` jÃ¡ separava por `\n`, entÃ£o a projeÃ§Ã£o passa a receber o que o operador produziu.
 
-### D-2026-10-02-59 — Interromper: `Esc` cancela, devolve o prompt, e não vira erro
+### D-2026-10-02-59 â€” Interromper: `Esc` cancela, devolve o prompt, e nÃ£o vira erro
 
-- **Contexto**: `Ctrl+C` cancelava o turno, mas `submit()` já havia **descartado** o texto do
-  input. Cancelar funcionava e retipar era obrigatório — o oposto do que o operador pediu. Além
+- **Contexto**: `Ctrl+C` cancelava o turno, mas `submit()` jÃ¡ havia **descartado** o texto do
+  input. Cancelar funcionava e retipar era obrigatÃ³rio â€” o oposto do que o operador pediu. AlÃ©m
   disso o turno cancelado voltava como `context canceled` e era pintado em **vermelho como
-  erro**, dizendo ao operador que a ação deliberada dele tinha quebrado algo.
-- **Decisão**:
-  - **`Esc` cancela** o turno em voo; `Esc` **sem** turno não sai (`Ctrl+C` continua sendo o
-    gesto de saída). Trocar `Esc` por "sair" seria regressão de gesto.
-  - **Cancelar repõe o prompt** no input, cursor no fim, e registra o cancelamento para
-    `/continue`. `?` reedita; o envio não duplica o histórico.
-  - **O turno cancelado é um estado terminal próprio** (`PhaseTurnCancelled`, append-only no enum
+  erro**, dizendo ao operador que a aÃ§Ã£o deliberada dele tinha quebrado algo.
+- **DecisÃ£o**:
+  - **`Esc` cancela** o turno em voo; `Esc` **sem** turno nÃ£o sai (`Ctrl+C` continua sendo o
+    gesto de saÃ­da). Trocar `Esc` por "sair" seria regressÃ£o de gesto.
+  - **Cancelar repÃµe o prompt** no input, cursor no fim, e registra o cancelamento para
+    `/continue`. `â†‘` reedita; o envio nÃ£o duplica o histÃ³rico.
+  - **O turno cancelado Ã© um estado terminal prÃ³prio** (`PhaseTurnCancelled`, append-only no enum
     de fases): `turnSeq`/`cancelledSeq` identificam o turno, e o `context canceled` que volta
-    dele **não** vira banner de erro nem linha `! erro:`. Um erro real depois de um cancelamento
+    dele **nÃ£o** vira banner de erro nem linha `! erro:`. Um erro real depois de um cancelamento
     continua sendo erro.
-  - **`/continue` reenvia o cancelado uma vez** e **avisa quais tools já executaram**
-    (opção 1 escolhida pelo operador: avisar, não recusar). Reenviar o prompt repete efeitos de
-    `write_file`/`docker rm`; esconder isso seria pior que avisar. A entrada é consumida no
-    reenvio, então um segundo `/continue` não repete a execução.
-- **Consequência**: `PhaseTurnCancelled` em `internal/loop/events.go`; nenhum item novo no
-  `Approver`; `tuiGate` segue o único caminho de aprovação.
+  - **`/continue` reenvia o cancelado uma vez** e **avisa quais tools jÃ¡ executaram**
+    (opÃ§Ã£o 1 escolhida pelo operador: avisar, nÃ£o recusar). Reenviar o prompt repete efeitos de
+    `write_file`/`docker rm`; esconder isso seria pior que avisar. A entrada Ã© consumida no
+    reenvio, entÃ£o um segundo `/continue` nÃ£o repete a execuÃ§Ã£o.
+- **ConsequÃªncia**: `PhaseTurnCancelled` em `internal/loop/events.go`; nenhum item novo no
+  `Approver`; `tuiGate` segue o Ãºnico caminho de aprovaÃ§Ã£o.
 
-### D-2026-10-02-60 — O gate reserva a altura que ele realmente ocupa
+### D-2026-10-02-60 â€” O gate reserva a altura que ele realmente ocupa
 
 - **Contexto**: defeito do M11 encontrado pelo M13. `gateDetail(..., 2)` cortava o payload em
-  **duas linhas** com reticências — o que contradiz a própria doutrina do M11 ("aprovar sem ver
-  o payload não é consentimento informado"). E `fixedRows` reservava **uma** linha para um
-  diálogo que renderizava três: com o gate aberto o prompt e o rodapé eram **empurrados para
-  fora** da tela, no pior momento possível.
-- **Decisão**: `fixedRows(gateRows int, banner bool)` passa a receber a **altura real** do gate, e
-  `gateDetail` recebe até 8 linhas — limitado também pelo que sobra da tela
-  (`minPanelRowsOnGate = 5` para o operador continuar vendo o estado do turno enquanto decide).
-  O payload nunca mais é truncado em silêncio dentro do que cabe.
-- **Consequência**: `TestOpenGateNeverPushesThePromptOffScreen` cobre 14/20/30/60 linhas.
+  **duas linhas** com reticÃªncias â€” o que contradiz a prÃ³pria doutrina do M11 ("aprovar sem ver
+  o payload nÃ£o Ã© consentimento informado"). E `fixedRows` reservava **uma** linha para um
+  diÃ¡logo que renderizava trÃªs: com o gate aberto o prompt e o rodapÃ© eram **empurrados para
+  fora** da tela, no pior momento possÃ­vel.
+- **DecisÃ£o**: `fixedRows(gateRows int, banner bool)` passa a receber a **altura real** do gate, e
+  `gateDetail` recebe atÃ© 8 linhas â€” limitado tambÃ©m pelo que sobra da tela
+  (`minPanelRowsOnGate = 5`, para o operador continuar vendo o estado do turno enquanto decide).
+  O payload nunca mais Ã© truncado em silÃªncio dentro do que cabe.
+- **ConsequÃªncia**: `TestOpenGateNeverPushesThePromptOffScreen` cobre 14/20/30/60 linhas.
 
-### D-2026-10-02-61 — Atalho de tecla nunca pode comer o que o operador digita
+### D-2026-10-02-61 â€” Atalho de tecla nunca pode comer o que o operador digita
 
 - **Contexto**: `handleRunes` disparava `r` (retry) e `c` (limpar banner) sempre que houvesse
-  banner visível — **engolindo a letra**. "verifique" virava "veifique". O banner é exatamente o
+  banner visÃ­vel â€” **engolindo a letra**. "verifique" virava "veifique". O banner Ã© exatamente o
   que aparece depois de um erro ou de um cancelamento, ou seja, o bug atingia justamente o
-  caminho de recuperação que o M13 criou (corrigir o prompt e reenviar).
-- **Decisão**: os dois atalhos só valem com o **input vazio**, que é a intenção original ("pressione
-  r para repetir"). Com texto na linha, `r` e `c` são letras. Um atalho que come digitação é pior
+  caminho de recuperaÃ§Ã£o que o M13 criou (corrigir o prompt e reenviar).
+- **DecisÃ£o**: os dois atalhos sÃ³ valem com o **input vazio**, que Ã© a intenÃ§Ã£o original ("pressione
+  r para repetir"). Com texto na linha, `r` e `c` sÃ£o letras. Um atalho que come digitaÃ§Ã£o Ã© pior
   que nenhum atalho.
-- **Prevenção**: teste que digita um prompt de 100 caracteres **com e sem** banner e exige
+- **PrevenÃ§Ã£o**: teste que digita um prompt de 100 caracteres **com e sem** banner e exige
   igualdade exata com a entrada.
+
+### D-2026-10-02-62 â€” Editar `.md` com bytes, nunca com string do PowerShell
+
+- **Contexto**: a seÃ§Ã£o D-56..61 foi escrita com um here-string piped para
+  `Add-Content` no PowerShell 5.1, que **destruiu os acentos**: 159 caracteres viraram `U+FFFD`
+  (`sess?o`, `Decis?o`, `c?digo`). O teste continuava verde â€” a corrupÃ§Ã£o Ã© de documentaÃ§Ã£o e
+  nenhum gate a pega. A spec do M12 tinha 1 caso igual, da sessÃ£o anterior.
+- **DecisÃ£o**: texto novo em `.md` Ã© escrito com bytes UTF-8 (editor/ferramenta de arquivo), nunca
+  por string do PowerShell. PowerShell fica para operaÃ§Ãµes que nÃ£o passam texto: contar,
+  verificar, compilar. E a verificaÃ§Ã£o de encoding Ã© um gate explÃ­cito â€” `U+FFFD` em `.md`/`.go`
+  versionado Ã© falha, nÃ£o detalhe cosmÃ©tico.
+- **PrevenÃ§Ã£o**: varredura byte-a-byte dos arquivos versionados procurando `U+FFFD`; `git archive`
+  quando for preciso comparar o blob commitado sem que o PowerShell re-codifique a saÃ­da.
