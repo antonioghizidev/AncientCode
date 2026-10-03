@@ -191,5 +191,6 @@ provedor no Core 2 Duo ultrapassa 600 s neste ambiente).
 
 ## Licença
 
-Ainda não definida — o repositório ainda não tem arquivo `LICENSE`. Defina antes de qualquer
-distribuição.
+[Apache-2.0](LICENSE) — inclui concessão explícita de patente, o que importa para uma ferramenta de
+segurança que empresas podem instalar. Ver também [`CONTRIBUTING.md`](CONTRIBUTING.md), que registra
+os invariantes que uma contribuição não pode quebrar.

@@ -21,6 +21,11 @@ import (
 
 // renameAllowlist: arquivo -> motivo. Entradas aqui são intencionais.
 var renameAllowlist = map[string]string{
+	// O proprio gate cita o nome antigo por definicao: e o padrao que ele
+	// procura. Sem esta entrada o teste se pega sozinho — o que foi exatamente o
+	// que aconteceu apos o primeiro commit do rename.
+	"cmd/ancientcode/rename_gate_test.go": "e o gate: precisa do padrao para procurar",
+
 	".gitignore": "mantem /ancientai e /ancientai.exe para nao deixar um binario antigo " +
 		"ser comitado por engano depois do rename",
 	// A dica de erro cita o nome antigo DE PROPÓSITO: quem ainda tem

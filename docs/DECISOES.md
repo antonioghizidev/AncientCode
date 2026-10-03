@@ -979,3 +979,48 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   versionado é falha, não detalhe cosmético.
 - **Prevenção**: varredura byte-a-byte dos arquivos versionados procurando `U+FFFD`; `git archive`
   quando for preciso comparar o blob commitado sem que o PowerShell re-codifique a saída.
+### D-2026-10-02-63 — Renomear AncientAI → AncientCode antes de definir a licença
+
+- **Contexto**: o projeto nasceu como `ancientai` e foi renomeado para `AncientCode`, o nome que
+  já usava no GitHub. A pergunta era **ordem**: licenciar antes ou renomear antes? Licenciar antes
+  gravaria no `LICENSE` o nome antigo na linha de copyright, e renomear depois exigiria reescrever
+  o boilerplate.
+- **Decisão**: renomear primeiro, em branch dedicada (o rename toca ~90 arquivos; misturado no diff
+  do M13 os dois diffs ficariam irrevisáveis). Detalhes:
+  - **`module github.com/antonioghizidev/ancientcode`** — e não um nome curto. Com `ancientai`,
+    `go install` era impossível porque o path não resolve remotamente. Agora funciona.
+  - **Rename duro, sem fallback.** `ancientai.yaml` e `ANCIENTAI_*` param de funcionar, sem
+    depreciação. Projeto sem usuário externo; um alias criaria dois caminhos permanentes no código
+    por causa de compatibilidade que ninguém precisa.
+  - **Stamp `.ancientcode-verified`**: nenhuma skill real existia (as do Inspiron eram dos smoke
+    tests), então o rename duro não custou nada. Renomeado junto.
+  - **A mensagem de erro de configuração passou a nomear o arquivo consultado.** Com rename duro, a
+    falha típica é "api_key_env não está definido", que parece falta de segredo — e a causa real é o
+    arquivo ter parado de ser lido. Fail-closed continua igual; o diagnóstico é que mudou.
+- **Consequência**: `cmd/ancientcode/`, `ancientcode.yaml`, `ANCIENTCODE_*`,
+  `~/.config/ancientcode/skills`, banner `ancientcode X`. Três gates novos (abaixo).
+- **Achado durante o rename**: o gate que verifica o nome **não cobria a raiz do repositório**, então
+  `README.md` — o arquivo mais lido do projeto — passou sem verificação. Descoberto ao injetar o nome
+  antigo no README e ver o gate passar. Corrigido, e o mesmo vale para os gates de encoding e markdown.
+
+### D-2026-10-02-64 — Três gates que existem porque um rename pode dar errado
+
+- **Contexto**: um rename é o tipo de mudança que "parece pronta" porque o build passa e a suíte fica
+  verde. O que sobra é um nome velho num comentário, num default ou no banner — nada quebra, só
+  confunde. Foi exatamente o que aconteceu duas vezes nesta sessão com documentação (D-62 e o
+  `<id>` cru), e nenhuma das duas foi pega por build ou teste.
+- **Decisão**: a regra geral é que **corrupção e deriva de documentação têm portão**, mesmo não
+  afetando runtime:
+  - `TestVersionedTextIsValidUTF8WithoutReplacementChars` — nenhum `.md`/`.go` versionado com
+    `U+FFFD` ou UTF-8 inválido.
+  - `TestVersionedMarkdownHasNoRawHTMLTags` — nenhum ângulo cru fora de code span ou bloco cercado
+    (quebra o markdown a partir da linha).
+  - `TestNoStaleOldNameInVersionedFiles` + `TestModulePathMatchesRepo` +
+    `TestConfigDefaultFilenameMatchesBinaryName` — o nome antigo não pode sobrar, o `module` tem de
+    casar com o repositório, e o nome do config padrão tem de casar com o do binário.
+  - As exceções são **explícitas e nomeadas** (`.gitignore` mantém o binário antigo; a dica de erro
+    cita `ancientai.yaml` de propósito; o próprio gate cita o padrão que procura). Allowlist com
+    motivo, não lista silenciosa.
+  - O gate **inclui a raiz do repositório** — ver D-63.
+- **Prevenção mínima que importa**: todo gate novo é testado **reintroduzindo a corrupção**. As três
+  vezes isso foi feito, o gate pegou; o único que não pegou foi justamente o que tinha ponto cego.
