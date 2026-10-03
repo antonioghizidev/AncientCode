@@ -306,7 +306,7 @@ As decisões que alteram a SPEC devem ser refletidas lá.
 - **Consequência**: históricos podem ser encolhidos sem corromper a conversa; total > orçamento
   mantém sempre o turno mais novo.
 
-### D-2026-09-15-23 — --resume <id> e --cleanup <dias> (nada automático)
+### D-2026-09-15-23 — `--resume <id>` e `--cleanup <dias>` (nada automático)
 
 - **Contexto**: M5 — sessão persistente; `--session`+`--reset` avisava só com flag; limpeza de
   sessões antigas "sem auto-executar".

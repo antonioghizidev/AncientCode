@@ -4,7 +4,7 @@ Copiar para `docs/session-<YYYY-MM-DD>-<slug>.md` e preencher ao final de cada s
 
 ---
 
-# Sessão <YYYY-MM-DD> — <slug>
+# Sessão `<YYYY-MM-DD>` — `<slug>`
 
 > Resumo exclusivo desta sessão. Metodologia: `specs/methodology.md`.
 
@@ -14,8 +14,8 @@ Copiar para `docs/session-<YYYY-MM-DD>-<slug>.md` e preencher ao final de cada s
 
 ## O que foi feito
 
-- <item>
-- <item>
+- `<item>`
+- `<item>`
 
 ## Decisões
 
@@ -27,7 +27,7 @@ Copiar para `docs/session-<YYYY-MM-DD>-<slug>.md` e preencher ao final de cada s
 |---|---|---|
 | `internal/...` | ... | ✅/⏳ |
 
-**Total: <N> executados, <N> falhas** (`gofmt`/`go vet`/`go build` limpos).
+**Total: `<N>` executados, `<N>` falhas** (`gofmt`/`go vet`/`go build` limpos).
 
 ## Critérios de aceite
 

@@ -4,10 +4,10 @@ Copiar para `specs/milestones/<NN>-<slug>.md` no início de cada milestone e pre
 
 ---
 
-# M<N> — <Nome do milestone>
+# M`<N>` — `<Nome do milestone>`
 
-**Status**: ⏳ pendente | ▶ em andamento | ✅ concluído em <data>
-**Depende de**: <M anterior ou "nenhuma">
+**Status**: ⏳ pendente | ▶ em andamento | ✅ concluído em `<data>`
+**Depende de**: `<M anterior ou "nenhuma">`
 **Sessão de referência**: (a preencher ao fechar)
 
 ## 1. Objetivo

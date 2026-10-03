@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -69,6 +70,72 @@ func TestVersionedTextIsValidUTF8WithoutReplacementChars(t *testing.T) {
 				rel, n, s[lo:hi])
 		}
 	}
+}
+
+// TestVersionedMarkdownHasNoRawHTMLTags fecha o segundo lado da lição do M13: um
+// `<id>` solto no título de uma entrada do DECISOES.md fez o leitor de markdown
+// do operador engolir tudo que vinha depois — bullets e o título seguinte
+// passaram a aparecer como texto literal. O sintoma apontava para "formatação
+// quebrada depois do título", mas o markdown estava correto: `<id>` é lido como
+// tag HTML.
+//
+// Code spans (“ `--resume <id>` “) e blocos cercados são seguros; o que quebra
+// é ângulo cru no texto corrido. Este gate exige que não exista.
+func TestVersionedMarkdownHasNoRawHTMLTags(t *testing.T) {
+	if testing.Short() {
+		t.Skip("varre os .md versionados")
+	}
+	root, err := repoRoot()
+	if err != nil {
+		t.Skipf("raiz do repo nao encontrada: %v", err)
+	}
+	files := markdownFiles(t, root)
+	if len(files) == 0 {
+		t.Skip("nenhum .md versionado encontrado")
+	}
+	// <tag> cru no texto: nome começa por letra, para nao casar com "<= 90",
+	// "->", "<-", "-> " ou comparacoes de Go/Python em prosa.
+	re := regexp.MustCompile(`<[a-zA-Z][a-zA-Z0-9_-]*>`)
+	fence := regexp.MustCompile("^\\s*(```|~~~)")
+	for _, rel := range files {
+		p := filepath.Join(root, rel)
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Errorf("%s: leitura falhou: %v", rel, err)
+			continue
+		}
+		inFence := false
+		for i, line := range strings.Split(string(raw), "\n") {
+			if fence.MatchString(line) {
+				inFence = !inFence
+				continue
+			}
+			if inFence {
+				continue // dentro de bloco cercado o HTML nao e interpretado
+			}
+			// Remove code spansinline: `` `--resume <id>` `` e seguro.
+			prose := codeSpan.ReplaceAllString(line, "")
+			if m := re.FindString(prose); m != "" {
+				t.Errorf("%s:%d: tag HTML crua %q quebra o markdown a partir daqui: %s",
+					rel, i+1, m, strings.TrimSpace(line))
+			}
+		}
+	}
+}
+
+// codeSpan casa `...` (inclusive com ticks duplos), para o gate ignorar o que já
+// está protegido por crase.
+var codeSpan = regexp.MustCompile("`+[^`]*`+")
+
+func markdownFiles(t *testing.T, root string) []string {
+	t.Helper()
+	var files []string
+	for _, rel := range versionedFiles(t, root) {
+		if strings.HasSuffix(rel, ".md") {
+			files = append(files, rel)
+		}
+	}
+	return files
 }
 
 // encTestIsInRootPackage is a guard: this file lives in cmd/ancientai, which is a
