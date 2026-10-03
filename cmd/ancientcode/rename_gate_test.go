@@ -26,6 +26,10 @@ var renameAllowlist = map[string]string{
 	// que aconteceu apos o primeiro commit do rename.
 	"cmd/ancientcode/rename_gate_test.go": "e o gate: precisa do padrao para procurar",
 
+	// Documenta os gates, entao cita o padrao e o rename. Sem esta entrada o
+	// CONTRIBUTING nao poderia explicar a regra que ele mesmo impoe.
+	"CONTRIBUTING.md": "documenta os gates e o rename, entao precisa citar o nome antigo",
+
 	".gitignore": "mantem /ancientai e /ancientai.exe para nao deixar um binario antigo " +
 		"ser comitado por engano depois do rename",
 	// A dica de erro cita o nome antigo DE PROPÓSITO: quem ainda tem
