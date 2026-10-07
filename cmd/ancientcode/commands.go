@@ -25,7 +25,13 @@ const (
 	cmdProvider // /provider [nome]
 	cmdContext  // /context
 	cmdModels   // /models [--free|--all|--check|texto]
+	cmdConnect  // /connect [provedor] [--use-env]
 )
+
+// connectOpts are the /connect flags (M14, D-2026-10-02-66).
+type connectOpts struct {
+	useEnv bool
+}
 
 // catalogOpts are the /models filters (M12, D-2026-10-01-53).
 type catalogOpts struct {
@@ -37,10 +43,11 @@ type catalogOpts struct {
 
 // command is the parsed form of one REPL line.
 type command struct {
-	kind  cmdKind
-	arg   string // /model X, /provider Y
-	index int    // !N → 1-based prompt index
-	opts  catalogOpts
+	kind    cmdKind
+	arg     string // /model X, /provider Y, /connect [provedor]
+	index   int    // !N → 1-based prompt index
+	opts    catalogOpts
+	connOpt connectOpts
 }
 
 // parseCommand interprets a single trimmed REPL line. Plain text returns
@@ -76,6 +83,8 @@ func parseCommand(line string) (command, bool) {
 		return command{kind: cmdModels, opts: parseCatalogOpts(rest)}, true
 	case "/provider":
 		return command{kind: cmdProvider, arg: rest}, true
+	case "/connect":
+		return command{kind: cmdConnect, arg: rest, connOpt: parseConnectOpts(rest)}, true
 	}
 
 	// !N re-enqueues the N-th newest prompt (1 = most recent). Numbers that do
@@ -96,6 +105,19 @@ func parseCommand(line string) (command, bool) {
 	}
 
 	return command{}, false
+}
+
+// parseConnectOpts reads /connect flags. Only --use-env exists; an unknown
+// token is left in arg so the caller reports it rather than silently treating a
+// typo as "connect to this provider".
+func parseConnectOpts(rest string) connectOpts {
+	var o connectOpts
+	for _, tok := range strings.Fields(rest) {
+		if strings.EqualFold(tok, "--use-env") {
+			o.useEnv = true
+		}
+	}
+	return o
 }
 
 // parseCatalogOpts reads /models flags. Unrecognized tokens are treated as the
@@ -128,5 +150,5 @@ func (c command) isPrompt() bool { return c.kind == cmdNone }
 
 // helpText lists the REPL commands (shared by /help and banner).
 const helpText = "comandos: /exit /quit /reset /help /historico (!N repete) /retry /continue " +
-	"/model [nome|N] /models [--free|--all|--check|texto] /provider [nome] /context | " +
-	"no plano: y aprova e executa, feedback:<msg> replaneja"
+	"/connect [provedor] [--use-env] /model [nome|N] /models [--free|--all|--check|texto] " +
+	"/provider [nome] /context | no plano: y aprova e executa, feedback:<msg> replaneja"

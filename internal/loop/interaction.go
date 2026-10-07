@@ -152,6 +152,26 @@ func (l *Loop) ProviderNames() []string {
 	return l.cfg.ProviderNames()
 }
 
+// CurrentProvider returns the active provider id, lowercased. The REPL needs it
+// to answer "which key am I using?" without the caller having to remember that
+// /provider lowercases its argument (M14).
+func (l *Loop) CurrentProvider() string {
+	return strings.ToLower(strings.TrimSpace(l.cfg.Provider))
+}
+
+// CurrentAPIKeyEnv returns the environment variable name that api_key_env
+// resolves to for the active provider. The name is not a secret.
+func (l *Loop) CurrentAPIKeyEnv() string {
+	return l.cfg.APIKeyEnv
+}
+
+// ProviderBaseURLFor returns the default base URL and env name of a named
+// provider, so /connect can verify a candidate key against the same endpoint
+// the switch would install.
+func (l *Loop) ProviderBaseURLFor(name string) (baseURL, apiKeyEnv string, ok bool) {
+	return l.cfg.ProviderDefault(name)
+}
+
 // providerModelController is the runtime-switch sub-contract the loop depends
 // on (DIP, M8 §2): Loop talks to the interface, never to *provider.Client.
 type providerModelController = provider.ModelController

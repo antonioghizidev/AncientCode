@@ -87,6 +87,11 @@ func (s *Store) Resolve(provider, envName string, lookup func(string) string) (s
 }
 
 // ResolveCredential implements Resolver with the real environment.
-func (s *Store) ResolveCredential(provider, envName string) (string, Source, error) {
-	return s.Resolve(provider, envName, os.Getenv)
+//
+// The source is returned as the underlying string, not as Source, so that
+// config.CredentialResolver (which must not import this package) is satisfied
+// without a wrapper: Source IS a string.
+func (s *Store) ResolveCredential(provider, envName string) (string, string, error) {
+	key, src, err := s.Resolve(provider, envName, os.Getenv)
+	return key, string(src), err
 }

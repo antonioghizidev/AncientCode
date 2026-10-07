@@ -1,0 +1,142 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/antonioghizidev/ancientcode/internal/config"
+	"github.com/antonioghizidev/ancientcode/internal/connect"
+	"github.com/antonioghizidev/ancientcode/internal/creds"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
+)
+
+// runConnectREPL implements /connect on the line REPL.
+//
+// The rules it must never break (M14 §3.5, D-2026-10-02-66):
+//   - the key is asked for interactively, never taken from the command line
+//     (argv is visible in /proc/<pid>/cmdline and in shell history);
+//   - the key is verified against the provider before it is stored;
+//   - a rejected key is not stored, and the message says which provider said so;
+//   - on success the source is reported, never a bare "saved".
+func runConnectREPL(ctx context.Context, cmd command, svc *connect.Service, agent *loop.Loop, cfg *config.Config) {
+	if svc == nil {
+		fmt.Fprintln(os.Stderr, "erro: /connect indisponivel (store de credenciais nao inicializado)")
+		return
+	}
+
+	name, err := connectTarget(cmd.arg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "erro:", err)
+		return
+	}
+
+	// --use-env: solta o pin sem apagar a chave.
+	if cmd.connOpt.useEnv {
+		if name == "" {
+			name = agent.CurrentProvider()
+		}
+		if err := svc.UseEnv(name); err != nil {
+			fmt.Fprintln(os.Stderr, "erro:", err)
+			return
+		}
+		fmt.Printf("provider %s: pin solto; a chave do ambiente volta a valer\n", name)
+		fmt.Println("  a chave guardada foi mantida; /connect <p> reativa o pin")
+		return
+	}
+
+	if name == "" {
+		name = agent.CurrentProvider()
+	}
+
+	// Verificacao exige terminal para a chave ser digitada sem eco.
+	if !hasStdinTerminal() {
+		fmt.Fprintln(os.Stderr, "erro: /connect precisa de um terminal para ler a chave sem eco")
+		fmt.Fprintln(os.Stderr, "      alternativa: export "+envNameFor(agent, name)+"=... e rode sem /connect")
+		return
+	}
+
+	baseURL := agent.CurrentProviderBaseURL()
+	if b, _, ok := agent.ProviderBaseURLFor(name); ok && name != agent.CurrentProvider() {
+		baseURL = b
+	}
+
+	key, err := readSecret(fmt.Sprintf("chave de %s (nao sera exibida): ", name))
+	if err != nil {
+		if errors.Is(err, errNotTerminal) {
+			fmt.Fprintln(os.Stderr, "erro: /connect precisa de um terminal para ler a chave sem eco")
+			return
+		}
+		fmt.Fprintln(os.Stderr, "erro:", err)
+		return
+	}
+	key = trimSecret(key)
+	if key == "" {
+		fmt.Fprintln(os.Stderr, "erro: chave vazia; nada foi guardado")
+		return
+	}
+
+	res, err := svc.Connect(ctx, name, baseURL, key)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "erro:", err)
+		if errors.Is(err, connect.ErrRejected) {
+			fmt.Fprintln(os.Stderr, "      a chave foi recusada; nada foi guardado")
+		}
+		return
+	}
+
+	switch {
+	case res.Replaced:
+		fmt.Printf("provider %s: chave substituida, verificada, guardada (%d modelos)\n", name, res.ModelCount)
+	default:
+		fmt.Printf("provider %s: chave guardada, verificada (%d modelos)\n", name, res.ModelCount)
+	}
+	fmt.Printf("  origem da chave em uso: %s\n", res.Source)
+	if name != agent.CurrentProvider() {
+		fmt.Printf("  /provider %s para usar este provider\n", name)
+	}
+	if model, ok, _ := lastModelFor(svc, name); ok {
+		fmt.Printf("  ultimo modelo registrado: %s (/models)\n", model)
+	}
+	_ = cfg
+}
+
+// connectTarget validates the optional provider argument. A flag where a
+// provider name was expected is refused rather than treated as a name.
+func connectTarget(arg string) (string, error) {
+	arg = strings.TrimSpace(arg)
+	for _, tok := range strings.Fields(arg) {
+		if strings.HasPrefix(tok, "-") {
+			return "", fmt.Errorf("opcao desconhecida %q; use /connect [provedor] [--use-env]", tok)
+		}
+	}
+	name := strings.ToLower(strings.TrimSpace(arg))
+	if name == "" {
+		return "", nil
+	}
+	if err := creds.ValidateProvider(name); err != nil {
+		return "", fmt.Errorf("provedor invalido %q; use /connect para ver as opcoes", name)
+	}
+	return name, nil
+}
+
+// envNameFor returns the api_key_env name of a provider, so messages can name
+// the variable without ever naming its value.
+func envNameFor(agent *loop.Loop, name string) string {
+	if _, env, ok := agent.ProviderBaseURLFor(name); ok && env != "" {
+		return env
+	}
+	return agent.CurrentAPIKeyEnv()
+}
+
+// lastModelFor reads the remembered model for a provider from the state store.
+// It is best-effort UI sugar: a missing state file must never break /connect.
+func lastModelFor(svc *connect.Service, name string) (string, bool, error) {
+	st, err := stateStore()
+	if err != nil {
+		return "", false, err
+	}
+	return st.GetModel(name)
+}

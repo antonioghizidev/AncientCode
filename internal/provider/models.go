@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 
@@ -108,10 +107,7 @@ func (c *Client) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	c.mu.RUnlock()
 
 	apiKeyEnv = strings.TrimSpace(apiKeyEnv)
-	key := ""
-	if apiKeyEnv != "" {
-		key = os.Getenv(apiKeyEnv)
-	}
+	key := c.resolveKey(apiKeyEnv)
 	if key == "" {
 		// Report the variable NAME, never anything derived from its value.
 		return nil, fmt.Errorf("provider: API key env %q is not set", apiKeyEnv)

@@ -160,6 +160,42 @@ func (s *Service) Logout(providerID string) error {
 	return s.store.Delete(providerID)
 }
 
+// ProviderCandidate is a (provider id, api_key_env) pair the onboarding must
+// consider before deciding the operator needs to configure anything.
+type ProviderCandidate struct {
+	ID      string
+	EnvName string
+}
+
+// List returns the providers that have a stored credential. It is what
+// `auth list` prints, so it returns names only — never a value.
+func (s *Service) List() ([]string, error) {
+	return s.store.List()
+}
+
+// HasAny reports whether ANY provider already has a usable credential, from the
+// store OR from the environment.
+//
+// The onboarding of D-2026-10-02-67 uses it, and the environment half is the
+// point: an operator who already exported NVIDIA_API_KEY must NOT be asked to
+// connect. Asking anyway would be the harness insisting on its own storage over
+// a working configuration.
+func (s *Service) HasAny(cands []ProviderCandidate) (bool, error) {
+	names, err := s.store.List()
+	if err != nil {
+		return false, err
+	}
+	if len(names) > 0 {
+		return true, nil
+	}
+	for _, c := range cands {
+		if _, _, err := s.store.Resolve(c.ID, c.EnvName, os.Getenv); err == nil {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Status describes what a provider would use right now, including the source.
 // This is what `/provider` shows so the operator never has to guess which key
 // is in play.

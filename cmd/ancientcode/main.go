@@ -26,6 +26,8 @@ import (
 	"github.com/antonioghizidev/ancientcode/internal/audit"
 	"github.com/antonioghizidev/ancientcode/internal/catalog"
 	"github.com/antonioghizidev/ancientcode/internal/config"
+	"github.com/antonioghizidev/ancientcode/internal/connect"
+	"github.com/antonioghizidev/ancientcode/internal/creds"
 	"github.com/antonioghizidev/ancientcode/internal/loop"
 	"github.com/antonioghizidev/ancientcode/internal/model"
 	"github.com/antonioghizidev/ancientcode/internal/provider"
@@ -173,7 +175,49 @@ func main() {
 		return
 	}
 
-	cfg, err := config.Load(*flagConfig)
+	// M14: `auth` is handled BEFORE the config is loaded. It must work on a
+	// machine that has no config yet — that is precisely when the operator
+	// needs it — and it must never require a credential to manage credentials.
+	if len(flag.Args()) > 0 && strings.EqualFold(flag.Args()[0], "auth") {
+		os.Exit(runAuthCLI(context.Background(), flag.Args()[1:]))
+	}
+
+	// M14: first-use onboarding. config.Load() below fails with
+	// "api_key_env is not set", which reads like a missing secret when the real
+	// cause is that the operator never connected. Offering /connect first turns
+	// that dead end into a question with an answer (D-2026-10-02-67).
+	if !*flagRun && *flagVerifySkill == "" {
+		if svc, err := credSvc(); err == nil {
+			ok, oerr := svc.HasAny(knownCandidates())
+			if oerr != nil {
+				fmt.Fprintln(os.Stderr, "erro:", oerr)
+				os.Exit(1)
+			}
+
+			if !ok {
+				if deployed, derr := runOnboarding(context.Background(), svc); derr != nil {
+					fmt.Fprintln(os.Stderr, "erro:", derr)
+					os.Exit(1)
+				} else if deployed {
+					fmt.Fprintln(os.Stderr, "credencial guardada; seguindo")
+					fmt.Fprintln(os.Stderr, "")
+				} else if !hasStdinTerminal() {
+					printNoCredentialHelp()
+					os.Exit(1)
+				}
+			}
+		}
+	}
+
+	// M14: the credential store must be wired BEFORE the config is validated,
+	// because Validate is what decides "no credential". SetCredentialResolver
+	// after Load would be too late — Load would already have exited 1.
+	var credStoreForConfig *creds.Store
+	if cs, cerr := credStore(); cerr == nil {
+		credStoreForConfig = cs
+	}
+
+	cfg, err := config.LoadWithResolver(*flagConfig, credStoreForConfig)
 	if err != nil {
 		// Name the config that was consulted. A missing file is legal (defaults
 		// apply), so the failure usually shows up later as "api_key_env is not
@@ -259,6 +303,13 @@ func main() {
 	}
 
 	client := provider.NewOpenAICompatible(cfg.BaseURL, cfg.Model, cfg.APIKeyEnv, nil)
+
+	// M14: wire the credential store into the provider so a key saved by /connect
+	// is actually used by requests. Chat and ListModels resolve per request
+	// instead of only reading the environment.
+	if credStoreForConfig != nil {
+		client.SetKeyResolver(keyResolverFor(credStoreForConfig))
+	}
 
 	// The filesystem tools are rooted at code_root (SPEC §10.3): every
 	// read/write for the coding agent stays inside the dedicated code tree.
@@ -445,6 +496,14 @@ func main() {
 
 	ctx := context.Background()
 
+	// M14: the credential store. A failure to open it must NOT be fatal: the
+	// harness still works through api_key_env alone, which is the pre-M14 path.
+	// Only /connect and `auth` are unavailable, and they say so when invoked.
+	var credService *connect.Service
+	if svc, err := credSvc(); err == nil {
+		credService = svc
+	}
+
 	// M12: the entries shown by the last /models, so "/model <N>" resolves the
 	// number the operator actually saw.
 	var lastCatalog []catalog.Entry
@@ -589,11 +648,22 @@ func main() {
 				if cmd.arg == "" {
 					fmt.Println("provider base_url:", agent.CurrentProviderBaseURL())
 					fmt.Println("opcoes:", strings.Join(agent.ProviderNames(), ", "))
+					if credService != nil {
+						st := credService.StatusFor(agent.CurrentProvider(), cfg.APIKeyEnv)
+						fmt.Println(st.Describe())
+					}
 				} else if err := agent.SwitchProvider(cmd.arg); err != nil {
 					fmt.Fprintln(os.Stderr, "erro:", err)
 				} else {
 					fmt.Println("provider:", strings.ToLower(strings.TrimSpace(cmd.arg)), "ativo (vale nesta sessao)")
+					if credService != nil {
+						st := credService.StatusFor(agent.CurrentProvider(), cfg.APIKeyEnv)
+						fmt.Println(st.Describe())
+					}
 				}
+				continue
+			case cmdConnect:
+				runConnectREPL(ctx, cmd, credService, agent, cfg)
 				continue
 			case cmdResend:
 				if cmd.index < 0 {

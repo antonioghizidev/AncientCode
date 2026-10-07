@@ -30,10 +30,12 @@ const maxErrorResponseBytes = 64 << 10 // 64 KiB
 // adapter that covers OpenRouter, NVIDIA NIM and LiteLLM (SPEC §4.1). M8:
 // base URL, model and API key env are session-switchable via ModelController.
 type Client struct {
-	mu           sync.RWMutex
-	baseURL      string
-	model        string
-	apiKeyEnv    string
+	mu        sync.RWMutex
+	baseURL   string
+	model     string
+	apiKeyEnv string
+	// keyResolver supplies a key stored by /connect; nil means env only (M14).
+	keyResolver  KeyResolver
 	http         *http.Client
 	maxRespBytes int64
 }
@@ -106,7 +108,11 @@ func (c *Client) SetBaseURL(baseURL, apiKeyEnv string) error {
 	if baseURL == "" || apiKeyEnv == "" {
 		return errors.New("provider: base_url e api_key_env sao obrigatorios; switch recusado")
 	}
-	if os.Getenv(apiKeyEnv) == "" {
+	// M14: the switch needs a USABLE credential for the target provider, which
+	// may live in the store (pinned by /connect) rather than in the
+	// environment. resolveKey applies the same precedence a request would, so
+	// /provider cannot install an endpoint the next turn cannot authenticate to.
+	if c.resolveKey(apiKeyEnv) == "" {
 		return fmt.Errorf("provider: API key env %q nao definida; switch recusado (fail-closed)", apiKeyEnv)
 	}
 	u, err := url.Parse(baseURL)
@@ -138,13 +144,48 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+// KeyResolver returns the key to use for a request, or an empty string.
+//
+// It exists because of M14: after /connect the key lives in a 0600 store, not
+// in the process environment. Injecting the key into the environment instead
+// would expose it to every child process and to /proc/<pid>/environ, so the
+// store is consulted in-process, per request, and never cached (M14 §4, D-65).
+//
+// The secret is deliberately NOT a struct field that gets logged or copied:
+// it exists only as a local inside Chat, on its way to the Authorization header.
+type KeyResolver func(envName string) string
+
+// SetKeyResolver installs the per-request key source. Passing nil restores the
+// environment-only behaviour, which is the pre-M14 path and the CI path.
+func (c *Client) SetKeyResolver(fn KeyResolver) {
+	c.mu.Lock()
+	c.keyResolver = fn
+	c.mu.Unlock()
+}
+
+// resolveKey applies the precedence for one request: the store when it has a
+// usable key, the environment otherwise. The store is asked first because it
+// knows the pin (D-2026-10-02-66); when it declines, the environment wins,
+// which keeps every pre-M14 setup working untouched.
+func (c *Client) resolveKey(apiKeyEnv string) string {
+	c.mu.RLock()
+	kr := c.keyResolver
+	c.mu.RUnlock()
+	if kr != nil {
+		if k := kr(apiKeyEnv); k != "" {
+			return k
+		}
+	}
+	return os.Getenv(apiKeyEnv)
+}
+
 func (c *Client) Chat(ctx context.Context, msgs []ChatMessage, tools []ToolDef, onEvent func(StreamEvent)) (ChatResult, error) {
 	var baseURL, model, apiKeyEnv string
 	c.mu.RLock()
 	baseURL, model, apiKeyEnv = c.baseURL, c.model, c.apiKeyEnv
 	c.mu.RUnlock()
 
-	key := os.Getenv(apiKeyEnv)
+	key := c.resolveKey(apiKeyEnv)
 	if key == "" {
 		// Report the variable NAME, never anything derived from its value.
 		return ChatResult{}, fmt.Errorf("provider: API key env %q is not set", apiKeyEnv)
