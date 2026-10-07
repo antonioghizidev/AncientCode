@@ -250,6 +250,14 @@ func (s *Store) load() (*file, error) {
 // write persists atomically (tmp + fsync + rename) and verifies the mode, for
 // the same reason as the credential store: consistency of posture, so a future
 // reader does not assume one file is hardened and the other is not.
+//
+// DEFREITO CORRIGIDO (achado pelo teste TestAtomicWriteLeavesNoTruncatedState,
+// que rodava verde no host Windows e ficou vermelho no WSL): esta funcao abria
+// s.path com O_TRUNC e escrevia por cima, apesar de o comentario prometer
+// tmp+rename. O efeito e exatamente o que o S2 do milestone proibe: um processo
+// morto no meio da escrita deixa state.json TRUNCADO — e state.json truncado
+// faz GetModel devolver erro para todo modelo ja escolhido, ou seja, o harness
+// perde a memoria de modelo sem o operador ter feito nada.
 func (s *Store) write(f *file) error {
 	blob, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
@@ -258,15 +266,16 @@ func (s *Store) write(f *file) error {
 	blob = append(blob, '\n')
 
 	dir := filepath.Dir(s.path)
-	tmp, err := os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	_ = dir
+	tmp, err := os.CreateTemp(dir, ".state-*.tmp")
 	if err != nil {
 		return fmt.Errorf("state: create temp file: %w", err)
 	}
-	tmpName := s.path
-	_ = tmpName
+	tmpName := tmp.Name()
+	// Todo retorno antecipado abaixo tem de nao deixar o tmp para tras, nem
+	// deixar um arquivo que outro usuario consiga ler.
 	defer func() {
 		tmp.Close()
+		os.Remove(tmpName)
 	}()
 
 	if err := tmp.Chmod(0o600); err != nil {
@@ -281,7 +290,10 @@ func (s *Store) write(f *file) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("state: close temp file: %w", err)
 	}
-	if err := os.Chmod(s.path, 0o600); err != nil {
+	// O rename e o ponto de compromisso: antes dele o store antigo esta inteiro,
+	// depois ele e o novo. O diretorio em modo 0o500 faz o CreateTemp falhar
+	// ANTES do rename, e o store antigo sobrevive intacto.
+	if err := os.Rename(tmpName, s.path); err != nil {
 		return fmt.Errorf("state: rename into place: %w", err)
 	}
 	return verifyPerms(s.path)
