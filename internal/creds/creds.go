@@ -44,6 +44,11 @@ const (
 	maxFileBytes  = 1 << 20   // 1 MiB
 )
 
+// ErrNoCredential reports that a provider has no stored key. Callers use
+// errors.Is to tell "absent" from "the store is broken": an absent credential
+// may fall through to the environment, a broken store must not.
+var ErrNoCredential = errors.New("no credential stored for provider")
+
 // providerRe imposes the strict provider-id grammar. Reusing the skill-name
 // grammar (M7) keeps ids lowercase, dash-separated and free of separators and
 // dots, so an id can never traverse a path or hide in a filename.
@@ -177,7 +182,7 @@ func (s *Store) Get(provider string) (Entry, bool, error) {
 	}
 	e, ok := f.Providers[provider]
 	if !ok {
-		return Entry{}, false, fmt.Errorf("creds: no credential stored for provider %q", provider)
+		return Entry{}, false, fmt.Errorf("creds: %w: %q", ErrNoCredential, provider)
 	}
 	if len(e.Key) > maxEntryBytes {
 		return Entry{}, false, fmt.Errorf(
@@ -207,7 +212,7 @@ func (s *Store) SetFixed(provider string, fixed bool) error {
 	}
 	e, ok := f.Providers[provider]
 	if !ok {
-		return fmt.Errorf("creds: no credential stored for provider %q", provider)
+		return fmt.Errorf("creds: %w: %q", ErrNoCredential, provider)
 	}
 	e.Fixed = fixed
 	f.Providers[provider] = e
@@ -227,7 +232,7 @@ func (s *Store) Delete(provider string) error {
 		return err
 	}
 	if _, ok := f.Providers[provider]; !ok {
-		return fmt.Errorf("creds: no credential stored for provider %q", provider)
+		return fmt.Errorf("creds: %w: %q", ErrNoCredential, provider)
 	}
 	delete(f.Providers, provider)
 	return s.write(f)
