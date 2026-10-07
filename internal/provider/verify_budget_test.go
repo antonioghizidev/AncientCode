@@ -5,9 +5,79 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
+
+// Uma request que estoura o limite NAO pode encerrar a sondagem.
+//
+// Medido no Inspiron: no catalogo da NVIDIA, um modelo pendurado (deepseek-ai/
+// deepseek-v4.1-flash) consumiu 75s inteiros enquanto os vizinhos respondiam em
+// 0.5s, e o unico modelo vivo estava 12 posicoes adiante. Devolver no primeiro
+// timeout transformava o problema de um vizinho num veredito sobre a chave do
+// operador — recusando uma chave valida.
+func TestHungEntryDoesNotEndTheProbe(t *testing.T) {
+	old := perRequestVerifyTimeout
+	perRequestVerifyTimeout = 60 * time.Millisecond
+	defer func() { perRequestVerifyTimeout = old }()
+
+	var order []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":[{"id":"lento/1"},{"id":"rapido/2"}]}`))
+			return
+		}
+		body := readAllLimited(r)
+		order = append(order, body)
+		if strings.Contains(body, "lento/1") {
+			time.Sleep(400 * time.Millisecond) // estoura o limite por request
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hi"}}]}`))
+	}))
+	defer srv.Close()
+
+	res, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, "k", "")
+	if err != nil {
+		t.Fatalf("um vizinho pendurado nao pode_recusar a chave: %v", err)
+	}
+	if res.Outcome != OutcomeOK {
+		t.Fatalf("Outcome = %v, queria OutcomeOK", res.Outcome)
+	}
+	if len(order) < 2 {
+		t.Fatalf("a sondagem parou no primeiro modelo: %v", order)
+	}
+	if !strings.Contains(order[len(order)-1], "rapido/2") {
+		t.Fatalf("a ultima tentativa nao usou o modelo vivo: %q", order[len(order)-1])
+	}
+}
+
+// E o inverso: um 429 e um sinal de "o provider esta me recusando agora", e
+// insistir so aprofunda o rate limit. Esse precisa parar.
+func TestRateLimitStopsTheProbeImmediately(t *testing.T) {
+	var n int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":[{"id":"a/1"},{"id":"b/2"},{"id":"c/3"}]}`))
+			return
+		}
+		n++
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, "k", "")
+	if !errors.Is(err, ErrInconclusive) {
+		t.Fatalf("429 deveria dar inconclusivo, veio %v", err)
+	}
+	if n > 1 {
+		t.Fatalf("insistiu %d vezes num provider com rate limit", n)
+	}
+}
 
 // A sondagem pode precisar de varias tentativas, cada uma com partida a frio
 // lenta. Se cada request herdar o timeout do cliente SEM limite proprio, uma

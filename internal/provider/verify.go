@@ -223,10 +223,8 @@ func verifyByChatProbe(ctx context.Context, httpc *http.Client, base, key, model
 			break
 		}
 		attempted++
-		status, err := chatProbeOnce(ctx, httpc, base, key, model)
-		if err != nil {
-			return inconclusive(0, probe, fmt.Errorf("provider: %s falhou: %s", probe, redact.Redact(err.Error())))
-		}
+		// A transport failure is status 0: nothing was learned about the key.
+		status, _ := chatProbeOnce(ctx, httpc, base, key, model)
 		lastStatus = status
 		switch {
 		case status == http.StatusUnauthorized || status == http.StatusForbidden:
@@ -235,10 +233,22 @@ func verifyByChatProbe(ctx context.Context, httpc *http.Client, base, key, model
 		case status >= 200 && status < 300:
 			return VerifyResult{Outcome: OutcomeOK, Status: status, Probe: probe}, nil
 		case status == http.StatusNotFound:
-			// Auth passed; this model cannot serve. Try the next one.
+			// Auth PASSED; this model cannot serve. Try the next one.
+			continue
+		case status == 0:
+			// The request did not complete (timeout, reset, DNS): nothing was
+			// learned, so keep trying.
+			//
+			// Giving up here is what refused a valid key on the Inspiron: one
+			// hung entry in NVIDIA's catalog ate its whole per-request budget,
+			// and returning on the first timeout turned a neighbour's problem
+			// into a verdict on the operator's key. The bound is the attempt
+			// count and the total budget is the caller's context, so skipping
+			// costs only time we were spending anyway.
 			continue
 		default:
-			// 429, 5xx, anything else: we do not know.
+			// 429, 5xx, anything else: we do not know, and retrying a provider
+			// that is actively refusing us would only deepen the rate limit.
 			return inconclusive(status, probe, nil)
 		}
 	}
