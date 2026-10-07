@@ -69,7 +69,15 @@ const (
 	// before declaring itself inconclusive. Bounded on purpose: each attempt is
 	// a real network call, and "keep trying until something answers" would turn
 	// a retired model into an open-ended loop.
-	chatProbeCandidates = 3
+	//
+	// The value is measured, not guessed. On the Inspiron, NVIDIA's catalog
+	// listed 80 models and only ONE of the first 20 answered 200 for a
+	// perfectly valid key — the rest return 404 ("Function ... not found for
+	// account"), which passes authentication and fails model resolution. A
+	// bound of 3 would have rejected a working key roughly nineteen times out of
+	// twenty. Twelve keeps that failure rate low without making /connect a
+	// long walk through a dead catalog.
+	chatProbeCandidates = 12
 )
 
 // VerifyCredential makes one real request that actually AUTHENTICATES, before
