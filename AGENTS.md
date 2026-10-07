@@ -216,7 +216,31 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   devolve o prompt, gate aberto com input visível. **Não validado**: integridade bit-a-bit via
   `--run` (cold start do NIM >600 s neste ambiente) e a camada 3 `/models --check` (dívida do M12).
   Ver `docs/session-2026-10-02-m13-painel-sessao.md`.
-- **Próximo**: abrir PR `m13-painel-sessao` → `main`.
+- **M13 mergeado em `main`** (PR #7, `9742e09`), e em seguida **rename `AncientAI` → `AncientCode`**
+  (D-2026-10-02-63) + **licença** em `rename-ancientcode` (commits `99aa13f`, `4651294`, `08f6254`):
+  module path `github.com/antonioghizidev/ancientcode` (habilita `go install`), `cmd/ancientcode/`,
+  config `ancientcode.yaml`, env `ANCIENTCODE_*`, skills `~/.config/ancientcode/skills`, stamp
+  `.ancientcode-verified`, banner e docs. Rename **duro, sem fallback**; a mensagem de config passou
+  a **nomear o arquivo consultado** (com rename duro, "api_key_env não está definido" parece falta
+  de segredo quando a causa é o arquivo ter parado de ser lido). **LICENSE Apache-2.0** e
+  **CONTRIBUTING.md** (registra os invariantes que uma contribuição não pode quebrar). Três gates
+  novos (`TestNoStaleOldNameInVersionedFiles`, `TestModulePathMatchesRepo`,
+  `TestConfigDefaultFilenameMatchesBinaryName`) — o primeiro **não cobria a raiz do repo**, então o
+  README nunca era verificado; descoberto ao injetar o nome antigo e ver o gate passar (D-64). Smoke
+  Inspiron: binário, banner, config, sessão preservada e todos os comandos.
+- **M14 especificado** (`specs/milestones/14-m14-connect-credenciais.md`, D-65..68), **não
+  implementado** — é o próximo. Tira o usuário do `.env` no caminho principal: `internal/creds`
+  (`~/.local/share/ancientcode/auth.json`, `0600`, escrita atômica, verificar antes de gravar),
+  `internal/state` (último modelo por provedor, `state.json`, **separado** do `auth.json`), `/connect`
+  na TUI e no REPL + `auth login|logout|list`, onboarding de primeiro uso antes do `Validate`
+  (sem TTY nunca abre diálogo; rejeitar sai 1 sem escrever nada), e `--models` persistindo o modelo
+  por provedor. **Três invariantes a reter**: (a) config **nunca** tem valor de chave — o que muda é
+  que existe **um** arquivo `0600`; (b) `/connect` **fixa** o provedor, senão a chave colada seria
+  ignorada em silêncio e a tela mentiria sobre a chave em uso (D-66); (c) **`0600` não protege
+  contra o agente** — `shell` roda como `run_user`, sem privilégio; a defesa é o gate humano.
+  Preparo para `go install`. Fora de escopo com motivo: keyring (não existe em server minimal),
+  senha mestra (pior que `.env`), OAuth (nenhum provedor atual exige).
+- **Próximo**: mergear `rename-ancientcode` → `main`; depois implementar o M14.
 - **Backlog anotado para a PRÓXIMA sessão de specs** (pedido do usuário em 2026-10-02; **não
   implementar no M13**, seção 10 da spec M13): **`/compact`**, **`/new`** e **`/autocompact`** —
   **paridade com o opencode** (decisão do usuário em 2026-10-02, medida em `dev.opencode.ai/docs/tui`

@@ -1024,3 +1024,88 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   - O gate **inclui a raiz do repositório** — ver D-63.
 - **Prevenção mínima que importa**: todo gate novo é testado **reintroduzindo a corrupção**. As três
   vezes isso foi feito, o gate pegou; o único que não pegou foi justamente o que tinha ponto cego.
+
+
+### D-2026-10-02-65 — Store de credenciais em arquivo próprio, com `0600`, e o limite honesto do que ele protege
+
+- **Contexto**: `api_key_env` (SPEC §5.5) funciona e é fail-closed, mas obriga o usuário a
+  manter **dois nomes em sincronia** — a variável no ambiente e a referência no YAML — e a exportar
+  a variável antes de cada execução. Para a maioria dos usuários, configurar `.env` não é um passo
+  trivial. O `/connect` do opencode resolve isso guardando a credencial em
+  `~/.local/share/opencode/auth.json`, sem cifragem documentada.
+- **Decisão**: `internal/creds` grava por id de provedor em `~/.local/share/ancientcode/auth.json`,
+  `0600`, diretório `0700`, escrita atômica (`tmp` + `rename`). Verificar antes de gravar: um
+  `GET /v1/models` real; `401` não grava.
+  - **Nenhuma flag aceita a chave em argv.** `auth login` pergunta no terminal. Motivo concreto:
+    argv aparece em `/proc/<pid>/cmdline` — que qualquer usuário lê — e no histórico do shell.
+  - **O config continua sem valor de chave.** `ancientcode.yaml` só referencia `api_key_env`. O
+    invariante do SPEC §5.5 é mantido; o que muda é que existe **um** lugar extra, `0600`, escrito
+    só por comando explícito do operador.
+- **O limite, escrito de propósito**: `0600` **não** protege a chave contra o agente. `shell` roda
+  como `run_user`, que é um usuário sem privilégio — quem consegue ler a chave já é o próprio
+  operador. A defesa real é o **gate humano** (§5.6). Registrado na spec porque a tendência natural
+  de quem vê `auth.json` com `0600` é achar que o problema de segurança foi resolvido. O que mudou
+  foi a **praticidade**, não a postura de segurança.
+- **Fora de escopo, com motivo**: keyring do sistema (permitido pela regra — sem CGO, é executar um
+  binário como `docker`/`apt` — mas num server minimal não existe, e caminho secundário nunca
+  testado no alvo é pior que nenhum); senha mestra cifrando o store (troca `.env` por "lembre uma
+  senha", que é pior); OAuth/device code (nenhum dos três provedores atuais exige).
+- **Prevenção mínima que importa**: `auth.json` e `state.json` fora de `code_root` e do
+  `git ls-files`; `Get` nunca devolve o valor em erro, log ou `String()`.
+
+### D-2026-10-02-66 — `/connect` fixa o provedor: sem pin, o ambiente continua vencendo
+
+- **Contexto**: a primeira versão da proposta era "ambiente vence sempre, store como fallback". Ao
+  revisar com o autor, apareceu o defeito: com `OPENROUTER_API_KEY` no ambiente, `/connect
+  openrouter` **colando uma chave nova** seria aceito, a tela diria "salvo", e todo request
+  continuaria saindo com a chave do ambiente. O programa **mentiria** sobre qual chave está em uso.
+  Mesma classe de defeito do gate invisível (M11) e do painel que não limpava a linha (M12): a
+  ação acontece, a UI confirma, e o estado real diverge.
+- **Decisão**: a precedência é **por provedor**, não global.
+  1. store, se o provedor estiver **fixado** por `/connect` → vence;
+  2. `api_key_env` no ambiente → vence;
+  3. store não-fixado e env ausente → erro, **nomeando as duas fontes tentadas**.
+- **Consequência de projeto**: `/connect` grava `fixed: true`; reconectar **sobrescreve** a chave
+  (é o que se quer ao reconectar) em vez de falhar por já existir; `/connect <p> --use-env` solta o
+  pin mantendo o valor; `auth logout` apaga chave **e** pin. `/provider` e a CLI mostram a **origem**
+  em uso (`store fixada` / `store solta` / `env`), nunca "salvo" genérico.
+- **Zero regressão é requisito**, não bônus: quem usa env hoje, e o CI, seguem no caminho de sempre
+  porque `/connect` nunca roda lá. Coberto por teste de regressão explícito na spec (§5).
+
+### D-2026-10-02-67 — Onboarding de primeiro uso antes do `Validate`, e sem TTY nunca abre diálogo
+
+- **Contexto**: hoje config ausente → `applyDefaults` põe `openrouter` → `Validate` falha em
+  "api_key_env não está definido" → o usuário recebe a dica de copiar o exemplo. É um caminho
+  **passivo**: para ter qualquer chance ele precisa já saber o que é `api_key_env`.
+- **Decisão**: se **nenhum provedor tem credencial resolvível** (nem store, nem env, nem config
+  apontando para variável existente) e a entrada é TTY, o harness abre o `/connect` como processo
+  default, **antes** de `Validate` falhar e antes do loop. Se já há credencial resolvível, **não**
+  há onboarding — sem provider real o M12 já provou que `/models` funciona.
+- **Rejeitar** → instrução de env var na stderr + **exit 1**, **sem escrever nada em disco**. O store
+  continua vazio, então o onboarding volta na próxima execução. A alternativa — gravar um
+  "recusado" para não perguntar de novo — foi rejeitada: quem recusa por engano ficaria preso sem
+  caminho.
+- **Sem TTY ou com `--run`**, o onboarding nunca abre diálogo: imprime a instrução e sai 1. Um
+  diálogo de input num pipe **trava**, e travar num pipe é pior que sair com erro.
+- **Saída ≠ entrada na fonte do segredo**: o input mascarado vem do terminal, o store é um caminho.
+  Misturar os dois é a origem clássica de segredo em log de requisição.
+
+### D-2026-10-02-68 — `/models` persiste o modelo por provedor; trocar de provedor nunca escolhe modelo sozinho
+
+- **Contexto**: com credencial persistida, `/models` deve persistir o **modelo** também. E aí
+  `/provider` ganha consequência: trocar de provedor deixa de ser só trocar a URL base.
+- **Decisão**: `internal/state` guarda o último modelo por provedor em
+  `~/.local/share/ancientcode/state.json`, `0600`, **separado** de `auth.json` — misturar segredo e
+  preferência no mesmo arquivo é o caminho curto para um bug de permissão que vaza chave.
+- **Regra**: `SwitchProvider` tenta o **último modelo salvo** daquele provedor. Se não houver modelo
+  salvo, ou o provider **recusar** o modelo salvo (404 de catálogo, erro de modelo), o harness
+  **informa e orienta `/models`**. **Nunca há fallback automático de modelo.** Auto-selecionar
+  seria o harness decidindo sozinho com qual modelo falar — decisão que é do operador, o mesmo
+  princípio do veto do `Approver` e da escolha de modelo do M12.
+- **Preparo para `go install`**: com `module` canônico (D-2026-10-02-63), `go install
+  github.com/antonioghizidev/ancientcode@latest` passa a compilar. Verificado **fora** da árvore do
+  repositório, com `GOPATH` limpo, e nenhum caminho de runtime assume estar dentro da repo. É
+  **preparatório, não fecha o primeiro uso**: instalar passa a funcionar; configurar provedor e
+  chave é o que o `/connect` entrega.
+- **Fora de escopo**: `/sessions` — é do backlog `/new`+`/compact`+`/autocompact` (spec do M13 §10).
+  Registrado o risco herdado: sem ele, trocar de sessão perde o acesso à anterior.
