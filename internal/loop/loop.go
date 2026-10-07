@@ -73,6 +73,15 @@ type Loop struct {
 	status    func(string)  // optional UI hook: phase events (nil = silent)
 	obs       func(Event)   // M8: structured observer (nil = silent, fail-closed)
 	ph        promptHistory // M8: redacted in-memory prompt ring
+	// M14: which provider is ACTIVE right now. cfg.Provider is the value from
+	// the YAML and never changes, so it went stale on the first /provider —
+	// and /connect uses the active provider to decide its default target and
+	// to say "use /provider nvidia to activate this one".
+	curProvider string
+	// M14 §3.7: last model per provider. An interface, not *state.Store, so
+	// this package keeps its stdlib-only dependency direction (DIP, like
+	// Approver). nil = no memory, which is the pre-M14 behaviour.
+	modelMemory ModelMemory
 }
 
 // New builds a loop. reg may be nil (no tools) and appr may be nil (ask
@@ -82,7 +91,11 @@ func New(p provider.Provider, st *model.Store, cfg *config.Config, reg *tools.Re
 	if toolbox == "" {
 		toolbox = "plan"
 	}
-	return &Loop{p: p, st: st, cfg: cfg, reg: reg, appr: appr, toolbox: toolbox}
+	return &Loop{
+		p: p, st: st, cfg: cfg, reg: reg, appr: appr,
+		toolbox:     toolbox,
+		curProvider: strings.ToLower(strings.TrimSpace(cfg.Provider)),
+	}
 }
 
 // SetToolboxMode switches the runtime toolbox (plan|run) for the current

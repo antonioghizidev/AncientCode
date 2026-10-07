@@ -442,6 +442,12 @@ func main() {
 	}
 
 	agent := loop.New(client, store, cfg, reg, appr)
+	// M14 §3.7: the model chosen with /models is remembered per provider, so
+	// returning to a provider restores it. Best-effort: a state.json that
+	// cannot be opened must not stop a session that works without it.
+	if st, serr := stateStore(); serr == nil {
+		agent.SetModelMemory(st)
+	}
 	agent.SetAudit(rec)
 	// M7: adopt the shared skill set and activate every requested skill.
 	if err := agent.SetSkills(set); err != nil {

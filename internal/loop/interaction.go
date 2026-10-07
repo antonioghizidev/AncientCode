@@ -108,9 +108,21 @@ func (l *Loop) CurrentProviderBaseURL() string {
 	return ""
 }
 
-// SwitchModel changes the remote model for the rest of the session (D-37: per
-// session, never persisted in the YAML). Fail-closed: blank names and
-// controllers that do not support switching are refused.
+// ModelMemory is the last-model-per-provider port (M14 §3.7). The loop depends
+// on the interface, not on *state.Store, so this package keeps its dependency
+// direction (DIP, like Approver and provider.ModelController).
+type ModelMemory interface {
+	GetModel(provider string) (model string, ok bool, err error)
+	SetModel(provider, model string) error
+}
+
+// SetModelMemory installs the persistent per-provider model memory. nil
+// disables it and restores the pre-M14 behaviour (model is session-only).
+func (l *Loop) SetModelMemory(m ModelMemory) { l.modelMemory = m }
+
+// SwitchModel changes the remote model for the rest of the session (D-37) and —
+// unlike the YAML, which never holds a model — remembers it for this provider so
+// coming back to it later restores the choice (M14 §3.7).
 func (l *Loop) SwitchModel(model string) error {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -123,14 +135,29 @@ func (l *Loop) SwitchModel(model string) error {
 	if err := pc.SetModel(model); err != nil {
 		return err
 	}
+	// Persistence is best-effort AFTER the switch: a failure to write state.json
+	// must not fail a switch that already worked, and must never send the
+	// operator back to the old model.
+	if l.modelMemory != nil {
+		_ = l.modelMemory.SetModel(l.CurrentProvider(), model)
+	}
 	l.emit(Event{Phase: PhaseProviderSwitch, Tool: "model", Detail: "model: " + model})
 	return nil
 }
 
 // SwitchProvider changes the session endpoint to one of the built-in named
-// providers (openrouter|nvidia|litellm). The switch is per session only; the
-// provider's api key env must already be set (the provider side fails closed
-// before any state change).
+// providers (openrouter|nvidia|litellm), and restores the model this session
+// used for that provider last time (M14 §3.7).
+//
+// The restore is deliberately conservative, and the two refusals are the whole
+// point of this function:
+//
+//   - provider never seen → NO model is chosen. We tell the operator to run
+//     /models instead of guessing.
+//   - provider refuses the remembered model → we keep the current model and
+//     report it. Auto-picking a different one would be the harness deciding
+//     alone which model to talk to the provider with, which is the operator's
+//     call (same principle as the Approver veto).
 func (l *Loop) SwitchProvider(name string) error {
 	base, env, ok := l.cfg.ProviderDefault(name) // name lookup, not the zone
 	if !ok {
@@ -143,8 +170,54 @@ func (l *Loop) SwitchProvider(name string) error {
 	if err := pc.SetBaseURL(base, env); err != nil {
 		return err
 	}
-	l.emit(Event{Phase: PhaseProviderSwitch, Tool: "provider", Detail: "provider: " + strings.ToLower(strings.TrimSpace(name))})
+	id := strings.ToLower(strings.TrimSpace(name))
+	l.curProvider = id
+	l.emit(Event{Phase: PhaseProviderSwitch, Tool: "provider", Detail: "provider: " + id})
+
+	l.restoreRememberedModel(id)
 	return nil
+}
+
+// restoreRememberedModel reinstalls the model remembered for a provider, if any.
+// Every failure here is reported and swallowed: the provider switch itself
+// already succeeded, and there is nothing the operator could do about a stale
+// state file other than be told.
+func (l *Loop) restoreRememberedModel(providerID string) {
+	if l.modelMemory == nil {
+		return
+	}
+	saved, ok, err := l.modelMemory.GetModel(providerID)
+	if err != nil {
+		l.emit(Event{
+			Phase: PhaseProviderSwitch, Tool: "provider",
+			Detail: "provider " + providerID + ": estado ilegivel (" + err.Error() + "); modelo mantido",
+		})
+		return
+	}
+	if !ok || strings.TrimSpace(saved) == "" {
+		l.emit(Event{
+			Phase: PhaseProviderSwitch, Tool: "provider",
+			Detail: "provider " + providerID + ": sem modelo lembrado; use /models",
+		})
+		return
+	}
+	pc, ok := l.p.(providerModelController)
+	if !ok {
+		return
+	}
+	if err := pc.SetModel(saved); err != nil {
+		// The provider said no to the remembered model. We do NOT pick another.
+		l.emit(Event{
+			Phase: PhaseProviderSwitch, Tool: "provider",
+			Detail: "provider " + providerID + ": modelo lembrado recusado (" +
+				err.Error() + "); modelo mantido — escolha com /models",
+		})
+		return
+	}
+	l.emit(Event{
+		Phase: PhaseProviderSwitch, Tool: "model",
+		Detail: "provider " + providerID + ": modelo lembrado restaurado: " + saved,
+	})
 }
 
 // ProviderNames returns the switchable built-in provider names.
@@ -152,16 +225,26 @@ func (l *Loop) ProviderNames() []string {
 	return l.cfg.ProviderNames()
 }
 
-// CurrentProvider returns the active provider id, lowercased. The REPL needs it
-// to answer "which key am I using?" without the caller having to remember that
-// /provider lowercases its argument (M14).
+// CurrentProvider returns the provider ACTIVE right now. It tracks /provider
+// switches; reading cfg.Provider here made /connect target the wrong provider
+// after the first switch (M14).
 func (l *Loop) CurrentProvider() string {
+	if l.curProvider != "" {
+		return l.curProvider
+	}
 	return strings.ToLower(strings.TrimSpace(l.cfg.Provider))
 }
 
 // CurrentAPIKeyEnv returns the environment variable name that api_key_env
 // resolves to for the active provider. The name is not a secret.
+//
+// It must follow the active provider, not the YAML: after /provider nvidia the
+// env name is NVIDIA_API_KEY, and reporting the YAML's would send the operator
+// to export the wrong variable.
 func (l *Loop) CurrentAPIKeyEnv() string {
+	if _, env, ok := l.cfg.ProviderDefault(l.CurrentProvider()); ok && env != "" {
+		return env
+	}
 	return l.cfg.APIKeyEnv
 }
 
