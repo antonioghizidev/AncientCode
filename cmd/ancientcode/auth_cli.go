@@ -50,6 +50,17 @@ func credSvc() (*connect.Service, error) {
 	}), nil
 }
 
+// credSvcForTUI builds the connect.Service the TUI panel needs. It returns nil
+// when the store cannot be opened; the TUI then refuses /connect with an
+// explanatory banner instead of pretending the panel works.
+func credSvcForTUI() *connect.Service {
+	svc, err := credSvc()
+	if err != nil {
+		return nil
+	}
+	return svc
+}
+
 // runAuthCLI implements `ancientcode auth <login|logout|list>`.
 //
 // No subcommand ever accepts a key as an argument. `auth login` asks on the

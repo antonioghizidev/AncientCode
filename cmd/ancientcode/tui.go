@@ -26,6 +26,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/antonioghizidev/ancientcode/internal/config"
+	"github.com/antonioghizidev/ancientcode/internal/connect"
 	"github.com/antonioghizidev/ancientcode/internal/loop"
 	"github.com/antonioghizidev/ancientcode/internal/redact"
 )
@@ -98,6 +99,7 @@ type agentEventMsg struct {
 type tuiModel struct {
 	agent   *loop.Loop
 	gate    *tuiGate
+	credSvc *connect.Service  // M14: /connect panel; nil in tests
 	usageFn func() loop.Usage // nil in tests; real wiring binds agent.ContextUsage
 
 	runner      turnRunner
@@ -131,6 +133,7 @@ type tuiModel struct {
 	activityOff int             // viewport top offset (PHYSICAL rows) of the activity panel
 	hoff        map[panelID]int // M13: horizontal scroll per panel (defensive)
 	picker      *picker         // M12: open model-selection panel (nil = closed)
+	connect     *connectPanel   // M14: open /connect panel (nil = closed)
 
 	inTurn     bool
 	frame      int    // M13: spinner tick counter (advances only while inTurn)
@@ -225,6 +228,11 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case providerSwitchedMsg:
 		m.applyProviderSwitch(msg)
 		return m, nil
+	case connectDoneMsg:
+		if m.connect != nil {
+			m.applyConnectDone(m.connect, msg)
+		}
+		return m, nil
 	case turnResultMsg:
 		m.inTurn = false
 		m.turnCancel = nil
@@ -269,6 +277,9 @@ func (m *tuiModel) handleKey(k tea.KeyMsg) tea.Cmd {
 	}
 	if m.picker != nil {
 		return m.handlePickerKey(k)
+	}
+	if m.connect != nil {
+		return m.handleConnectKey(k)
 	}
 	switch k.Type {
 	case tea.KeyEnter:
@@ -860,6 +871,8 @@ func (m *tuiModel) handleCommand(raw string, cmd command) tea.Cmd {
 		}
 	case cmdModels:
 		return m.openPicker(cmd.opts)
+	case cmdConnect:
+		return m.openConnectPanel()
 	case cmdContext:
 		m.refreshUsage()
 		if m.usage.Pct < 0 {
@@ -969,6 +982,9 @@ func (m *tuiModel) View() string {
 	// a stale offset would open the picker scrolled past its first rows,
 	// hiding the highlighted entry and the filter line.
 	switch {
+	case m.connect != nil:
+		act = connectLines(m.connect)
+		m.activityOff = 0
 	case m.picker != nil:
 		act = pickerLines(m.picker)
 		m.activityOff = 0
@@ -1011,7 +1027,20 @@ func (m *tuiModel) View() string {
 //     resolve a gate.Decide; there is no other approval code path.
 //   - The observer (loop.SetObserver) forwards redacted Events onto the
 //     activity panel via tea.Program.Send — never by poking the loop.
-func runTUI(agent *loop.Loop, gate *tuiGate, cfg *config.Config, version, sessionName string) {
+//
+// openConnectPanel starts the /connect panel (M14).
+func (m *tuiModel) openConnectPanel() tea.Cmd {
+	if m.credSvc == nil {
+		m.banner = "erro: store de credenciais indisponivel; /connect nao pode abrir"
+		return nil
+	}
+	m.connect = newConnectPanel(m.credSvc, m.agent)
+	m.banner = ""
+	m.appendSession("  /connect: escolha o provedor e cole a chave (verificada antes de guardar)")
+	return nil
+}
+
+func runTUI(agent *loop.Loop, gate *tuiGate, cfg *config.Config, version, sessionName string, credSvc *connect.Service) {
 	m := &tuiModel{
 		agent:       agent,
 		gate:        gate,
@@ -1032,6 +1061,7 @@ func runTUI(agent *loop.Loop, gate *tuiGate, cfg *config.Config, version, sessio
 		// it would confirm the freeze the operator is trying to rule out.
 		asciiSpin: !termSupportsBraille(),
 		hoff:      map[panelID]int{},
+		credSvc:   credSvc,
 	}
 	m.resetPrompt()
 	if m.provider == "" {

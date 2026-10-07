@@ -457,7 +457,7 @@ func main() {
 	// M9: the TUI frontend owns the terminal; everything above (config, tools,
 	// audit, approver) is shared with the REPL. runTUI blocks until exit.
 	if *flagTUI {
-		runTUI(agent, gate, cfg, version, filepath.Base(sessionPath))
+		runTUI(agent, gate, cfg, version, filepath.Base(sessionPath), credSvcForTUI())
 		return
 	}
 	// M8: structured observer replaces the D-35 status string on TTYs — the
