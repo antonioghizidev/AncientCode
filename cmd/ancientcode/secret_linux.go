@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"syscall"
 	"unicode"
 )
 
@@ -77,14 +78,16 @@ func readSecret(label string) (string, error) {
 	}
 }
 
-// hasStdinTerminal reports whether stdin is a character device. Used to decide
-// whether onboarding may open a dialog at all.
+// hasStdinTerminal reports whether stdin is a terminal we can read a key from.
+//
+// The check is the TCGETS ioctl, NOT "ModeCharDevice": /dev/null IS a character
+// device, so the stat-based test claimed a terminal existed there. The symptom
+// was the onboarding announcing "vou pedir a chave" and only then failing with
+// "stdin is not a terminal" (found by the M14 go-install gate, running the
+// binary with </dev/null).
 func hasStdinTerminal() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
+	_, ok := termiosFd(uintptr(syscall.Stdin))
+	return ok
 }
 
 // trimSecret normalises a pasted key: providers issue keys without surrounding

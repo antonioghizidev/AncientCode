@@ -272,6 +272,21 @@ func providerForEnv(envName string) string {
 	return ""
 }
 
+// storePathDisplay returns the absolute store path for messages, or a short
+// marker when the home cannot be resolved.
+//
+// Spec §3.8 asks for absolute home paths on first use, and a literal "~" fails
+// that for the case that matters most: an operator whose shell does not expand
+// "~" in a non-interactive context, who then has no idea where the file is.
+// Failing closed, we say so rather than printing a path we could not resolve.
+func storePathDisplay() string {
+	p, err := creds.DefaultPath()
+	if err != nil {
+		return "(<home nao resolvido>)"
+	}
+	return p
+}
+
 // printNoCredentialHelp explains how to configure a key the non-interactive way.
 // It is the branch taken when no credential exists and there is no terminal to
 // ask on (D-2026-10-02-67): no dialog, exit 1, and the operator is told exactly
@@ -287,7 +302,7 @@ func printNoCredentialHelp() {
 		fmt.Fprintf(os.Stderr, "       export %s=...  # %s\n", c.EnvName, c.ID)
 	}
 	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "as chaves ficam em ~/.local/share/ancientcode/auth.json (0600).")
+	fmt.Fprintf(os.Stderr, "as chaves ficam em %s (0600).\n", storePathDisplay())
 	fmt.Fprintln(os.Stderr, "config tambem pode apontar api_key_env para um outro nome.")
 }
 
@@ -319,7 +334,7 @@ func runOnboarding(ctx context.Context, svc *connect.Service) (deployed bool, er
 		return false, nil // caller prints the env instructions and exits 1
 	}
 	fmt.Fprintln(os.Stderr, "nenhum provider configurado: nenhuma credencial no store e nenhuma ANCIENTCODE_* definida.")
-	fmt.Fprintln(os.Stderr, "vou pedir a chave de um provider agora; ela fica em ~/.local/share/ancientcode/auth.json (0600).")
+	fmt.Fprintf(os.Stderr, "vou pedir a chave de um provider agora; ela fica em %s (0600).\n", storePathDisplay())
 	fmt.Fprintln(os.Stderr, "  (Ctrl+C cancela; nada e gravado)")
 	fmt.Fprintln(os.Stderr, "")
 
