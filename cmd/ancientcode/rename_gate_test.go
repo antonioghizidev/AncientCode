@@ -30,6 +30,11 @@ var renameAllowlist = map[string]string{
 	// CONTRIBUTING nao poderia explicar a regra que ele mesmo impoe.
 	"CONTRIBUTING.md": "documenta os gates e o rename, entao precisa citar o nome antigo",
 
+	// O AGENTS.md e o historico do projeto: registrar QUE o rename aconteceu e
+	// por que. Apagar essa linha deixaria a proxima sessao sem o historico do
+	// rename, que e a unica forma de explicar um config antigo para o operador.
+	"AGENTS.md": "registra o estado do projeto, entao documenta o rename e a decisao",
+
 	".gitignore": "mantem /ancientai e /ancientai.exe para nao deixar um binario antigo " +
 		"ser comitado por engano depois do rename",
 	// A dica de erro cita o nome antigo DE PROPÓSITO: quem ainda tem
