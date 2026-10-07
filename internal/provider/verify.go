@@ -85,7 +85,7 @@ const (
 //
 // So a catalog listing proves liveness, never identity, and OpenRouter has an
 // identity endpoint while NVIDIA does not.
-func VerifyCredential(ctx context.Context, httpc *http.Client, providerID, baseURL, key string) (VerifyResult, error) {
+func VerifyCredential(ctx context.Context, httpc *http.Client, providerID, baseURL, key, modelHint string) (VerifyResult, error) {
 	if err := checkCredentialBaseURL(baseURL); err != nil {
 		return VerifyResult{Outcome: OutcomeInconclusive}, err
 	}
@@ -104,7 +104,7 @@ func VerifyCredential(ctx context.Context, httpc *http.Client, providerID, baseU
 	case strategyKeyIdentity:
 		res, err = verifyByKeyIdentity(ctx, httpc, base, key)
 	default:
-		res, err = verifyByChatProbe(ctx, httpc, base, key)
+		res, err = verifyByChatProbe(ctx, httpc, base, key, modelHint)
 	}
 	if err != nil {
 		return res, err
@@ -191,13 +191,13 @@ func verifyByKeyIdentity(ctx context.Context, httpc *http.Client, base, key stri
 // A 404 is never treated as "valid" either: authenticating is not the same as
 // being able to answer, and the operator would be told "verified" for a key
 // whose only proof was that it got past a check.
-func verifyByChatProbe(ctx context.Context, httpc *http.Client, base, key string) (VerifyResult, error) {
+func verifyByChatProbe(ctx context.Context, httpc *http.Client, base, key, modelHint string) (VerifyResult, error) {
 	const probe = "POST /chat/completions"
 
 	// Candidate models: what the provider publishes first. The catalog is
 	// public, so this costs nothing and avoids hardcoding a model that may
 	// retire out from under the milestone.
-	candidates := probeModels(ctx, httpc, base, key)
+	candidates := probeModels(ctx, httpc, base, key, modelHint)
 
 	attempted := 0
 	var lastStatus int
@@ -252,22 +252,42 @@ func chatProbeOnce(ctx context.Context, httpc *http.Client, base, key, model str
 	return resp.StatusCode, nil
 }
 
-// probeModels returns the models to try in the chat probe. It reads the public
-// catalog and never fails the verification: with no catalog the probe simply has
-// a single hardcoded candidate.
+// probeModels returns the models to try in the chat probe, most likely first.
 //
-// The candidate list is NOT truncated here. An earlier version truncated AND
-// counted in the loop, which made the bound untestable: removing either one left
-// the property standing, so a mutation of the count stayed green and I nearly
-// logged the probe as covered when it was defended by a different line. One
-// bound, in one place, where the test can see it.
-func probeModels(ctx context.Context, httpc *http.Client, base, key string) []string {
+// The hint — the model the operator is actually configured to use — goes first,
+// and that is not a nicety. Measured on the Inspiron: NVIDIA's catalog leads with
+// models that have already RETIRED for a given account (01-ai/yi-large answers
+// 404 to a perfectly valid key), so probing the first few catalog entries
+// rejected a working key as "inconclusive". The model the session will use is
+// both the fairest test and the most likely to answer.
+//
+// The list is NOT truncated here; the loop bounds the attempts. An earlier
+// version truncated AND counted, which made the bound untestable — removing
+// either left the property standing, so a mutation stayed green and I nearly
+// logged the probe as covered when a different line was defending it.
+func probeModels(ctx context.Context, httpc *http.Client, base, key, hint string) []string {
 	const fallback = "gpt-4o-mini"
 	ids, err := catalogIDs(ctx, httpc, base, key)
-	if err != nil || len(ids) == 0 {
-		return []string{fallback}
+	if err != nil {
+		ids = nil
 	}
-	return ids
+	var out []string
+	seen := map[string]bool{}
+	add := func(id string) {
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	add(strings.TrimSpace(hint))
+	for _, id := range ids {
+		add(id)
+	}
+	if len(out) == 0 {
+		add(fallback)
+	}
+	return out
 }
 
 // catalogIDs lists published model ids.

@@ -131,6 +131,25 @@ func runAuthCLI(ctx context.Context, args []string) int {
 	return 2
 }
 
+// configuredModelHint returns the model from the config, so credential
+// verification probes the model the session will actually use.
+//
+// This is not cosmetic. Measured on the Inspiron: NVIDIA's catalog leads with
+// models that have RETIRED for the account (they answer 404 to a valid key), so
+// probing the first catalog entries refused a working key as "inconclusive". The
+// configured model is both the fairest test and the likeliest to answer.
+//
+// Best effort by design: a missing or unreadable config yields "", and the probe
+// falls back to the provider catalog. Failing to read a config must not stop the
+// operator from connecting.
+func configuredModelHint() string {
+	cfg, err := config.Load(*flagConfig)
+	if err != nil {
+		return ""
+	}
+	return cfg.Model
+}
+
 func authLogin(ctx context.Context, svc *connect.Service, args []string) int {
 	// Uma chave passada como argumento seria lida por qualquer usuario do
 	// mesmo host e ficaria no historico. Recusamos explicitamente para que a
@@ -170,7 +189,7 @@ func authLogin(ctx context.Context, svc *connect.Service, args []string) int {
 		return 1
 	}
 
-	res, err := svc.Connect(ctx, name, baseURL, key)
+	res, err := svc.Connect(ctx, name, baseURL, key, configuredModelHint())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "erro:", err)
 		if errors.Is(err, connect.ErrRejected) {
@@ -349,7 +368,8 @@ func runOnboarding(ctx context.Context, svc *connect.Service) (deployed bool, er
 	if key == "" {
 		return false, nil // declined: nothing written, onboarding returns next time
 	}
-	if _, err := svc.Connect(ctx, "nvidia", "https://integrate.api.nvidia.com/v1", key); err != nil {
+	base, _, _ := config.LookupProviderDefault("nvidia")
+	if _, err := svc.Connect(ctx, "nvidia", base, key, configuredModelHint()); err != nil {
 		return false, err
 	}
 	return true, nil

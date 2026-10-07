@@ -58,7 +58,7 @@ func TestPublicCatalogAloneNeverCountsAsVerified(t *testing.T) {
 	// This is what the old code did: hit the catalog, see 200, declare victory.
 	// It must now be an explicit failure mode for a provider that has no
 	// identity endpoint and no working chat probe.
-	_, err := VerifyCredential(context.Background(), srv.Client(), "openrouter", srv.URL, "chave-errada-qualquer")
+	_, err := VerifyCredential(context.Background(), srv.Client(), "openrouter", srv.URL, "chave-errada-qualquer", "")
 	if err == nil {
 		t.Fatal("uma chave errada foi considerada verificada: o catalogo publico basta para passar")
 	}
@@ -80,7 +80,7 @@ func TestOutcomeDistinguishesRejectedFromUnconfirmed(t *testing.T) {
 				w.WriteHeader(status)
 			}))
 			defer srv.Close()
-			_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, "k")
+			_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, "k", "")
 			if !errors.Is(err, ErrUnauthorized) {
 				t.Fatalf("HTTP %d deveria ser ErrUnauthorized, veio %v", status, err)
 			}
@@ -100,7 +100,7 @@ func TestOutcomeDistinguishesRejectedFromUnconfirmed(t *testing.T) {
 				w.WriteHeader(status)
 			}))
 			defer srv.Close()
-			_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, "k")
+			_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, "k", "")
 			if !errors.Is(err, ErrInconclusive) {
 				t.Fatalf("HTTP %d deveria ser ErrInconclusive, veio %v", status, err)
 			}
@@ -137,7 +137,7 @@ func TestChatProbeRetriesAnotherModelOn404(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, verifyTestKey)
+	res, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, verifyTestKey, "")
 	if err != nil {
 		t.Fatalf("um 404 num modelo deveria tentar outro, nao falhar: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestChatProbeAllModelsRetiredIsInconclusive(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, verifyTestKey)
+	_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, verifyTestKey, "")
 	if !errors.Is(err, ErrInconclusive) {
 		t.Fatalf("todos os modelos aposentados deveria dar inconclusivo, veio %v", err)
 	}
@@ -200,7 +200,7 @@ func TestChatProbeAttemptsAreBounded(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, verifyTestKey); err == nil {
+	if _, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, verifyTestKey, ""); err == nil {
 		t.Fatal("esperava inconclusivo")
 	}
 	if got := atomic.LoadInt32(&n); got > chatProbeCandidates {
@@ -227,11 +227,11 @@ func TestKeyIdentityEndpointSettlesIt(t *testing.T) {
 	srv := publicCatalogServer(t, &hits)
 	defer srv.Close()
 
-	res, err := VerifyCredential(context.Background(), srv.Client(), "openrouter", srv.URL, verifyTestKey)
+	res, err := VerifyCredential(context.Background(), srv.Client(), "openrouter", srv.URL, verifyTestKey, "")
 	if err != nil || res.Outcome != OutcomeOK {
 		t.Fatalf("chave valida deveria verificar: %v (%v)", err, res.Outcome)
 	}
-	_, err = VerifyCredential(context.Background(), srv.Client(), "openrouter", srv.URL, "errada")
+	_, err = VerifyCredential(context.Background(), srv.Client(), "openrouter", srv.URL, "errada", "")
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("chave invalida em /key deveria dar ErrUnauthorized, veio %v", err)
 	}
@@ -240,7 +240,7 @@ func TestKeyIdentityEndpointSettlesIt(t *testing.T) {
 // --- invariantes de seguranca, inalteradas ---------------------------------
 
 func TestVerifyRefusesEmptyKeyAndInsecureBase(t *testing.T) {
-	if _, err := VerifyCredential(context.Background(), http.DefaultClient, "nvidia", "https://x/v1", "  "); err == nil {
+	if _, err := VerifyCredential(context.Background(), http.DefaultClient, "nvidia", "https://x/v1", "  ", ""); err == nil {
 		t.Fatal("chave vazia deveria ser recusada")
 	}
 	// http nao-loopback continua proibido: a chave candidata nunca esteve
@@ -250,7 +250,7 @@ func TestVerifyRefusesEmptyKeyAndInsecureBase(t *testing.T) {
 	// qualquer erro, e remover a checagem de base URL nao o fez falhar: a
 	// requisicao para o host inexistente falhava por DNS e o teste seguia
 	// verde. Era a mesma armadilha da mutacao que nao muda nada.
-	_, err := VerifyCredential(context.Background(), http.DefaultClient, "nvidia", "http://exemplo.example/v1", verifyTestKey)
+	_, err := VerifyCredential(context.Background(), http.DefaultClient, "nvidia", "http://exemplo.example/v1", verifyTestKey, "")
 	if err == nil {
 		t.Fatal("http para host nao-loopback deveria ser recusado")
 	}
@@ -276,7 +276,7 @@ func TestVerifyErrorNeverCarriesTheKey(t *testing.T) {
 		_, _ = w.Write([]byte(`{"echo":"Bearer ` + secret + `"}`))
 	}))
 	defer srv.Close()
-	_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, secret)
+	_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, secret, "")
 	if err == nil {
 		t.Fatal("esperava erro")
 	}

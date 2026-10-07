@@ -165,6 +165,15 @@ func (p *connectPanel) masked() string {
 // reasoning as switchModelCmd: anything that could block must not run inside
 // Update). The key is zeroed on the panel the moment it is handed over, so a
 // later repaint cannot render it.
+// modelHint is the model the session would actually use. Empty is fine: the
+// probe then falls back to the provider catalog.
+func modelHint(a *loop.Loop) string {
+	if a == nil {
+		return ""
+	}
+	return a.CurrentModel()
+}
+
 func (m *tuiModel) connectDispatch(p *connectPanel) tea.Cmd {
 	svc, target, key := p.svc, p.target, p.key
 	p.key = ""
@@ -175,7 +184,7 @@ func (m *tuiModel) connectDispatch(p *connectPanel) tea.Cmd {
 		if !ok {
 			return connectDoneMsg{err: errUnknownProvider(target)}
 		}
-		res, err := svc.Connect(context.Background(), target, base, key)
+		res, err := svc.Connect(context.Background(), target, base, key, modelHint(m.agent))
 		return connectDoneMsg{res: res, err: err}
 	}
 }

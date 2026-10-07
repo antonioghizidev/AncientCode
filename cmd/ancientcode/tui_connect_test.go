@@ -29,14 +29,14 @@ func newConnPanelForTest(t *testing.T) (*tuiModel, *connectPanel) {
 // about actual files.
 type fakeOKVerifier struct{}
 
-func (fakeOKVerifier) Verify(_ context.Context, _, _, _ string) (int, provider.Outcome, error) {
+func (fakeOKVerifier) Verify(_ context.Context, _, _, _, _ string) (int, provider.Outcome, error) {
 	return 7, provider.OutcomeOK, nil
 }
 
 // fakeRejectVerifier mimics a provider that says 401.
 type fakeRejectVerifier struct{}
 
-func (fakeRejectVerifier) Verify(_ context.Context, _, _, _ string) (int, provider.Outcome, error) {
+func (fakeRejectVerifier) Verify(_ context.Context, _, _, _, _ string) (int, provider.Outcome, error) {
 	return 0, provider.OutcomeInvalid, connect.ErrRejected
 }
 
@@ -44,7 +44,7 @@ func (fakeRejectVerifier) Verify(_ context.Context, _, _, _ string) (int, provid
 // The panel must not tell the operator their key is wrong in this case.
 type fakeUnconfirmedVerifier struct{}
 
-func (fakeUnconfirmedVerifier) Verify(_ context.Context, _, _, _ string) (int, provider.Outcome, error) {
+func (fakeUnconfirmedVerifier) Verify(_ context.Context, _, _, _, _ string) (int, provider.Outcome, error) {
 	return 0, provider.OutcomeInconclusive, connect.ErrUnconfirmed
 }
 

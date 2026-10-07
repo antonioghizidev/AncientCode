@@ -22,7 +22,7 @@ type fakeVerifier struct {
 	gotProvider string
 }
 
-func (f *fakeVerifier) Verify(_ context.Context, providerID, baseURL, key string) (int, provider.Outcome, error) {
+func (f *fakeVerifier) Verify(_ context.Context, providerID, baseURL, key, _ string) (int, provider.Outcome, error) {
 	f.calls++
 	f.gotProvider = providerID
 	f.gotKey = key
@@ -48,7 +48,7 @@ func TestRejectedKeyIsNotStored(t *testing.T) {
 	v := &fakeVerifier{err: provider.ErrUnauthorized}
 	svc, store := newSvc(t, v)
 
-	_, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey)
+	_, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey, "")
 	if err == nil {
 		t.Fatal("chave recusada deveria dar erro")
 	}
@@ -74,7 +74,7 @@ func TestNetworkFailureIsNotStored(t *testing.T) {
 	v := &fakeVerifier{err: errors.New("dial tcp: timeout")}
 	svc, store := newSvc(t, v)
 
-	if _, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey); err == nil {
+	if _, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey, ""); err == nil {
 		t.Fatal("esperava erro")
 	}
 	if _, _, err := store.Get("nvidia"); err == nil {
@@ -86,7 +86,7 @@ func TestAcceptedKeyIsStoredPinned(t *testing.T) {
 	v := &fakeVerifier{modelCount: 81}
 	svc, store := newSvc(t, v)
 
-	got, err := svc.Connect(context.Background(), "nvidia", "https://integrate.api.nvidia.com/v1", candKey)
+	got, err := svc.Connect(context.Background(), "nvidia", "https://integrate.api.nvidia.com/v1", candKey, "")
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -112,10 +112,10 @@ func TestAcceptedKeyIsStoredPinned(t *testing.T) {
 func TestReconnectReplacesAndReportsIt(t *testing.T) {
 	v := &fakeVerifier{modelCount: 5}
 	svc, store := newSvc(t, v)
-	if _, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey); err != nil {
+	if _, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey, ""); err != nil {
 		t.Fatal(err)
 	}
-	got, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", "outra-chave-mesmo-tamanho")
+	got, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", "outra-chave-mesmo-tamanho", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestEmptyKeyRefusedBeforeVerifier(t *testing.T) {
 	v := &fakeVerifier{}
 	svc, _ := newSvc(t, v)
 	for _, k := range []string{"", "   ", "\t\n"} {
-		if _, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", k); err == nil {
+		if _, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", k, ""); err == nil {
 			t.Fatalf("chave %q deveria ser recusada", k)
 		}
 	}
@@ -147,7 +147,7 @@ func TestInvalidProviderRefused(t *testing.T) {
 	v := &fakeVerifier{}
 	svc, _ := newSvc(t, v)
 	for _, p := range []string{"", "../etc", "NVIDIA", "a/b"} {
-		if _, err := svc.Connect(context.Background(), p, "https://x/v1", candKey); err == nil {
+		if _, err := svc.Connect(context.Background(), p, "https://x/v1", candKey, ""); err == nil {
 			t.Fatalf("provider %q deveria ser recusado", p)
 		}
 	}
@@ -161,7 +161,7 @@ func TestInvalidProviderRefused(t *testing.T) {
 func TestUseEnvKeepsKeyButReleasesPin(t *testing.T) {
 	v := &fakeVerifier{}
 	svc, store := newSvc(t, v)
-	if _, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey); err != nil {
+	if _, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.UseEnv("nvidia"); err != nil {
@@ -188,7 +188,7 @@ func TestUseEnvWithoutCredentialFails(t *testing.T) {
 
 func TestLogoutRemovesKeyAndPin(t *testing.T) {
 	svc, store := newSvc(t, &fakeVerifier{})
-	if _, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey); err != nil {
+	if _, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.Logout("nvidia"); err != nil {
@@ -225,7 +225,7 @@ func TestStatusReportsSource(t *testing.T) {
 	}
 
 	// Apos /connect: origem store fixada. Este e o ponto do D-66.
-	if _, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey); err != nil {
+	if _, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey, ""); err != nil {
 		t.Fatal(err)
 	}
 	st = svc.StatusFor("nvidia", "NVIDIA_API_KEY")
@@ -245,7 +245,7 @@ func TestSecretNeverLeaksInErrorsOrStatus(t *testing.T) {
 
 	// Erro de verificacao (nao-recusado) com a chave no meio.
 	v.err = errors.New("dial tcp " + candKey)
-	_, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey)
+	_, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey, "")
 	if err == nil {
 		t.Fatal("esperava erro")
 	}
@@ -257,7 +257,7 @@ func TestSecretNeverLeaksInErrorsOrStatus(t *testing.T) {
 	}
 
 	// Provider invalido com a chave colada.
-	if _, err := svc.Connect(context.Background(), "../x", "https://x/v1", candKey); err != nil {
+	if _, err := svc.Connect(context.Background(), "../x", "https://x/v1", candKey, ""); err != nil {
 		if strings.Contains(err.Error(), candKey) {
 			t.Fatalf("erro de provider invalido carrega a chave: %v", err)
 		}
@@ -265,7 +265,7 @@ func TestSecretNeverLeaksInErrorsOrStatus(t *testing.T) {
 
 	// Result nao carrega a chave.
 	v.err = nil
-	res, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey)
+	res, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestSecretNeverLeaksInErrorsOrStatus(t *testing.T) {
 // Result deixa isso visivel.
 func TestNoVerifierIsNotSilent(t *testing.T) {
 	svc, store := newSvc(t, nil)
-	res, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey)
+	res, err := svc.Connect(context.Background(), "nvidia", "https://x/v1", candKey, "")
 	if err != nil {
 		t.Fatal(err)
 	}

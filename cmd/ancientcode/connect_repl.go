@@ -78,7 +78,7 @@ func runConnectREPL(ctx context.Context, cmd command, svc *connect.Service, agen
 		return
 	}
 
-	res, err := svc.Connect(ctx, name, baseURL, key)
+	res, err := svc.Connect(ctx, name, baseURL, key, agent.CurrentModel())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "erro:", err)
 		// As duas recusas sao distintas e o operador precisa saber qual houve:

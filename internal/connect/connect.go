@@ -38,7 +38,7 @@ var ErrUnconfirmed = errors.New("connect: credential could not be confirmed; not
 // the strategy follow the provider instead of assuming one endpoint answers
 // "yes" to every pasted string.
 type Verifier interface {
-	Verify(ctx context.Context, providerID, baseURL, key string) (modelCount int, outcome provider.Outcome, err error)
+	Verify(ctx context.Context, providerID, baseURL, key, modelHint string) (modelCount int, outcome provider.Outcome, err error)
 }
 
 // HTTPVerifier is the real Verifier, backed by the provider package. It is a
@@ -53,8 +53,8 @@ type HTTPVerifier struct {
 // It returns the outcome SEPARATELY from the error so the caller can tell
 // "the key is wrong" from "we could not find out". Collapsing those two is what
 // let a public catalog endpoint pass a garbage key as verified.
-func (v HTTPVerifier) Verify(ctx context.Context, providerID, baseURL, key string) (int, provider.Outcome, error) {
-	res, err := provider.VerifyCredential(ctx, v.Client, providerID, baseURL, key)
+func (v HTTPVerifier) Verify(ctx context.Context, providerID, baseURL, key, modelHint string) (int, provider.Outcome, error) {
+	res, err := provider.VerifyCredential(ctx, v.Client, providerID, baseURL, key, modelHint)
 	return res.ModelCount, res.Outcome, err
 }
 
@@ -105,7 +105,7 @@ func New(store *creds.Store, verifier Verifier) *Service {
 //
 // The order is the whole point: store AFTER verify. Storing first would leave
 // the operator with a "connected" UI and a broken provider.
-func (s *Service) Connect(ctx context.Context, providerID, baseURL, key string) (Result, error) {
+func (s *Service) Connect(ctx context.Context, providerID, baseURL, key, modelHint string) (Result, error) {
 	if err := creds.ValidateProvider(providerID); err != nil {
 		return Result{}, err
 	}
@@ -121,7 +121,7 @@ func (s *Service) Connect(ctx context.Context, providerID, baseURL, key string) 
 	}
 
 	if s.verifier != nil {
-		count, outcome, err := s.verifier.Verify(ctx, providerID, baseURL, key)
+		count, outcome, err := s.verifier.Verify(ctx, providerID, baseURL, key, modelHint)
 		if err != nil {
 			switch {
 			case errors.Is(err, provider.ErrUnauthorized):
