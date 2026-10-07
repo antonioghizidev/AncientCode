@@ -1109,3 +1109,29 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   chave é o que o `/connect` entrega.
 - **Fora de escopo**: `/sessions` — é do backlog `/new`+`/compact`+`/autocompact` (spec do M13 §10).
   Registrado o risco herdado: sem ele, trocar de sessão perde o acesso à anterior.
+
+### D-2026-10-02-69 — Gate de segurança POSIX só é válido onde os testes POSIX rodam
+
+- **Contexto**: o gate final do M14 (race no WSL) reprovou `internal/state` com
+  `TestAtomicWriteLeavesNoTruncatedState`. Investigando: **`state.write` não era atômico**. O
+  comentário prometia `tmp + fsync + rename`; o código abria `s.path` com `O_TRUNC` e escrevia
+  por cima. O efeito é o que o S2 do milestone proíbe — um processo morto no meio da escrita deixa
+  `state.json` truncado, e truncado faz `GetModel` errar para todo modelo já escolhido, ou seja,
+  o harness perde a memória de modelo sem o operador ter feito nada.
+- **Por que só agora**: os testes POSIX de `state` e `creds` têm `t.Skip` para
+  `runtime.GOOS == "windows"`. No host Windows eles **não rodam** — e uma suíte verde no host
+  reporta pulados como se fossem passado. Eu havia reportado "verde" para esses pacotes várias
+  vezes sem que isso significasse nada para S1/S2.
+- **Decisão**: qualquer afirmação de gate sobre **permissão POSIX, atomicidade ou filesystem**
+  só vale se o teste rodou em ambiente POSIX. Para esses casos o gate obrigatório passa a ser o
+  WSL, e a saída deve distinguir `ok` de `SKIP` (`go test -v`, não só o código de saída).
+  Correção aplicada: `state.write` agora faz `CreateTemp` + `Chmod 0600` + `Write` + `Sync` +
+  `Close` + `Rename` + `verifyPerms`, igual ao `creds`.
+- **Lição geral**: *um teste pulado é um teste que não existe*. Contar pulados junto das falhas
+  nos gates, e desconfiar de qualquer número de "N testes passando" que não diga em que
+  plataforma rodaram.
+- **Segunda lição, do mesmo gate**: `hasStdinTerminal()` usava `ModeCharDevice`, e `/dev/null`
+  **é** char device — o gate de `go install` (binário fora da árvore, stdin em `</dev/null`) viu o
+  onboarding anunciar "vou pedir a chave" e só depois falhar. O teste de TTY agora é a sondagem
+  `TCGETS` (`termiosFd`), com `fd` parametrizado para o teste apontar para `/dev/null` sem trocar
+  o fd 0 do binário de teste.
