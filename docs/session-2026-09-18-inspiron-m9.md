@@ -1,14 +1,14 @@
 # Sessão 2026-09-18 — inspiron-m9
 
 > Resumo exclusivo desta sessão. Método: `specs/methodology.md`. Smoke real do M9 (TUI `--tui`)
-> no Inspiron (Dell, GOAMD64=v1), usuário `ancientai`, provider NVIDIA NIM.
+> no Inspiron (Dell, GOAMD64=v1), usuário `ancientcode`, provider NVIDIA NIM.
 
 ## Objetivo da sessão
 
 Validar no hardware real (pto smoke via SSH/pty cru) todos os pontos fáceis de enganar em teste
 host: render do Bubble Tea em pseudo-terminal real, gate humano `y`/`d`, cancelamento de turno,
 comandos `/provider`/`/model`, guarda `--tui` com pipe, saída limpa (`/exit`). Binário
-`ancientai-0.9.0-m9-tui` (8.4 MB) deployado em `/home/ancientai`.
+`ancientcode-0.9.0-m9-tui` (8.4 MB) deployado em `/home/ancientcode`.
 
 ## O que foi feito
 
@@ -33,9 +33,9 @@ comandos `/provider`/`/model`, guarda `--tui` com pipe, saída limpa (`/exit`). 
 - **`/provider`** → `provider base_url: https://integrate.api.nvidia.c…` no painel de sessão;
   **`/model`** → `model: nvidia/nemotron-3.5-lightning-30b-a3b`; **`/exit`** → seq `^[?2004l
   ^[?25h ^[?1049l` restaura o terminal (sem travas).
-- **Guarda pipe**: `echo ola | ancientai --tui` → `erro: --tui exige stdin E stdout TTY
+- **Guarda pipe**: `echo ola | ancientcode --tui` → `erro: --tui exige stdin E stdout TTY
   (pipes/arquivos recusados)`, RC=2.
-- Artefatos de teste removidos do `/opt/ancientai/code` no final; audit do smoke preservado
+- Artefatos de teste removidos do `/opt/ancientcode/code` no final; audit do smoke preservado
   (append-only).
 
 ## Decisões

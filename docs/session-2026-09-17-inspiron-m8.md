@@ -1,15 +1,15 @@
 # Smoke M8 no Inspiron — 2026-09-17 (raw-mode, comandos, Ctrl+C cancel)
 
 > Validação real do binário `0.8.0-m8` (`GOAMD64=v1`, md5 `22bbc758948f2c86f3488f1c2c75cb7b`)
-> no Dell Inspiron (kernel 6.8.0-139-generic, usuário `ancientai`, provider NVIDIA NIM).
+> no Dell Inspiron (kernel 6.8.0-139-generic, usuário `ancientcode`, provider NVIDIA NIM).
 
 ## Contexto do teste
 
-- Binário em `/home/ancientai/ancientai-0.8.0-m8` (deploy via scp; `-version` imprime
-  `ancientai 0.8.0-m8`). Config `ancientai.yaml` real (NVIDIA NIM, toolbox run, ask).
+- Binário em `/home/ancientcode/ancientcode-0.8.0-m8` (deploy via scp; `-version` imprime
+  `ancientcode 0.8.0-m8`). Config `ancientcode.yaml` real (NVIDIA NIM, toolbox run, ask).
 - Config de teste `~/m8-test.yaml` = mesmo YAML + `session_context_bytes: 20000`
   (multi-doc merge do yaml.v3 validado em smoke).
-- Sessões de teste (`m8-pty*.jsonl`) em `/opt/ancientai/sessions/`, removidas ao final.
+- Sessões de teste (`m8-pty*.jsonl`) em `/opt/ancientcode/sessions/`, removidas ao final.
 
 ## O que foi validado
 
@@ -44,7 +44,7 @@ Drive via `pty.fork` no próprio Inspiron, sincronizado por marcadores de bytes
 - **D-2026-09-17-48** (fix commitado `cf57fa9`): o `render` do editor contava `\r` e `\x1b[K`
   como colunas, movendo o cursor 4 posições a mais a cada echo no pty. Corrigido para
   `moveLeft := len(e.buf) - e.pos` + `TestEditorRenderCursor` (empty/end/middle/home,
-  bytes exatos). ![+1 teste no `cmd/ancientai`]
+  bytes exatos). ![+1 teste no `cmd/ancientcode`]
 
 ## Pendências / observações
 

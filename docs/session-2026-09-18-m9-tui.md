@@ -6,7 +6,7 @@
 ## Objetivo da sessão
 
 Entregar o milestone **M9** (spec `specs/milestones/09-m9-tui.md`): frontend de UI interactiva
-`--tui` (Bubble Tea) **em `cmd/ancientai` apenas**, consumindo o contrato que o M8 estabilizou —
+`--tui` (Bubble Tea) **em `cmd/ancientcode` apenas**, consumindo o contrato que o M8 estabilizou —
 parser de comandos puro compartilhado, `loop.Approver` como única via de aprovação, observer de
 eventos estruturado, `ContextUsage`. O core (`internal/*`) permanece 100% stdlib.
 
@@ -34,7 +34,7 @@ eventos estruturado, `ContextUsage`. O core (`internal/*`) permanece 100% stdlib
 
 ## Decisões
 
-- **D-2026-09-17-49** — Bubble Tea v1.3.10 pinado, delivery-only (`cmd/ancientai`); render ASCII
+- **D-2026-09-17-49** — Bubble Tea v1.3.10 pinado, delivery-only (`cmd/ancientcode`); render ASCII
   puro no View (sem lipgloss por ora); enforcement arquitetural já existente
   (`TestLoopMustNotImportCmdOrUI`).
 
@@ -42,7 +42,7 @@ eventos estruturado, `ContextUsage`. O core (`internal/*`) permanece 100% stdlib
 
 | Pacote | Foco | Status |
 |---|---|---|
-| `cmd/ancientai` (novos) | gate (approve/deny/veto/cancel/fail-closed/serialização), panels (footer/ctx/atividade/audit), Model (teclas→core, gate, redação no View) | ✅ |
+| `cmd/ancientcode` (novos) | gate (approve/deny/veto/cancel/fail-closed/serialização), panels (footer/ctx/atividade/audit), Model (teclas→core, gate, redação no View) | ✅ |
 | `internal/*` | regressão (M1–M8) intacta | ✅ |
 
 **Total: host serial 16/16 + WSL `-race` 16/16, 0 falhas**; `gofmt`/`go vet`/`go build` limpos.
@@ -61,7 +61,7 @@ Números exatos contados no WSL (serial + `-race`) e no host (`go test -count=1 
 
 ## Próximos passos
 
-1. Commit `feat(M9)` e smoke Inspiron como `ancientai` com NVIDIA NIM (`--tui` real, raw/PTY:
+1. Commit `feat(M9)` e smoke Inspiron como `ancientcode` com NVIDIA NIM (`--tui` real, raw/PTY:
    gate ask y→executed auditado, `d`→veto, C-c cancel, `/provider` refletido no footer).
 2. Backlog Web (SSE + shell-HTTP + `Approver` por canal + auth/TLS/CSRF) como milestone futuro
    reusando o contrato do M8/M9 (registrado no DoD do M9).

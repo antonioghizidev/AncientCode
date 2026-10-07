@@ -4,32 +4,32 @@
 
 ## Objetivo da sessão
 
-Finalizar a validação/tuning do M6 no Inspiron **como usuário dedicado `ancientai`** com
+Finalizar a validação/tuning do M6 no Inspiron **como usuário dedicado `ancientcode`** com
 provedor **NVIDIA NIM** (config `nvidia/nemotron-3.5-lightning-30b-a3b`): shell com efeito,
 write de arquivos no workdir, auditoria, e definir o pareamento de modelo/modo.
 
 ## O que foi feito
 
-- **Setup dedicado**: binário instalado em `/opt/ancientai/bin/ancientai` (0.6.0-m6), config
-  em `/home/ancientai/ancientai.yaml`, chave SSH `ancientai-wsl` validada, env replicado
-  (OPENROUTER_API_KEY + ANCIENTAI_MODEL + NVIDIA_API_KEY) no `.bashrc` do usuário.
+- **Setup dedicado**: binário instalado em `/opt/ancientcode/bin/ancientcode` (0.6.0-m6), config
+  em `/home/ancientcode/ancientcode.yaml`, chave SSH `ancientcode-wsl` validada, env replicado
+  (OPENROUTER_API_KEY + ANCIENTCODE_MODEL + NVIDIA_API_KEY) no `.bashrc` do usuário.
 - **Correção de config pós-block**: o config instalado era o snapshot OpenRouter antigo →
   reescrito para `provider: nvidia` + `model: nvidia/nemotron-3.5-lightning-30b-a3b` +
   `api_key_env: NVIDIA_API_KEY` (slug `:free` é do OpenRouter; na NIM direta deu HTTP 404 —
   o alternativo `-30b-a3b` funcionou).
 - **Workdir do dedicado**: artefatos do smoke `USUARIO` realocados para `audit-USUARIO.bak`/
-  `sessions-USUARIO.bak`; `audit.jsonl` e `sessions/` recriados graváveis pelo grupo `ancientai`.
+  `sessions-USUARIO.bak`; `audit.jsonl` e `sessions/` recriados graváveis pelo grupo `ancientcode`.
 - **Pré-cold-start > 2 min**: `http.Client.Timeout` do provider subiu de 2 min para 5 min
   (D-2026-09-16-32) — o loop falhou-closed sem executar nada na legítima lentidão do NIM.
-- **Smokes reais (NVIDIA, usuário `ancientai`)**:
+- **Smokes reais (NVIDIA, usuário `ancientcode`)**:
   - pré-voo do provider/modelo: um turno plano respondeu; → fluxo y/N vivo.
   - gating de plano: `write_file` chamado direto em modo plan → recusado fail-closed (loop
     correto); nemotron não planeja em texto → pareamento recomendado `toolbox_mode: run`.
-  - `write_file` executado com approve → `/opt/ancientai/code/marcador-shell.txt` (owner
-    `ancientai`, 0600); `read_file` leu de volta. Audit: `ask/allow/executed` + output_hash.
+  - `write_file` executado com approve → `/opt/ancientcode/code/marcador-shell.txt` (owner
+    `ancientcode`, 0600); `read_file` leu de volta. Audit: `ask/allow/executed` + output_hash.
   - `shell id; whoami; pwd` → **guarda de chaining M2 negou** (`command chaining is denied
     by default`); o modelo decompôs e cada comando atômico foi aprovado e executado como
-    `ancientai` (~10 ms, sem `su`). Audit com 3 entradas executed.
+    `ancientcode` (~10 ms, sem `su`). Audit com 3 entradas executed.
   - Defeito D-2026-09-16-33: caminho absoluto foi re-rootado em `code_root/...` com sucesso
     falso → `resolve`/`resolveWrite` agora **recusam absoluto** (fail-closed); validado ao vivo
     no smoke seguinte.
@@ -59,7 +59,7 @@ write de arquivos no workdir, auditoria, e definir o pareamento de modelo/modo.
 
 **Total: 15 pacotes verdes no Linux (WSL go1.27.0), 14 no host Windows (serial); 0 falhas.**
 Validação de hardware real: Inspiron via SSH — provider NIM ~round-trip, write/shell com efeito
-como `ancientai`, auditoria `ask→allow→executed` para todos.
+como `ancientcode`, auditoria `ask→allow→executed` para todos.
 
 ## Critérios de aceite
 
@@ -72,9 +72,9 @@ como `ancientai`, auditoria `ask→allow→executed` para todos.
 
 ## Próximos passos
 
-1. `sudo install -m 755 -o ancientai -g ancientai /home/ancientai/ancientai-0.6.0-m6
-   /opt/ancientai/bin/ancientai` para o artefato canônico de `/opt` ser o binário com o
-   timeout 5 min + recusa de absolutos (ou considerar o binário em `/home/ancientai` como o
+1. `sudo install -m 755 -o ancientcode -g ancientcode /home/ancientcode/ancientcode-0.6.0-m6
+   /opt/ancientcode/bin/ancientcode` para o artefato canônico de `/opt` ser o binário com o
+   timeout 5 min + recusa de absolutos (ou considerar o binário em `/home/ancientcode` como o
    deployed, com `/opt` apenas bootstrap).
 2. Reenceno do `--resume` com conversa real na NIM; opcionalmente `apt`/`docker` no dedicado
    (docker já validado sem root; apt segue exigindo privilégio — D-2026-09-16-31).

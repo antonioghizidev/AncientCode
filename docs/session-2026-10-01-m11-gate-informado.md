@@ -54,7 +54,7 @@ primeira leitura não é evidência; saída de ferramenta corrompida parece cód
 
 | Pacote | Foco | Status |
 |---|---|---|
-| `cmd/ancientai` | M11 (gate, banner, sanitize, fixedRows) | ✅ |
+| `cmd/ancientcode` | M11 (gate, banner, sanitize, fixedRows) | ✅ |
 | Host serial (16 pacotes) | suíte completa | ✅ 0 falhas |
 | WSL `-race` (16 pacotes) | detector de corrida | ✅ 0 races |
 | `gofmt` (blob commitado) / `go vet` | estático | ✅ |
@@ -83,7 +83,7 @@ primeira leitura não é evidência; saída de ferramenta corrompida parece cód
 `"ok"` — o gate "desaparecia" por erro de invocação, não por bug. Confirmado rodando o binário
 M10 (sem as mudanças) com o mesmo driver: mesmo comportamento.
 
-Artefatos de teste e drivers temporários removidos do `/tmp` e de `/opt/ancientai/code`.
+Artefatos de teste e drivers temporários removidos do `/tmp` e de `/opt/ancientcode/code`.
 
 ## Próximos passos
 

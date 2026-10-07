@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"ancientai/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
 )
 
 func TestHardBlockPatterns(t *testing.T) {

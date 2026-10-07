@@ -29,7 +29,7 @@ rodapé para `✗ erro` precisa dizer **qual** erro foi. Três defeitos reportad
 
 ## 3. Contratos
 
-Puras em `cmd/ancientai/tui_panels.go`:
+Puras em `cmd/ancientcode/tui_panels.go`:
 
 - `sanitize(s) string` — remove C0/C1 + ESC de conteúdo não confiável antes do paint (o modelo
   não pode emitir sequências ANSI na UI); `\t`→espaço.

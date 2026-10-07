@@ -29,6 +29,11 @@ var encRoots = []string{
 	filepath.Join("specs"),
 	filepath.Join("cmd"),
 	filepath.Join("internal"),
+	// "" = a raiz do repositorio. Sem ela os gates tinham um ponto cego: README.md,
+	// AGENTS.md e go.mod nunca eram verificados — e o README e o arquivo mais lido
+	// do projeto. Descoberto ao injetar o nome antigo no README e ver o gate do
+	// rename passar.
+	"",
 }
 
 func TestVersionedTextIsValidUTF8WithoutReplacementChars(t *testing.T) {
@@ -138,7 +143,7 @@ func markdownFiles(t *testing.T, root string) []string {
 	return files
 }
 
-// encTestIsInRootPackage is a guard: this file lives in cmd/ancientai, which is a
+// encTestIsInRootPackage is a guard: this file lives in cmd/ancientcode, which is a
 // main package; repoRoot and versionedFiles are defined here so the gate has no
 // hidden dependency on test helpers that may move.
 func repoRoot() (string, error) {
@@ -210,10 +215,23 @@ func hasAnySuffix(s string, suffixes []string) bool {
 	return false
 }
 
+// underAnyRoot reports whether rel is inside one of the scanned roots.
+//
+// A root of "" means the repository root itself: files with NO slash in their
+// path (README.md, AGENTS.md, go.mod). Without it the gates had a blind spot —
+// they scanned docs/, specs/, cmd/ and internal/, and the most-read file in the
+// repo (README.md) was never checked. Found by injecting the old name in README
+// and watching the rename gate pass.
 func underAnyRoot(rel string, roots []string) bool {
 	r := filepath.ToSlash(rel)
 	for _, root := range roots {
 		root = filepath.ToSlash(root)
+		if root == "" {
+			if !strings.Contains(r, "/") {
+				return true
+			}
+			continue
+		}
 		if r == root || strings.HasPrefix(r, root+"/") {
 			return true
 		}

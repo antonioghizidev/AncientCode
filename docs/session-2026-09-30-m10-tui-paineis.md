@@ -36,10 +36,10 @@ Escopo decidido com o usuário: **sessão à esquerda (~60%) / atividade à dire
 
 | Pacote | Foco | Status |
 |---|---|---|
-| `cmd/ancientai` | M10 (viewport, scrollbar, foco, navegação, prompt) | ✅ |
+| `cmd/ancientcode` | M10 (viewport, scrollbar, foco, navegação, prompt) | ✅ |
 | Host serial (16 pacotes) | suíte completa | ✅ 0 falhas |
 | `gofmt` / `go vet` | estático | ✅ |
-| `GOAMD64=v1` build | `dist/ancientai` 8.458.400 bytes, `0.10.0-m10` | ✅ |
+| `GOAMD64=v1` build | `dist/ancientcode` 8.458.400 bytes, `0.10.0-m10` | ✅ |
 | WSL `-race` (16 pacotes) | detector de corrida | ✅ 0 races |
 | Smoke Inspiron | pty real + NIM | ✅ |
 
@@ -56,7 +56,7 @@ Escopo decidido com o usuário: **sessão à esquerda (~60%) / atividade à dire
 
 ## Smoke no Inspiron (pty real, NVIDIA NIM, binário `0.10.0-m10`)
 
-Deploy em `/home/ancientai/ancientai-0.10.0-m10` (`0.10.0-m10`, GOAMD64=v1). Driver pty Python
+Deploy em `/home/ancientcode/ancientcode-0.10.0-m10` (`0.10.0-m10`, GOAMD64=v1). Driver pty Python
 (fora do repo) respondendo as queries OSC11 + DSR, Enter = `\r`, janela 100×30 (e 100×11 para
 forçar overflow de scrollbar):
 

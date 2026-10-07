@@ -12,9 +12,9 @@ import (
 	"os"
 	"strings"
 
-	"ancientai/internal/audit"
-	"ancientai/internal/loop"
-	"ancientai/internal/redact"
+	"github.com/antonioghizidev/ancientcode/internal/audit"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
+	"github.com/antonioghizidev/ancientcode/internal/redact"
 )
 
 // statusTone marks the footer health indicator (D-37 vocabulary).
@@ -88,7 +88,7 @@ func ctxBar(pct int) string {
 // 3-byte glyph) and line 1 carries provider/model names that may be non-ASCII,
 // so this was reachable.
 func buildFooter(f footerInfo) []string {
-	line1 := fmt.Sprintf("ancientai %s | %s | %s | %s", f.Version, f.Provider, f.Model, f.Toolbox)
+	line1 := fmt.Sprintf("ancientcode %s | %s | %s | %s", f.Version, f.Provider, f.Model, f.Toolbox)
 	if f.Session != "" {
 		line1 += " | " + f.Session
 	}

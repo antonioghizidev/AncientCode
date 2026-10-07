@@ -1,6 +1,6 @@
 # Sessão 2026-09-16 — inspiron m7 (smoke)
 
-> Validação real do M7 (Skills) no Inspiron como usuário dedicado `ancientai`,
+> Validação real do M7 (Skills) no Inspiron como usuário dedicado `ancientcode`,
 > provider NVIDIA NIM. Metodologia: `specs/methodology.md`.
 
 ## Objetivo
@@ -11,15 +11,15 @@ scriptada.
 
 ## O que foi feito
 
-- Binário `0.7.0-m7-ind` (dist/ancientai, GOAMD64=v1) instalado em
-  `/home/ancientai/ancientai-0.7.0-m7-ind`; `chmod +x` após scp (o scp entrega permissão 664).
-- Skill `smoke` instalada em `~/.config/ancientai/skills/smoke` com `origin` (simulando
-  skill baixada) + `scripts/status.sh` que grava um marcador em `/home/ancientai/skill-smoke-marker.txt`.
+- Binário `0.7.0-m7-ind` (dist/ancientcode, GOAMD64=v1) instalado em
+  `/home/ancientcode/ancientcode-0.7.0-m7-ind`; `chmod +x` após scp (o scp entrega permissão 664).
+- Skill `smoke` instalada em `~/.config/ancientcode/skills/smoke` com `origin` (simulando
+  skill baixada) + `scripts/status.sh` que grava um marcador em `/home/ancientcode/skill-smoke-marker.txt`.
 - Validação em 4 blocos:
 
 1. **Load antes da verificação → recusado (fail-closed)**: `--skill smoke` sem stamp imprime
    "nao foi verificada ou foi alterada apos a verificacao" e não entra no loop.
-2. **`--verify-skill`**: escreve `.ancientai-verified` (0600) com `skill_sha256` +
+2. **`--verify-skill`**: escreve `.ancientcode-verified` (0600) com `skill_sha256` +
    `script_sha256` de cada script; idempotente; **tamper no SKILL.md** (append de linha) → nova
    carga recusada; re-verify restaura.
 3. **`--run` + skill scriptada → recusado na inicialização** (sem chamar a NIM).

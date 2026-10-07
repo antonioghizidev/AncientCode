@@ -16,7 +16,7 @@ import (
 	"regexp"
 	"time"
 
-	"ancientai/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
 )
 
 // execCommand is injectable in tests (helper-process pattern).

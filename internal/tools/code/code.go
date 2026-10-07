@@ -20,9 +20,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"ancientai/internal/redact"
-	"ancientai/internal/tools"
-	"ancientai/internal/tools/files"
+	"github.com/antonioghizidev/ancientcode/internal/redact"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/tools/files"
 )
 
 //go:embed templates

@@ -263,7 +263,7 @@ func TestExecBuildCommandNonRoot(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("su invocation only applies on linux")
 	}
-	ex := NewExecutor("/tmp", "ancientai", time.Second, 1024)
+	ex := NewExecutor("/tmp", "ancientcode", time.Second, 1024)
 	argv := ex.buildCommand("echo hi")
 	if !strings.Contains(strings.Join(argv, " "), "su") {
 		t.Fatalf("expected su for non-current run_user, got %v", argv)

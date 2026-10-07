@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"ancientai/internal/redact"
-	"ancientai/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/redact"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
 )
 
 // maxContentBytes bounds a single write payload (the model controls content).

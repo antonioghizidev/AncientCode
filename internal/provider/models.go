@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"ancientai/internal/redact"
+	"github.com/antonioghizidev/ancientcode/internal/redact"
 )
 
 // maxModelsResponseBytes bounds the catalog body. Measured: NIM returns 81
@@ -123,7 +123,7 @@ func (c *Client) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "ancientai/0.1")
+	req.Header.Set("User-Agent", "ancientcode/0.1")
 
 	resp, err := c.http.Do(req)
 	if err != nil {

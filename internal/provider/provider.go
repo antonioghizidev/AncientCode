@@ -1,4 +1,4 @@
-// Package provider defines the transport contract between AncientAI and
+// Package provider defines the transport contract between AncientCode and
 // remote model providers.
 //
 // The only mandatory adapter is the OpenAI-compatible one (SPEC §4.1): it

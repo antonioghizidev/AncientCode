@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"ancientai/internal/audit"
-	"ancientai/internal/loop"
+	"github.com/antonioghizidev/ancientcode/internal/audit"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
 )
 
 func TestCtxBarCells(t *testing.T) {
@@ -45,7 +45,7 @@ func TestBuildFooter(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("footer must have 2 lines, got %d: %q", len(got), got)
 	}
-	if got[0] != "ancientai 0.9.0-m9 | openrouter | model-x | run | default.jsonl" {
+	if got[0] != "ancientcode 0.9.0-m9 | openrouter | model-x | run | default.jsonl" {
 		t.Errorf("line1 = %q", got[0])
 	}
 	if got[1] != "ctx \u2593\u2593\u2593\u2591\u2591 42% | \u25c9 ok" {
@@ -186,7 +186,7 @@ func TestProjectionLayoutContainsPanels(t *testing.T) {
 		Activity: []string{"* modelo: recebendo tokens...", "* tool: shell ok"},
 		Prompt:   "escreva algo",
 		Cursor:   11,
-		Footer:   []string{"| ancientai | run |", "ctx --"},
+		Footer:   []string{"| ancientcode | run |", "ctx --"},
 		Width:    100,
 		Height:   24,
 	})

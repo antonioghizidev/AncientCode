@@ -1,7 +1,7 @@
 # Design — TUI (estilo lazydocker) + recursos de interação prompt/UI
 
 > **Status**: **M9 concluído** (`specs/milestones/09-m9-tui.md`, branch `m9-tui`; TUI Bubble Tea
-> `--tui` TTY-only em `cmd/ancientai` consumindo o contrato do M8 — parser comandos compartilhado,
+> `--tui` TTY-only em `cmd/ancientcode` consumindo o contrato do M8 — parser comandos compartilhado,
 > `tuiGate`/`loop.Approver` como única via de aprovação, observer de eventos no painel de
 > atividade, footer com ctx/status). O REPL de texto continua default e byte-estável. Web futura
 > reusa o mesmo contrato (backlog em `09-m9-tui.md` DoD). Decisões: D-2026-09-16-36 (Bubble Tea),
@@ -25,7 +25,7 @@ dois frontends apenas renderizam. Testes de segurança atacam o domínio, nunca 
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ cmd/ancientai                                                 │
+│ cmd/ancientcode                                                 │
 │   repl.go        → frontend de texto (readLine + render inline)│
 │   tui.go         → frontend Bubble Tea (--tui)                │
 │   commands.go    → domínio: /historico /retry /continue       │
@@ -55,7 +55,7 @@ do `SetStatus` da D-35) e a interface `Approver` (o gate vira diálogo na TUI).
 ├───────────────────────────────┴──────────────────────────────┤
 │ > [___________________________________] ↵   ↑↓ histórico    │
 ├──────────────────────────────────────────────────────────────┤
-│ ancientai 0.6.0-m6 | nvidia/nemotron… | run | default.jsonl │
+│ ancientcode 0.6.0-m6 | nvidia/nemotron… | run | default.jsonl │
 │ ctx ▓▓▓░░ 42% | ◉ ok          ← footer (estado + medidor)    │
 └──────────────────────────────────────────────────────────────┘
 ```

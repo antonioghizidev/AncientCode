@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"ancientai/internal/sandbox"
-	"ancientai/internal/skills"
-	"ancientai/internal/tools"
-	sk "ancientai/internal/tools/skills"
+	"github.com/antonioghizidev/ancientcode/internal/sandbox"
+	"github.com/antonioghizidev/ancientcode/internal/skills"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
+	sk "github.com/antonioghizidev/ancientcode/internal/tools/skills"
 )
 
 // writeSkill materializes a loadable skill directory under root.

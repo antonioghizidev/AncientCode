@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"ancientai/internal/redact"
-	"ancientai/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/redact"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
 )
 
 func setup(t *testing.T) (*Files, string) {

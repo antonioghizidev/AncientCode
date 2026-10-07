@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"ancientai/internal/catalog"
-	"ancientai/internal/redact"
+	"github.com/antonioghizidev/ancientcode/internal/catalog"
+	"github.com/antonioghizidev/ancientcode/internal/redact"
 )
 
 // catalogNote explains, per catalog, what could and could not be verified. The

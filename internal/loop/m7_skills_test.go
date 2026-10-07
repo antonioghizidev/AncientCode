@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"ancientai/internal/model"
-	"ancientai/internal/provider"
-	"ancientai/internal/sandbox"
-	"ancientai/internal/skills"
-	"ancientai/internal/tools"
-	toolfiles "ancientai/internal/tools/files"
-	skillstool "ancientai/internal/tools/skills"
+	"github.com/antonioghizidev/ancientcode/internal/model"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/sandbox"
+	"github.com/antonioghizidev/ancientcode/internal/skills"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
+	toolfiles "github.com/antonioghizidev/ancientcode/internal/tools/files"
+	skillstool "github.com/antonioghizidev/ancientcode/internal/tools/skills"
 )
 
 // writeM7Skill materializes a loadable skill and returns it via skills.Load.

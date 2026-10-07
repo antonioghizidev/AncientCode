@@ -1,4 +1,4 @@
-# AncientAI
+# AncientCode
 
 Agente de IA para terminal, construído para rodar em **hardware antigo** — sem GPU, sem tokenizer
 local, sem runtime JavaScript. Um binário Go, a inferência acontece na API do provedor, e **nada
@@ -42,17 +42,17 @@ nativa, footprint de processo na casa das dezenas de MB.
 
 ```sh
 # 1. configuração — a chave NUNCA vai no arquivo
-cp ancientai.example.yaml ancientai.yaml
+cp ancientcode.example.yaml ancientcode.yaml
 export OPENROUTER_API_KEY='...'      # ou NVIDIA_API_KEY / LITELLM_API_KEY
 
 # 2. build para o alvo (o dev machine pode ser outro)
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 \
-  go build -trimpath -ldflags="-s -w" -o ancientai ./cmd/ancientai
+  go build -trimpath -ldflags="-s -w" -o ancientcode ./cmd/ancientcode
 
 # 3. executar
-./ancientai              # REPL
-./ancientai --tui        # interface de painéis (precisa de TTY real)
-./ancientai --run "..."  # não interativo (exige approval.write_file=allow)
+./ancientcode              # REPL
+./ancientcode --tui        # interface de painéis (precisa de TTY real)
+./ancientcode --run "..."  # não interativo (exige approval.write_file=allow)
 ```
 
 `GOAMD64=v1` não é sugestão: impede o compilador de emitir instruções pós-SSE2, o que garante
@@ -67,7 +67,7 @@ execução no Core 2 Duo **por contrato** — uma build futura não introduz AVX
 | `litellm` | `http://127.0.0.1:4000/v1` | `LITELLM_API_KEY` |
 
 Qualquer endpoint compatível com OpenAI funciona por `base_url`. Overrides por ambiente:
-`ANCIENTAI_PROVIDER`, `ANCIENTAI_BASE_URL`, `ANCIENTAI_MODEL`, `ANCIENTAI_WORKDIR`.
+`ANCIENTCODE_PROVIDER`, `ANCIENTCODE_BASE_URL`, `ANCIENTCODE_MODEL`, `ANCIENTCODE_WORKDIR`.
 
 ## Uso
 
@@ -131,7 +131,7 @@ cobertura, são guardas.
 ## Arquitetura
 
 ```
-cmd/ancientai/        REPL, TUI (Bubble Tea), wiring, portões de UI
+cmd/ancientcode/        REPL, TUI (Bubble Tea), wiring, portões de UI
 internal/loop/        o agente: parse, políticas, gate, observador, teto de turnos
 internal/provider/    streaming SSE (OpenAI-compat) + catálogo de modelos
 internal/tools/       shell, docker, apt, files, code, skills
@@ -191,5 +191,6 @@ provedor no Core 2 Duo ultrapassa 600 s neste ambiente).
 
 ## Licença
 
-Ainda não definida — o repositório ainda não tem arquivo `LICENSE`. Defina antes de qualquer
-distribuição.
+[Apache-2.0](LICENSE) — inclui concessão explícita de patente, o que importa para uma ferramenta de
+segurança que empresas podem instalar. Ver também [`CONTRIBUTING.md`](CONTRIBUTING.md), que registra
+os invariantes que uma contribuição não pode quebrar.

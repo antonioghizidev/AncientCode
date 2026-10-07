@@ -14,7 +14,7 @@ entra só no M9. Este milestone cria a superfície de comandos/eventos que a TUI
 ## 2. Camadas e regras de arquitetura (DDD/SOLID/DI)
 
 ```
-cmd/ancientai                     # delivery (uma fronteira por frontend)
+cmd/ancientcode                     # delivery (uma fronteira por frontend)
   repl.go      → frontend texto: consome domínio e renderiza
   commands.go  → parser de /comandos -> chama o core (nunca o inverso)
   input.go     → raw-mode mín. (TTY-only) | cooked para pipe/--run

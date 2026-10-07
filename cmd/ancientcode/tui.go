@@ -25,9 +25,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"ancientai/internal/config"
-	"ancientai/internal/loop"
-	"ancientai/internal/redact"
+	"github.com/antonioghizidev/ancientcode/internal/config"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
+	"github.com/antonioghizidev/ancientcode/internal/redact"
 )
 
 // turnRunner is the tiny port the TUI drives turns through. Internal/loop is

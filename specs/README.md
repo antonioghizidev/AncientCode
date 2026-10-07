@@ -1,7 +1,7 @@
 # specs/ — Especificações de Desenvolvimento (SDD)
 
 Este diretório é a fonte única da **metodologia de Spec-Driven Development (SDD)** do
-AncientAI e contém as especificações de cada milestone.
+AncientCode e contém as especificações de cada milestone.
 
 ## Conteúdo
 

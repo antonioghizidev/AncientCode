@@ -12,9 +12,9 @@ import (
 	"fmt"
 	"time"
 
-	"ancientai/internal/sandbox"
-	"ancientai/internal/skills"
-	"ancientai/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/sandbox"
+	"github.com/antonioghizidev/ancientcode/internal/skills"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
 )
 
 const (

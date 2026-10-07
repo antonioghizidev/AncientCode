@@ -17,7 +17,7 @@ import (
 	"sort"
 	"strings"
 
-	"ancientai/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
 )
 
 // Kind is the coarse family a model belongs to, derived from its name (always

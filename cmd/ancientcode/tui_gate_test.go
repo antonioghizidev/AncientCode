@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"ancientai/internal/loop"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
 )
 
 // tuiGate is the Approver dialog (spec 09 §4): it must only ever answer what

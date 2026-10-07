@@ -1,4 +1,4 @@
-# Constituição do AncientAI
+# Constituição do AncientCode
 
 Regras **não-negociáveis**. Nenhuma mudança pode violá-las; qualquer exceção exige revisão
 explícita de segurança e registro em `docs/DECISOES.md`.

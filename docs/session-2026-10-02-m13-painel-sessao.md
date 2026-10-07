@@ -66,24 +66,24 @@ O segundo é o que importa: corrigir só o desenho não devolveria nada.
 
 | Verificação | Resultado |
 |---|---|
-| Host serial | **17/17 pacotes, 0 falhas** (127 testes em `cmd/ancientai`) |
+| Host serial | **17/17 pacotes, 0 falhas** (127 testes em `cmd/ancientcode`) |
 | WSL `-race` (sequencial por pacote) | **17/17, 0 races** |
 | `go vet` | limpo |
 | `gofmt` (visão LF da árvore) | limpo |
 | `GOAMD64=v1` build | 8.548.512 bytes, `0.13.0-m13` |
 
 > Nota de método: `go test -race ./...` em paralelo sobre `/mnt/d` (mount Windows) estourou o
-> orçamento do pacote `cmd/ancientai` (900 s) embora os testes passem em segundos isolados. O gate
+> orçamento do pacote `cmd/ancientcode` (900 s) embora os testes passem em segundos isolados. O gate
 > de corrida passou a rodar **sequencial por pacote** — mesma cobertura, sem o artefato de contenção.
 
 ### Testes novos
 
-- `cmd/ancientai/m13_panels_test.go` — projeção (sem perda, prefixo, indentação, larguras
+- `cmd/ancientcode/m13_panels_test.go` — projeção (sem perda, prefixo, indentação, larguras
   degeneradas), geometria 70/30 com soma exata e piso, `hscrollRange`, frames do spinner.
-- `cmd/ancientai/m13_turn_test.go` — `Esc` cancela e não sai, devolução do prompt, tools que já
+- `cmd/ancientcode/m13_turn_test.go` — `Esc` cancela e não sai, devolução do prompt, tools que já
   rodaram, `/continue` uma vez e fail-closed, spinner só durante o turno, cancelamento não é erro,
   histórico de cancelamentos limitado, **digitação nunca comida pelo atalho**.
-- `cmd/ancientai/m13_view_test.go` — o prompt e a resposta longos **inteiros no `View()`**, cauda
+- `cmd/ancientcode/m13_view_test.go` — o prompt e a resposta longos **inteiros no `View()`**, cauda
   alcançável por rolagem, `sanitize` preserva `\n`, saída multilinha mantém uma linha por linha,
   `View()` não altera o log de atividade.
 

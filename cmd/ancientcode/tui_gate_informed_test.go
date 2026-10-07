@@ -9,7 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"ancientai/internal/loop"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
 )
 
 // Small helpers so the M11 tests read like the scenario, not like the plumbing.

@@ -3,7 +3,7 @@ package loop
 import (
 	"time"
 
-	"ancientai/internal/redact"
+	"github.com/antonioghizidev/ancientcode/internal/redact"
 )
 
 // Phase identifies one observable stage of an agent turn (M8, SPEC §3 contract

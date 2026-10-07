@@ -1,4 +1,6 @@
 # Binaries and build artifacts
+/ancientcode
+/ancientcode.exe
 /ancientai
 /ancientai.exe
 *.test

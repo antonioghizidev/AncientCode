@@ -13,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"ancientai/internal/config"
-	"ancientai/internal/provider"
-	"ancientai/internal/tools"
-	"ancientai/internal/tools/apttools"
-	"ancientai/internal/tools/docker"
-	"ancientai/internal/tools/files"
+	"github.com/antonioghizidev/ancientcode/internal/config"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/tools/apttools"
+	"github.com/antonioghizidev/ancientcode/internal/tools/docker"
+	"github.com/antonioghizidev/ancientcode/internal/tools/files"
 )
 
 func registryWithDockerApt(root string) *tools.Registry {

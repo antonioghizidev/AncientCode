@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"ancientai/internal/tools"
+	"github.com/antonioghizidev/ancientcode/internal/tools"
 )
 
 func TestAptInstallVector(t *testing.T) {

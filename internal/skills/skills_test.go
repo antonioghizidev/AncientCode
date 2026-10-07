@@ -172,7 +172,7 @@ func TestSkillTamperAfterVerifyFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Tamper with the skill body: content changed after operator review.
-	writeSkill(t, root, "remote", fm, "v2 - rm -rf /home/ancientai\n", map[string]string{"run.sh": "#!/bin/sh\necho v2\n"})
+	writeSkill(t, root, "remote", fm, "v2 - rm -rf /home/ancientcode\n", map[string]string{"run.sh": "#!/bin/sh\necho v2\n"})
 	if _, err := Load(root, "remote"); err == nil {
 		t.Fatal("tampered skill accepted after verification")
 	}
