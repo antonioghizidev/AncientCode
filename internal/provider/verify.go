@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/antonioghizidev/ancientcode/internal/redact"
 )
@@ -79,6 +80,14 @@ const (
 	// long walk through a dead catalog.
 	chatProbeCandidates = 12
 )
+
+// perRequestVerifyTimeout caps ONE verification request. Measured on the
+// Inspiron, NVIDIA's cold model start can take tens of seconds, so this is
+// generous per call while still bounding a hung one.
+//
+// A variable rather than a constant only so the timing test can shrink it; the
+// probe never assigns it.
+var perRequestVerifyTimeout = 75 * time.Second
 
 // VerifyCredential makes one real request that actually AUTHENTICATES, before
 // the key is stored (M14 §3.5).
@@ -166,7 +175,7 @@ func verifyByKeyIdentity(ctx context.Context, httpc *http.Client, base, key stri
 	}
 	setVerifyHeaders(req, key)
 
-	resp, err := httpc.Do(req)
+	resp, err := boundedClient(httpc).Do(req)
 	if err != nil {
 		// The URL may carry userinfo; redact the whole message.
 		return inconclusive(0, probe, fmt.Errorf("provider: %s request failed: %s", probe, redact.Redact(err.Error())))
@@ -249,7 +258,7 @@ func chatProbeOnce(ctx context.Context, httpc *http.Client, base, key, model str
 	setVerifyHeaders(req, key)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := httpc.Do(req)
+	resp, err := boundedClient(httpc).Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -258,6 +267,27 @@ func chatProbeOnce(ctx context.Context, httpc *http.Client, base, key, model str
 	// only to bound the connection and never surface it.
 	drainBody(resp.Body)
 	return resp.StatusCode, nil
+}
+
+// boundedClient caps a SINGLE verification request, so one hung provider cannot
+// consume the whole budget and starve the remaining probe attempts.
+//
+// The caller owns the total budget (the context); this owns the per-request one.
+// Without it, a probe of a dozen candidates against a provider with a slow cold
+// start would fail on the first call and report the key as unconfirmed — which
+// is a lie, and a refusal the operator cannot act on.
+func boundedClient(httpc *http.Client) *http.Client {
+	if httpc == nil {
+		return &http.Client{Timeout: perRequestVerifyTimeout}
+	}
+	// A client with no timeout inherits none, so a hung call would sit until the
+	// parent context died.
+	if httpc.Timeout <= 0 || httpc.Timeout > perRequestVerifyTimeout {
+		c := *httpc // copy: mutating the caller's client would be a surprise
+		c.Timeout = perRequestVerifyTimeout
+		return &c
+	}
+	return httpc
 }
 
 // probeModels returns the models to try in the chat probe, most likely first.
@@ -305,7 +335,7 @@ func catalogIDs(ctx context.Context, httpc *http.Client, base, key string) ([]st
 		return nil, err
 	}
 	setVerifyHeaders(req, key)
-	resp, err := httpc.Do(req)
+	resp, err := boundedClient(httpc).Do(req)
 	if err != nil {
 		return nil, err
 	}

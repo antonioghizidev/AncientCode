@@ -16,10 +16,23 @@ import (
 	"github.com/antonioghizidev/ancientcode/internal/state"
 )
 
-// verifyTimeout bounds the credential check. Cold provider starts have taken
-// minutes on the Inspiron, so this is generous — but it is a bound, because an
-// onboarding that never returns is indistinguishable from a hang (D-2026-10-02-67).
-const verifyTimeout = 90 * time.Second
+// verifyTimeout bounds the WHOLE credential check — every attempt, not each one.
+//
+// It has to cover the number of attempts, not a single call. Measured on the
+// Inspiron: NVIDIA's cold model start takes tens of seconds per request, and the
+// chat probe may walk a dozen catalog entries looking for one that answers
+// (see chatProbeCandidates). At 90s the budget covered roughly ONE attempt, so
+// the probe died on the third with "context deadline exceeded" and a perfectly
+// valid key was refused as unconfirmed.
+//
+// Six minutes is bounded but honest about the work. The operator is looking at a
+// masked prompt with a visible progress line, not at a hung process, and the
+// per-request context is still what stops a single hung call.
+const verifyTimeout = 6 * time.Minute
+
+// verifyProbeTimeout bounds ONE request of the probe, so a single hung call
+// cannot eat the whole budget and hide the remaining attempts.
+const verifyProbeTimeout = 75 * time.Second
 
 // credStore opens (or creates the directory for) the credential store.
 func credStore() (*creds.Store, error) {
