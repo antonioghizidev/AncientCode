@@ -14,18 +14,23 @@ import (
 const candKey = "nvapi-CANDIDATASECRET999"
 
 type fakeVerifier struct {
-	modelCount int
-	err        error
-	calls      int
-	gotKey     string
-	gotBaseURL string
+	modelCount  int
+	err         error
+	calls       int
+	gotKey      string
+	gotBaseURL  string
+	gotProvider string
 }
 
-func (f *fakeVerifier) Verify(_ context.Context, baseURL, key string) (int, error) {
+func (f *fakeVerifier) Verify(_ context.Context, providerID, baseURL, key string) (int, provider.Outcome, error) {
 	f.calls++
+	f.gotProvider = providerID
 	f.gotKey = key
 	f.gotBaseURL = baseURL
-	return f.modelCount, f.err
+	if f.err != nil {
+		return 0, provider.OutcomeInvalid, f.err
+	}
+	return f.modelCount, provider.OutcomeOK, nil
 }
 
 func newSvc(t *testing.T, v Verifier) (*Service, *creds.Store) {

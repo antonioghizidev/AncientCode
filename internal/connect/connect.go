@@ -23,9 +23,22 @@ import (
 // this as "chave recusada" and does NOT store anything.
 var ErrRejected = errors.New("connect: credential rejected by provider")
 
+// ErrUnconfirmed reports that the provider could neither confirm nor deny the
+// credential — it rate-limited, the probe model retired, or the transport
+// failed. It is deliberately NOT ErrRejected: telling the operator their key is
+// wrong when the provider never said so sends them chasing the wrong problem,
+// and reporting success when nothing was confirmed is worse.
+var ErrUnconfirmed = errors.New("connect: credential could not be confirmed; nothing was stored")
+
 // Verifier checks a candidate key against the provider before it is stored.
+//
+// It receives the provider id because HOW a provider authenticates is not
+// uniform: some publish an identity endpoint, some only authenticate on the
+// chat path (measured 2026-10-02, see provider/verify.go). Passing the id lets
+// the strategy follow the provider instead of assuming one endpoint answers
+// "yes" to every pasted string.
 type Verifier interface {
-	Verify(ctx context.Context, baseURL, key string) (modelCount int, err error)
+	Verify(ctx context.Context, providerID, baseURL, key string) (modelCount int, outcome provider.Outcome, err error)
 }
 
 // HTTPVerifier is the real Verifier, backed by the provider package. It is a
@@ -35,14 +48,14 @@ type HTTPVerifier struct {
 	Client *http.Client
 }
 
-// Verify performs one real request with the candidate key and reports how many
-// models the provider listed.
-func (v HTTPVerifier) Verify(ctx context.Context, baseURL, key string) (int, error) {
-	res, err := provider.VerifyCredential(ctx, v.Client, baseURL, key)
-	if err != nil {
-		return 0, err
-	}
-	return res.ModelCount, nil
+// Verify performs one real authenticating request with the candidate key.
+//
+// It returns the outcome SEPARATELY from the error so the caller can tell
+// "the key is wrong" from "we could not find out". Collapsing those two is what
+// let a public catalog endpoint pass a garbage key as verified.
+func (v HTTPVerifier) Verify(ctx context.Context, providerID, baseURL, key string) (int, provider.Outcome, error) {
+	res, err := provider.VerifyCredential(ctx, v.Client, providerID, baseURL, key)
+	return res.ModelCount, res.Outcome, err
 }
 
 // Result reports what a connect did, so every surface can tell the operator
@@ -108,19 +121,25 @@ func (s *Service) Connect(ctx context.Context, providerID, baseURL, key string) 
 	}
 
 	if s.verifier != nil {
-		count, err := s.verifier.Verify(ctx, baseURL, key)
+		count, outcome, err := s.verifier.Verify(ctx, providerID, baseURL, key)
 		if err != nil {
-			if errors.Is(err, provider.ErrUnauthorized) {
+			switch {
+			case errors.Is(err, provider.ErrUnauthorized):
+				// The provider said no. Definitive: nothing is stored.
 				return Result{}, fmt.Errorf("%w: %s", ErrRejected, redact.Redact(err.Error()))
+			case errors.Is(err, provider.ErrInconclusive):
+				// We do NOT know whether the key is good. Storing it as
+				// "verified" would be a lie the operator cannot detect; storing
+				// it silently at all would hide that it was never checked. We
+				// refuse and say exactly why.
+				return Result{}, fmt.Errorf("%w: %s", ErrUnconfirmed, redact.Redact(err.Error()))
+			default:
+				// A transport failure is also "we could not check", not
+				// "your key is wrong".
+				return Result{}, fmt.Errorf("%w: %s", ErrUnconfirmed, redact.Redact(err.Error()))
 			}
-			// The verifier's message is redacted here and not merely trusted to
-			// be safe upstream: a proxy can echo the Authorization header back
-			// inside a transport error, and this key is the fresh one the
-			// operator just pasted. Cost of redacting: a masked string in a
-			// rare error message. Cost of not doing it: the key on screen.
-			return Result{}, fmt.Errorf("connect: verification failed, nothing was stored: %s",
-				redact.Redact(err.Error()))
 		}
+		_ = outcome
 		if err := s.store.Save(providerID, key); err != nil {
 			return Result{}, err
 		}

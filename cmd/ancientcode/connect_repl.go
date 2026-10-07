@@ -81,8 +81,14 @@ func runConnectREPL(ctx context.Context, cmd command, svc *connect.Service, agen
 	res, err := svc.Connect(ctx, name, baseURL, key)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "erro:", err)
+		// As duas recusas sao distintas e o operador precisa saber qual houve:
+		// "recusada" manda revisar a chave; "não confirmada" diz que o
+		// provedor não respondeu o suficiente para dizer qualquer coisa.
 		if errors.Is(err, connect.ErrRejected) {
-			fmt.Fprintln(os.Stderr, "      a chave foi recusada; nada foi guardado")
+			fmt.Fprintln(os.Stderr, "      a chave foi recusada pelo provedor; nada foi guardado")
+		} else if errors.Is(err, connect.ErrUnconfirmed) {
+			fmt.Fprintln(os.Stderr, "      o provedor nao deu uma resposta definitiva; nada foi guardado")
+			fmt.Fprintln(os.Stderr, "      (a chave pode estar correta — tente de novo, ou export "+envNameFor(agent, name)+"=...)")
 		}
 		return
 	}

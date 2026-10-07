@@ -153,7 +153,7 @@ func authLogin(ctx context.Context, svc *connect.Service, args []string) int {
 		return 1
 	}
 
-	baseURL, _, ok := config.LookupProviderDefault(name)
+	baseURL, env, ok := config.LookupProviderDefault(name)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "erro: provider %q desconhecido\n", name)
 		return 2
@@ -174,7 +174,10 @@ func authLogin(ctx context.Context, svc *connect.Service, args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "erro:", err)
 		if errors.Is(err, connect.ErrRejected) {
-			fmt.Fprintln(os.Stderr, "      a chave foi recusada; nada foi guardado")
+			fmt.Fprintln(os.Stderr, "      a chave foi recusada pelo provedor; nada foi guardado")
+		} else if errors.Is(err, connect.ErrUnconfirmed) {
+			fmt.Fprintln(os.Stderr, "      o provedor nao deu uma resposta definitiva; nada foi guardado")
+			fmt.Fprintln(os.Stderr, "      (a chave pode estar correta — tente de novo, ou export "+env+"=...)")
 		}
 		return 1
 	}

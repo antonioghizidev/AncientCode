@@ -10,6 +10,7 @@ import (
 
 	"github.com/antonioghizidev/ancientcode/internal/connect"
 	"github.com/antonioghizidev/ancientcode/internal/creds"
+	"github.com/antonioghizidev/ancientcode/internal/provider"
 )
 
 func newConnPanelForTest(t *testing.T) (*tuiModel, *connectPanel) {
@@ -28,13 +29,23 @@ func newConnPanelForTest(t *testing.T) (*tuiModel, *connectPanel) {
 // about actual files.
 type fakeOKVerifier struct{}
 
-func (fakeOKVerifier) Verify(_ context.Context, _, _ string) (int, error) { return 7, nil }
+func (fakeOKVerifier) Verify(_ context.Context, _, _, _ string) (int, provider.Outcome, error) {
+	return 7, provider.OutcomeOK, nil
+}
 
 // fakeRejectVerifier mimics a provider that says 401.
 type fakeRejectVerifier struct{}
 
-func (fakeRejectVerifier) Verify(_ context.Context, _, _ string) (int, error) {
-	return 0, connect.ErrRejected
+func (fakeRejectVerifier) Verify(_ context.Context, _, _, _ string) (int, provider.Outcome, error) {
+	return 0, provider.OutcomeInvalid, connect.ErrRejected
+}
+
+// fakeUnconfirmedVerifier mimics a provider that could not answer (rate limit).
+// The panel must not tell the operator their key is wrong in this case.
+type fakeUnconfirmedVerifier struct{}
+
+func (fakeUnconfirmedVerifier) Verify(_ context.Context, _, _, _ string) (int, provider.Outcome, error) {
+	return 0, provider.OutcomeInconclusive, connect.ErrUnconfirmed
 }
 
 // --- S4a: a chave nao aparece na projecao, jamais ---------------------------
@@ -235,6 +246,40 @@ func TestConnectPanelRejectedKeyIsNotStored(t *testing.T) {
 }
 
 // Chave vazia: nada e guardado e o motivo e mostrado.
+// Um provider que nao respondeu nao pode ser reportado como "chave errada": a
+// distincao entre recusada e nao-confirmada e o que impede o operador de sair
+// caçando o problema errado.
+func TestConnectPanelUnconfirmedIsNotReportedAsRejected(t *testing.T) {
+	store, err := creds.Open(filepath.Join(t.TempDir(), "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := connect.New(store, fakeUnconfirmedVerifier{})
+	m := &tuiModel{credSvc: svc, hoff: map[panelID]int{}}
+	p := newConnectPanel(svc, nil)
+	m.connect = p
+
+	p.selectProvider("nvidia")
+	p.key = "talvez-seja-esta"
+	m.applyConnectDone(p, m.handleConnectKey(tea.KeyMsg{Type: tea.KeyEnter})().(connectDoneMsg))
+
+	if names, _ := svc.List(); len(names) != 0 {
+		t.Fatal("uma chave nao confirmada foi guardada")
+	}
+	body := strings.Join(connectLines(p), "\n")
+	if !strings.Contains(body, "nada foi guardado") {
+		t.Fatalf("o painel nao diz que nada foi guardado:\n%s", body)
+	}
+	// O painel mostra a mensagem real do provedor, que aqui diz "could not be
+	// confirmed" — e nao "rejected".
+	if !strings.Contains(body, "could not be confirmed") {
+		t.Fatalf("o painel nao preserva a causa real:\n%s", body)
+	}
+	if strings.Contains(body, "recusada") {
+		t.Fatalf("uma falha inconclusiva foi apresentada como recusa:\n%s", body)
+	}
+}
+
 func TestConnectPanelEmptyKeyIsRefused(t *testing.T) {
 	m, p := newConnPanelForTest(t)
 	m.connect = p

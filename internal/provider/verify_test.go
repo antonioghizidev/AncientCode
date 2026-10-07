@@ -3,163 +3,290 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
-const verifyTestKey = "nvapi-SUPERSECRETVALUE123"
+const verifyTestKey = "chave-de-teste-que-nunca-e-impressa"
 
-func modelsServer(t *testing.T, status int, body string) *httptest.Server {
+// publicCatalogServer reproduces what the REAL providers do, as measured on
+// 2026-10-02 against integrate.api.nvidia.com and openrouter.ai:
+//
+//	GET /models  ->  200 with a valid key, with an INVALID key, and with none.
+//
+// The old implementation verified with this endpoint and therefore accepted any
+// pasted string as "verified" — the smoke caught it by logging in with a
+// deliberately wrong key and being told the store had 80 verified models.
+//
+// This test is the regression for exactly that: a public catalog MUST NOT make
+// verification succeed.
+func publicCatalogServer(t *testing.T, hits *int32) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer "+verifyTestKey {
-			// O servidor de teste so aceita a chave conhecida: assim um teste
-			// que mande a chave errada falha pelo motivo certo.
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			atomic.AddInt32(hits, 1)
+			// Identical body whatever the Authorization header says — which is
+			// precisely what makes this endpoint useless as an identity check.
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"a/1"},{"id":"b/2"},{"id":"c/3"}]}`))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/key") {
+			if r.Header.Get("Authorization") == "Bearer "+verifyTestKey {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"data":{"label":"sk-or-v1-abc"}}`))
+				return
+			}
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_, _ = w.Write([]byte(body))
+		w.WriteHeader(http.StatusNotFound)
 	}))
-	t.Cleanup(srv.Close)
-	return srv
 }
 
-const catalogBody = `{"data":[{"id":"nvidia/nemotron-3.5"},{"id":"openai/gpt-oss-120b"}]}`
+// --- a licao central --------------------------------------------------------
 
-func TestVerifyCredentialAcceptsLiveKey(t *testing.T) {
-	srv := modelsServer(t, http.StatusOK, catalogBody)
-	got, err := VerifyCredential(context.Background(), srv.Client(), srv.URL, verifyTestKey)
-	if err != nil {
-		t.Fatalf("VerifyCredential: %v", err)
-	}
-	if got.ModelCount != 2 {
-		t.Fatalf("ModelCount = %d, quero 2", got.ModelCount)
-	}
-}
+func TestPublicCatalogAloneNeverCountsAsVerified(t *testing.T) {
+	var hits int32
+	srv := publicCatalogServer(t, &hits)
+	defer srv.Close()
 
-// A propriedade central do /connect: chave recusada NAO e guardada. Aqui so
-// garantimos que o erro distingue "recusada" de "problema de rede", que e o que
-// permite ao /connect dizer "digitou errado" em vez de "algo deu errado".
-func TestVerifyCredentialReportsUnauthorizedDistinctly(t *testing.T) {
-	srv := modelsServer(t, http.StatusOK, catalogBody)
-	_, err := VerifyCredential(context.Background(), srv.Client(), srv.URL, "chave-errada")
+	// This is what the old code did: hit the catalog, see 200, declare victory.
+	// It must now be an explicit failure mode for a provider that has no
+	// identity endpoint and no working chat probe.
+	_, err := VerifyCredential(context.Background(), srv.Client(), "openrouter", srv.URL, "chave-errada-qualquer")
 	if err == nil {
-		t.Fatal("chave recusada deveria dar erro")
+		t.Fatal("uma chave errada foi considerada verificada: o catalogo publico basta para passar")
 	}
-	if !errors.Is(err, ErrUnauthorized) {
-		t.Fatalf("errors.Is(err, ErrUnauthorized) = false: %v", err)
-	}
-	if strings.Contains(err.Error(), "chave-errada") {
-		t.Fatalf("erro carrega a chave recusada: %v", err)
+	if !errors.Is(err, ErrUnauthorized) && !errors.Is(err, ErrInconclusive) {
+		t.Fatalf("esperava ErrUnauthorized ou ErrInconclusive, veio %v", err)
 	}
 }
 
-// O corpo de um 401 costuma ecoar a chave submetida. Ela nao pode chegar ao
-// operador nem a um log.
-func TestVerifyUnauthorizedBodyNeverLeaksKey(t *testing.T) {
+// A key the provider actually rejects must be ErrUnauthorized (definitive),
+// and a probe that merely failed must be ErrInconclusive (unknown). Collapsing
+// the two is how the operator gets told "your key is wrong" by a rate limiter.
+func TestOutcomeDistinguishesRejectedFromUnconfirmed(t *testing.T) {
+	for name, status := range map[string]int{
+		"401": http.StatusUnauthorized,
+		"403": http.StatusForbidden,
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
+			_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, "k")
+			if !errors.Is(err, ErrUnauthorized) {
+				t.Fatalf("HTTP %d deveria ser ErrUnauthorized, veio %v", status, err)
+			}
+			if errors.Is(err, ErrInconclusive) {
+				t.Fatal("recusa definitiva nao pode virar inconclusivo")
+			}
+		})
+	}
+
+	for name, status := range map[string]int{
+		"429": http.StatusTooManyRequests,
+		"500": http.StatusInternalServerError,
+		"503": http.StatusServiceUnavailable,
+	} {
+		t.Run("inconclusivo-"+name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
+			_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, "k")
+			if !errors.Is(err, ErrInconclusive) {
+				t.Fatalf("HTTP %d deveria ser ErrInconclusive, veio %v", status, err)
+			}
+			if errors.Is(err, ErrUnauthorized) {
+				t.Fatal("rate limit nao pode ser reportado como chave invalida")
+			}
+		})
+	}
+}
+
+// A 404 from the chat probe means auth PASSED (the provider resolves auth before
+// the model) but that model cannot serve. So the probe must try another model
+// rather than declaring the key bad.
+func TestChatProbeRetriesAnotherModelOn404(t *testing.T) {
+	var attempts []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":"invalid key ` + verifyTestKey + `"}`))
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/models"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":[{"id":"morto/1"},{"id":"vivo/2"}]}`))
+		case strings.HasSuffix(r.URL.Path, "/chat/completions"):
+			body := readAllLimited(r)
+			attempts = append(attempts, body)
+			if strings.Contains(body, "morto/1") {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"detail":"model retired"}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hi"}}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))
 	defer srv.Close()
-	_, err := VerifyCredential(context.Background(), srv.Client(), srv.URL, verifyTestKey)
+
+	res, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, verifyTestKey)
+	if err != nil {
+		t.Fatalf("um 404 num modelo deveria tentar outro, nao falhar: %v", err)
+	}
+	if res.Outcome != OutcomeOK {
+		t.Fatalf("Outcome = %v, queria OutcomeOK", res.Outcome)
+	}
+	if len(attempts) < 2 {
+		t.Fatalf("esperava 2 tentativas (modelo morto, depois vivo), houve %d", len(attempts))
+	}
+	if !strings.Contains(attempts[len(attempts)-1], "vivo/2") {
+		t.Fatalf("a segunda tentativa nao usou o modelo vivo: %q", attempts[len(attempts)-1])
+	}
+}
+
+// Se TODOS os candidatos derem 404, o resultado e inconclusivo — nunca
+// "verificada" (autenticou nao e o mesmo que consegue responder) e nunca
+// "chave invalida" (a autenticacao passou).
+func TestChatProbeAllModelsRetiredIsInconclusive(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":[{"id":"a/1"},{"id":"b/2"},{"id":"c/3"},{"id":"d/4"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"detail":"model retired"}`))
+	}))
+	defer srv.Close()
+
+	_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, verifyTestKey)
+	if !errors.Is(err, ErrInconclusive) {
+		t.Fatalf("todos os modelos aposentados deveria dar inconclusivo, veio %v", err)
+	}
+	if errors.Is(err, ErrUnauthorized) {
+		t.Fatal("nao pode dizer que a chave e invalida: ela passou pela autenticacao")
+	}
+}
+
+// A sondagem e limitada: "tentar ate algo responder" seria um laco aberto quando
+// o catalogo inteiro esta morto.
+func TestChatProbeAttemptsAreBounded(t *testing.T) {
+	var n int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			w.WriteHeader(http.StatusOK)
+			var sb strings.Builder
+			sb.WriteString(`{"data":[`)
+			for i := 0; i < 50; i++ {
+				if i > 0 {
+					sb.WriteString(",")
+				}
+				fmt.Fprintf(&sb, `{"id":"m/%d"}`, i)
+			}
+			sb.WriteString(`]}`)
+			_, _ = w.Write([]byte(sb.String()))
+			return
+		}
+		atomic.AddInt32(&n, 1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	if _, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, verifyTestKey); err == nil {
+		t.Fatal("esperava inconclusivo")
+	}
+	if got := atomic.LoadInt32(&n); got > chatProbeCandidates {
+		t.Fatalf("tentou %d modelos, o limite e %d", got, chatProbeCandidates)
+	}
+}
+
+// A estrategia segue o provedor.
+func TestVerifyStrategyPerProvider(t *testing.T) {
+	if got := verifyStrategyFor("openrouter"); got != strategyKeyIdentity {
+		t.Error("openrouter deveria usar /key (medido: 401 vs 200)")
+	}
+	if got := verifyStrategyFor("nvidia"); got != strategyChatProbe {
+		t.Error("nvidia nao tem endpoint de identidade; deveria sondar o chat")
+	}
+	if got := verifyStrategyFor("litellm"); got != strategyChatProbe {
+		t.Error("litellm nao tem contrato medido; a sondagem e a escolha conservadora")
+	}
+}
+
+// O endpoint /key do openrouter e barato e definitivo: 401 invalida, 200 vale.
+func TestKeyIdentityEndpointSettlesIt(t *testing.T) {
+	var hits int32
+	srv := publicCatalogServer(t, &hits)
+	defer srv.Close()
+
+	res, err := VerifyCredential(context.Background(), srv.Client(), "openrouter", srv.URL, verifyTestKey)
+	if err != nil || res.Outcome != OutcomeOK {
+		t.Fatalf("chave valida deveria verificar: %v (%v)", err, res.Outcome)
+	}
+	_, err = VerifyCredential(context.Background(), srv.Client(), "openrouter", srv.URL, "errada")
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("chave invalida em /key deveria dar ErrUnauthorized, veio %v", err)
+	}
+}
+
+// --- invariantes de seguranca, inalteradas ---------------------------------
+
+func TestVerifyRefusesEmptyKeyAndInsecureBase(t *testing.T) {
+	if _, err := VerifyCredential(context.Background(), http.DefaultClient, "nvidia", "https://x/v1", "  "); err == nil {
+		t.Fatal("chave vazia deveria ser recusada")
+	}
+	// http nao-loopback continua proibido: a chave candidata nunca esteve
+	// terminalmente auditada.
+	//
+	// O teste exige o erro DE TRANSPORTE, nao "algum erro". Antes aceitava
+	// qualquer erro, e remover a checagem de base URL nao o fez falhar: a
+	// requisicao para o host inexistente falhava por DNS e o teste seguia
+	// verde. Era a mesma armadilha da mutacao que nao muda nada.
+	_, err := VerifyCredential(context.Background(), http.DefaultClient, "nvidia", "http://exemplo.example/v1", verifyTestKey)
+	if err == nil {
+		t.Fatal("http para host nao-loopback deveria ser recusado")
+	}
+	if !strings.Contains(err.Error(), "insecure") || !strings.Contains(err.Error(), "loopback") {
+		t.Fatalf("o erro deveria ser sobre transporte, nao sobre a request: %v", err)
+	}
+}
+
+// O id do modelo vem de um catalogo remoto e nao pode ser concatenado em JSON
+// sem escape — senao um id malicioso no catalogo reescreve o corpo da request.
+func TestProbeModelIDIsJSONEscaped(t *testing.T) {
+	if got := jsonString(`a","x":"y`); strings.Contains(got[1:len(got)-1], `"x"`) {
+		t.Fatalf("o id do modelo nao foi escapado: %s", got)
+	}
+}
+
+// A chave nunca aparece num erro.
+func TestVerifyErrorNeverCarriesTheKey(t *testing.T) {
+	const secret = "nvapi-secreta-que-nao-pode-vazar-em-erro"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// um proxy que devolve o header de autorizacao no corpo do erro
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"echo":"Bearer ` + secret + `"}`))
+	}))
+	defer srv.Close()
+	_, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, secret)
 	if err == nil {
 		t.Fatal("esperava erro")
 	}
-	if strings.Contains(err.Error(), verifyTestKey) {
-		t.Fatalf("corpo do 401 vazou a chave: %v", err)
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("a chave vazou no erro: %v", err)
 	}
 }
 
-func TestVerifyNeverLeaksKeyInAnyError(t *testing.T) {
-	cases := []struct {
-		name    string
-		status  int
-		body    string
-		baseURL string
-		key     string
-	}{
-		{"http 500 com a chave no corpo", http.StatusInternalServerError, `{"error":"` + verifyTestKey + `"}`, "", verifyTestKey},
-		{"json invalido", http.StatusOK, `{nao é json`, "", verifyTestKey},
-		{"catalogo vazio", http.StatusOK, `{"data":[]}`, "", verifyTestKey},
-		{"entradas sem id", http.StatusOK, `{"data":[{"name":"sem id"}]}`, "", verifyTestKey},
-		{"base_url http nao-loopback", http.StatusOK, catalogBody, "http://exemplo.com", verifyTestKey},
-		{"esquema invalido", http.StatusOK, catalogBody, "ftp://exemplo.com", verifyTestKey},
-		{"chave vazia", http.StatusOK, catalogBody, "", "  "},
-	}
-	for _, c := range cases {
-		base := c.baseURL
-		if base == "" {
-			s := modelsServer(t, c.status, c.body)
-			base = s.URL
-		}
-		_, err := VerifyCredential(context.Background(), http.DefaultClient, base, c.key)
-		if err == nil {
-			t.Errorf("%s: esperava erro", c.name)
-			continue
-		}
-		if strings.Contains(err.Error(), verifyTestKey) {
-			t.Errorf("%s: erro carrega a chave: %v", c.name, err)
-		}
-	}
-}
-
-// http so e aceito em loopback: um base_url cleartext nao-loopback durante a
-// VERIFICACAO mandaria a chave candidata em texto puro — e essa chave nunca foi
-// avaliada por ninguem antes.
-func TestVerifyRefusesInsecureBaseURL(t *testing.T) {
-	_, err := VerifyCredential(context.Background(), http.DefaultClient, "http://exemplo.example/v1", verifyTestKey)
-	if err == nil {
-		t.Fatal("http nao-loopback deveria ser recusado")
-	}
-	if !strings.Contains(err.Error(), "loopback") {
-		t.Fatalf("erro deveria explicar a regra do loopback: %v", err)
-	}
-	// Loopback real continua aceito (LiteLLM local).
-	for _, ok := range []string{"http://127.0.0.1:4000/v1", "http://localhost:4000/v1", "https://api.exemplo/v1"} {
-		if err := checkCredentialBaseURL(ok); err != nil {
-			t.Errorf("checkCredentialBaseURL(%q) = %v, deveria passar", ok, err)
-		}
-	}
-}
-
-// O corpo lido e limitado: um provider que responde infinitamente nao pode
-// esgotar a memoria do Inspiron.
-func TestVerifyBoundsResponseSize(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"data":[{"id":"ok/one"}],"pad":"`))
-		chunk := strings.Repeat("A", 32<<10)
-		for i := 0; i < 64; i++ {
-			if _, err := w.Write([]byte(chunk)); err != nil {
-				return
-			}
-		}
-	}))
-	defer srv.Close()
-	// Nao deve travar nem estourar memoria; pode falhar ao decodificar.
-	if _, err := VerifyCredential(context.Background(), srv.Client(), srv.URL, verifyTestKey); err != nil {
-		if strings.Contains(err.Error(), verifyTestKey) {
-			t.Fatalf("erro carrega a chave: %v", err)
-		}
-	}
-}
-
-// O contexto cancelado tem de vencer: sem deadline, um provider lento trava o
-// onboarding.
-func TestVerifyRespectsContext(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
-	}))
-	defer srv.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if _, err := VerifyCredential(ctx, srv.Client(), srv.URL, verifyTestKey); err == nil {
-		t.Fatal("contexto cancelado deveria dar erro")
-	}
+func readAllLimited(r *http.Request) string {
+	buf := make([]byte, 4096)
+	n, _ := r.Body.Read(buf)
+	return string(buf[:n])
 }
