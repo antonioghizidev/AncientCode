@@ -118,7 +118,23 @@ type ModelMemory interface {
 
 // SetModelMemory installs the persistent per-provider model memory. nil
 // disables it and restores the pre-M14 behaviour (model is session-only).
-func (l *Loop) SetModelMemory(m ModelMemory) { l.modelMemory = m }
+//
+// Installing it ALSO restores the model remembered for the CURRENT provider.
+// The Inspiron smoke caught why that matters: `/model X` wrote state.json
+// correctly, and the next session started on the config's model anyway — the
+// memory was write-only, so the only way back to X was to switch providers away
+// and return. A store nothing reads is not persistence.
+//
+// The remembered model deliberately outranks config.model: it is the operator's
+// LATER explicit choice, and config.model is the default they have not touched.
+// Fail-soft throughout: an unreadable state file must not stop a session.
+func (l *Loop) SetModelMemory(m ModelMemory) {
+	l.modelMemory = m
+	if m == nil {
+		return
+	}
+	l.restoreRememberedModel(l.CurrentProvider())
+}
 
 // SwitchModel changes the remote model for the rest of the session (D-37) and —
 // unlike the YAML, which never holds a model — remembers it for this provider so

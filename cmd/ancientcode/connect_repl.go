@@ -27,7 +27,7 @@ func runConnectREPL(ctx context.Context, cmd command, svc *connect.Service, agen
 		return
 	}
 
-	name, err := connectTarget(cmd.arg)
+	name, err := connectTarget(cmd.arg, cmd.connOpt.useEnv)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "erro:", err)
 		return
@@ -111,14 +111,28 @@ func runConnectREPL(ctx context.Context, cmd command, svc *connect.Service, agen
 
 // connectTarget validates the optional provider argument. A flag where a
 // provider name was expected is refused rather than treated as a name.
-func connectTarget(arg string) (string, error) {
-	arg = strings.TrimSpace(arg)
+//
+// useEnv must be passed in, and the reason is a bug the Inspiron smoke found:
+// the argument reaches here as the whole remainder ("nvidia --use-env"), so
+// validating it verbatim rejected the very flag this command is meant to
+// accept — and /connect --use-env silently did nothing, leaving the pin set.
+// The known flag is stripped; anything else starting with "-" is still an
+// unknown option and must be reported.
+func connectTarget(arg string, useEnv bool) (string, error) {
+	var providerTokens []string
 	for _, tok := range strings.Fields(arg) {
 		if strings.HasPrefix(tok, "-") {
+			if useEnv && tok == "--use-env" {
+				continue
+			}
 			return "", fmt.Errorf("opcao desconhecida %q; use /connect [provedor] [--use-env]", tok)
 		}
+		providerTokens = append(providerTokens, tok)
 	}
-	name := strings.ToLower(strings.TrimSpace(arg))
+	name := strings.ToLower(strings.Join(providerTokens, ""))
+	if len(providerTokens) > 1 {
+		return "", fmt.Errorf("um provider por vez; voce passou %d", len(providerTokens))
+	}
 	if name == "" {
 		return "", nil
 	}

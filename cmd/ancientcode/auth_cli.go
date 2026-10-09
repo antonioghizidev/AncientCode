@@ -12,6 +12,7 @@ import (
 	"github.com/antonioghizidev/ancientcode/internal/config"
 	"github.com/antonioghizidev/ancientcode/internal/connect"
 	"github.com/antonioghizidev/ancientcode/internal/creds"
+	"github.com/antonioghizidev/ancientcode/internal/loop"
 	"github.com/antonioghizidev/ancientcode/internal/provider"
 	"github.com/antonioghizidev/ancientcode/internal/state"
 )
@@ -142,6 +143,21 @@ func runAuthCLI(ctx context.Context, args []string) int {
 	fmt.Fprintf(os.Stderr, "erro: subcomando desconhecido %q\n", sub)
 	authUsage()
 	return 2
+}
+
+// rememberedModelFor reports whether the active model came from state.json, so
+// the banner can say so instead of leaving the operator to wonder why the model
+// differs from the YAML (the Inspiron smoke found exactly that confusion).
+func rememberedModelFor(agent *loop.Loop) (string, bool, error) {
+	if agent == nil {
+		return "", false, nil
+	}
+	st, err := stateStore()
+	if err != nil {
+		return "", false, err
+	}
+	model, ok, err := st.GetModel(agent.CurrentProvider())
+	return model, ok, err
 }
 
 // configuredModelHint returns the model from the config, so credential

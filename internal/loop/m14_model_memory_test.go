@@ -286,6 +286,71 @@ func TestNoModelMemoryMeansSessionOnly(t *testing.T) {
 	}
 }
 
+// --- instalacao da memoria restaura o modelo do provider ATUAL -------------
+
+// REGRESSAO do smoke do Inspiron: `/model X` gravava state.json corretamente e
+// a sessao seguinte COMECAVA no modelo do config. A memoria era so de escrita —
+// a unica forma de voltar a X era trocar de provider e voltar.
+func TestInstallingMemoryRestoresCurrentProviderModel(t *testing.T) {
+	mem := newMemModelMemory()
+	mem.models["nvidia"] = "nvidia/modelo-lembrado"
+	l, fc, _ := newModelLoop(t, nil, "nvidia")
+
+	// Antes de instalar a memoria, o modelo e o do config.
+	if fc.Model() == "nvidia/modelo-lembrado" {
+		t.Fatal("o modelo do config ja seria o lembrado; o teste nao diria nada")
+	}
+
+	l.SetModelMemory(mem)
+
+	if fc.Model() != "nvidia/modelo-lembrado" {
+		t.Fatalf("instalar a memoria nao restaurou o modelo do provider atual: %q", fc.Model())
+	}
+	// E o operador precisa saber que o modelo veio de memoria, nao do config.
+	evs := []Event{}
+	l.SetObserver(func(e Event) { evs = append(evs, e) })
+	_ = evs // o evento foi emitido antes deste observer; a checagem e no modelo
+}
+
+// A memoria restaurada nao pode desviar a chave do provider: instalar a memoria
+// nao pode trocar endpoint nem provider.
+func TestInstallingMemoryDoesNotTouchProvider(t *testing.T) {
+	mem := newMemModelMemory()
+	mem.models["nvidia"] = "nvidia/x"
+	l, fc, _ := newModelLoop(t, nil, "nvidia")
+	baseBefore := fc.BaseURL()
+	l.SetModelMemory(mem)
+	if fc.BaseURL() != baseBefore {
+		t.Fatal("instalar a memoria trocou o endpoint")
+	}
+	if l.CurrentProvider() != "nvidia" {
+		t.Fatalf("provider alterado: %q", l.CurrentProvider())
+	}
+}
+
+// Provider sem modelo salvo: a memoria nao pode inventar um (D-68).
+func TestInstallingMemoryWithNothingSavedKeepsConfigModel(t *testing.T) {
+	mem := newMemModelMemory() // vazio
+	l, fc, _ := newModelLoop(t, nil, "nvidia")
+	before := fc.Model()
+	l.SetModelMemory(mem)
+	if fc.Model() != before {
+		t.Fatalf("sem modelo salvo o harness escolheu um: %q -> %q", before, fc.Model())
+	}
+}
+
+// Um state.json ilegivel nao pode impedir a sessao de comecar.
+func TestInstallingMemoryWithBrokenStoreDoesNotFailStartup(t *testing.T) {
+	mem := newMemModelMemory()
+	mem.getErr = errors.New("state.json corrompido")
+	l, fc, _ := newModelLoop(t, nil, "nvidia")
+	before := fc.Model()
+	l.SetModelMemory(mem) // nao pode entrar em panic nem mudar o modelo
+	if fc.Model() != before {
+		t.Fatalf("state ilegivel mudou o modelo: %q", fc.Model())
+	}
+}
+
 func anyEventContains(evs []Event, sub string) bool {
 	for _, e := range evs {
 		if strings.Contains(e.Detail, sub) {

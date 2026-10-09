@@ -472,8 +472,20 @@ func main() {
 		agent.SetObserver(func(ev loop.Event) { renderStatus(ev.Phase.Label()) })
 	}
 
+	// The model printed must be the ACTIVE one, not the config value.
+	//
+	// The Inspiron smoke showed the banner claiming
+	// `model=nvidia/nemotron-nano-3-30b-a3b` in a session that was really running
+	// the remembered `google/diffusiongemma-26b-a4b-it`. Everything else in the
+	// codebase asks the loop what is in use; printing cfg.Model here was the one
+	// place that reported the YAML instead, so the operator's first line of
+	// orientation disagreed with the session. Reading cfg.Provider had the same
+	// problem: it never changes on /provider.
 	fmt.Fprintf(os.Stderr, "ancientcode %s — provider=%s model=%s session=%s\n",
-		version, cfg.Provider, cfg.Model, filepath.Base(sessionPath))
+		version, agent.CurrentProvider(), agent.CurrentModel(), filepath.Base(sessionPath))
+	if remembered, ok, _ := rememberedModelFor(agent); ok && remembered == agent.CurrentModel() {
+		fmt.Fprintf(os.Stderr, "modelo restaurado de state.json (provider %s)\n", agent.CurrentProvider())
+	}
 	fmt.Fprintf(os.Stderr, "toolbox_mode=%s (plan: nada mutante executa sem o seu 'y')\n%s\n",
 		cfg.ToolboxMode, helpText)
 

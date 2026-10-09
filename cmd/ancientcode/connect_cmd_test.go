@@ -79,36 +79,73 @@ func TestConnectIsParsedInEveryFrontend(t *testing.T) {
 }
 
 func TestConnectArgIsValidated(t *testing.T) {
-	// Uma opcao onde se esperava um nome de provider tem de ser recusada, e
-	// nao tratada como provider.
-	if _, err := connectTarget("--use-env"); err == nil {
-		t.Fatal("connectTarget(--use-env) deveria falhar")
+	// A opcao que ESTA de fato na linha e aceita; o resto com "-" e opcao
+	// desconhecida e recusado.
+	if name, err := connectTarget("--use-env", true); err != nil || name != "" {
+		t.Fatalf("connectTarget(\"--use-env\", true) = %q, %v", name, err)
+	}
+	if _, err := connectTarget("--use-env", false); err == nil {
+		t.Fatal("connectTarget(\"--use-env\", false) deveria falhar: a opcao nao foi pedida")
+	}
+	for _, bad := range []string{"--conecta", "-x", "--use-env=1"} {
+		if _, err := connectTarget(bad, true); err == nil {
+			t.Fatalf("connectTarget(%q, true) deveria falhar", bad)
+		}
 	}
 	// Traversal, separadores, espacos e controle EMBUTIDO: recusados.
 	for _, bad := range []string{"../etc", "a/b", "a b", "nvidia; rm -rf /", "nvid\nia", "nvid\ta"} {
-		if _, err := connectTarget(bad); err == nil {
+		if _, err := connectTarget(bad, false); err == nil {
 			t.Fatalf("connectTarget(%q) deveria falhar", bad)
 		}
 	}
+	// Mais de um provider: recusado.
+	if _, err := connectTarget("nvidia openrouter", false); err == nil {
+		t.Fatal("dois providers deveriam ser recusados")
+	}
 	// Newline no FIM e aceitavel: e o que sobra de uma colagem.
-	if name, err := connectTarget("nvidia\n"); err != nil || name != "nvidia" {
+	if name, err := connectTarget("nvidia\n", false); err != nil || name != "nvidia" {
 		t.Fatalf("connectTarget(\"nvidia\\n\") = %q, %v", name, err)
 	}
 	// Vazio significa "o provider ativo": nao e erro.
-	name, err := connectTarget("")
+	name, err := connectTarget("", false)
 	if err != nil || name != "" {
 		t.Fatalf("connectTarget(\"\") = %q, %v", name, err)
 	}
 	// Maiusculas sao normalizadas, igual a /provider faz: recusar "NVIDIA" seria
 	// uma teimosia sem ganho de seguranca.
 	for _, in := range []string{"NVIDIA", "  Nvidia  ", "OpenRouter"} {
-		name, err := connectTarget(in)
+		name, err := connectTarget(in, false)
 		if err != nil {
 			t.Fatalf("connectTarget(%q) = %v, deveria normalizar", in, err)
 		}
 		if name != strings.ToLower(strings.TrimSpace(in)) {
 			t.Fatalf("connectTarget(%q) = %q", in, name)
 		}
+	}
+}
+
+// REGRESSAO do bug encontrado no smoke do Inspiron: o argumento chega como o
+// resto inteiro ("nvidia --use-env"), e validar isso verbatim RECUSAVA a propria
+// opcao do comando — `/connect --use-env` nao fazia nada e deixava o pin ativo,
+// sem nenhuma mensagem de erro visivel.
+func TestConnectUseEnvFlagIsNotRejectedAsProvider(t *testing.T) {
+	c, ok := parseCommand("/connect nvidia --use-env")
+	if !ok || c.kind != cmdConnect {
+		t.Fatal("/connect nvidia --use-env nao foi reconhecido")
+	}
+	if !c.connOpt.useEnv {
+		t.Fatal("a opcao useEnv nao foi lida")
+	}
+	name, err := connectTarget(c.arg, c.connOpt.useEnv)
+	if err != nil {
+		t.Fatalf("a opcao --use-env deveria ser consumida, nao rejeitada: %v", err)
+	}
+	if name != "nvidia" {
+		t.Fatalf("provider = %q, queria nvidia", name)
+	}
+	// A ordem invertida tambem tem de funcionar.
+	if name, err := connectTarget("--use-env nvidia", true); err != nil || name != "nvidia" {
+		t.Fatalf("connectTarget(\"--use-env nvidia\", true) = %q, %v", name, err)
 	}
 }
 
