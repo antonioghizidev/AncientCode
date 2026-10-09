@@ -137,7 +137,11 @@ func parseConnectOpts(rest string) connectOpts {
 // search query, so "/models llama" just searches — a filter can never fail
 // silently into an empty list because of a typo.
 func parseCatalogOpts(rest string) catalogOpts {
-	var o catalogOpts
+	// agentViable starts ON: the catalog hides models this harness cannot drive
+	// unless the operator asks for everything with --viable. Measured: 395 of 469
+	// OpenRouter models qualify, so this is a small filter — but a small filter
+	// applied by default is the difference between a curated list and a dump.
+	o := catalogOpts{agentViable: true}
 	for _, tok := range strings.Fields(rest) {
 		switch strings.ToLower(tok) {
 		case "--free":

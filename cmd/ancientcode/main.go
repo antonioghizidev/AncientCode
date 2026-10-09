@@ -168,6 +168,21 @@ func cleanupSessions(workdir string, days int) ([]string, error) {
 	return removed, nil
 }
 
+// catalogPage remembers where the operator is in the ranked catalog, so
+// /models --next walks pages instead of restarting at 1 every time, and
+// /models <texto> starts back at the top.
+//
+// It is package-level on purpose. Declared inside the command loop it is
+// re-initialised on every iteration and --next silently does nothing — which is
+// exactly what the Inspiron smoke showed: page 1 of 12, over and over.
+//
+// Without state here, paging is unusable: the operator presses next, re-reads
+// page 1, and concludes the catalog is broken.
+var catalogPage = struct {
+	page int
+	cur  int // last rendered page, so --next knows where it came from
+}{}
+
 func main() {
 	flag.Parse()
 	if *flagVersion {
@@ -635,36 +650,13 @@ func main() {
 						continue
 					}
 				}
-				// catalogPage remembers where the operator is in the ranked catalog, so
-				// /models --next walks pages instead of restarting at 1 every time, and
-				// /models <texto> starts back at the top.
-				//
-				// Without it, paging is unusable: the operator presses next, re-reads page 1,
-				// and concludes the catalog is broken.
-				var catalogPage = struct {
-					page int
-					cur  int // last rendered page, so --next knows where it came from
-				}{}
-
 				entries, err := agent.ListModels(ctx)
 				if err != nil {
 					// Fail-closed: a failed listing never changes the model.
 					fmt.Fprintln(os.Stderr, "erro:", err)
 					continue
 				}
-				want := catalogPage.page
-				switch {
-				case cmd.opts.page == -1:
-					want = catalogPage.cur + 1
-				case cmd.opts.page == -2:
-					want = catalogPage.cur - 1
-				case !cmd.opts.pageSet || cmd.opts.query != "":
-					// A new filter starts at the top, unless the operator was
-					// paging the same list.
-					if !cmd.opts.pageSet {
-						want = 1
-					}
-				}
+				want := resolveCatalogPage(cmd.opts, catalogPage.cur)
 				if want < 1 {
 					want = 1
 				}
@@ -743,6 +735,32 @@ func setHasScripts(loaded []*skills.Skill) bool {
 // it (switching the session to run mode), n discards, feedback:<msg> feeds the
 // model back and replans. Returns true when the session should keep the turn.
 // ask reads one answer line honouring the input mode (raw TTY or cooked).
+// resolveCatalogPage decides which page a /models invocation should show.
+//
+// It was inline in the command loop, which made it untestable: a test could
+// check that the state variable survived, but not that --next actually resolved
+// to the NEXT page — and a mutation that pinned --next to page 1 stayed green.
+//
+// Two rules:
+//   - explicit paging (--next/--prev) moves relative to where the operator is;
+//   - anything else (a bare /models, or a new search) starts at the top, because
+//     a search landing on page 7 of a stale list reads as "nothing matches".
+func resolveCatalogPage(opt catalogOpts, cur int) int {
+	want := cur
+	switch {
+	case opt.page == -1:
+		want = cur + 1
+	case opt.page == -2:
+		want = cur - 1
+	case !opt.pageSet || opt.query != "":
+		want = 1
+	}
+	if want < 1 {
+		want = 1
+	}
+	return want
+}
+
 func runPlanFlow(ctx context.Context, agent *loop.Loop, ask func(prompt string) (string, error), plan string) bool {
 	for {
 		fmt.Println(plan)
