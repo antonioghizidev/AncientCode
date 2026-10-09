@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -22,6 +23,7 @@ func TestHungEntryDoesNotEndTheProbe(t *testing.T) {
 	perRequestVerifyTimeout = 60 * time.Millisecond
 	defer func() { perRequestVerifyTimeout = old }()
 
+	var mu sync.Mutex
 	var order []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/models" {
@@ -30,7 +32,13 @@ func TestHungEntryDoesNotEndTheProbe(t *testing.T) {
 			return
 		}
 		body := readAllLimited(r)
+		// O handler da request PENDURADA continua vivo enquanto a seguinte ja
+		// comecou: os dois handlers correm em paralelo e escreveriam no mesmo
+		// slice. -race pegou isso; a primeira versao deste teste era uma
+		// corrida de dados.
+		mu.Lock()
 		order = append(order, body)
+		mu.Unlock()
 		if strings.Contains(body, "lento/1") {
 			time.Sleep(400 * time.Millisecond) // estoura o limite por request
 			return
@@ -42,16 +50,19 @@ func TestHungEntryDoesNotEndTheProbe(t *testing.T) {
 
 	res, err := VerifyCredential(context.Background(), srv.Client(), "nvidia", srv.URL, "k", "")
 	if err != nil {
-		t.Fatalf("um vizinho pendurado nao pode_recusar a chave: %v", err)
+		t.Fatalf("um vizinho pendurado nao pode recusar a chave: %v", err)
 	}
 	if res.Outcome != OutcomeOK {
 		t.Fatalf("Outcome = %v, queria OutcomeOK", res.Outcome)
 	}
-	if len(order) < 2 {
-		t.Fatalf("a sondagem parou no primeiro modelo: %v", order)
+	mu.Lock()
+	got := append([]string(nil), order...)
+	mu.Unlock()
+	if len(got) < 2 {
+		t.Fatalf("a sondagem parou no primeiro modelo: %v", got)
 	}
-	if !strings.Contains(order[len(order)-1], "rapido/2") {
-		t.Fatalf("a ultima tentativa nao usou o modelo vivo: %q", order[len(order)-1])
+	if !strings.Contains(got[len(got)-1], "rapido/2") {
+		t.Fatalf("a ultima tentativa nao usou o modelo vivo: %q", got[len(got)-1])
 	}
 }
 

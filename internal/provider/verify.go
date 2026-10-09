@@ -71,14 +71,18 @@ const (
 	// a real network call, and "keep trying until something answers" would turn
 	// a retired model into an open-ended loop.
 	//
-	// The value is measured, not guessed. On the Inspiron, NVIDIA's catalog
-	// listed 80 models and only ONE of the first 20 answered 200 for a
-	// perfectly valid key — the rest return 404 ("Function ... not found for
-	// account"), which passes authentication and fails model resolution. A
-	// bound of 3 would have rejected a working key roughly nineteen times out of
-	// twenty. Twelve keeps that failure rate low without making /connect a
-	// long walk through a dead catalog.
-	chatProbeCandidates = 12
+	// The value is measured, not guessed, and the measurement is unflattering:
+	// on the Inspiron, NVIDIA's catalog listed 80 models and the only one that
+	// answered 200 for a perfectly valid key sat at POSITION 11 (index 11 after
+	// the configured-model hint pushed it to 12) while everything before it
+	// returned 404 ("Function ... not found for account"). Twelve therefore
+	// missed by one attempt; three would have rejected the key nearly always.
+	//
+	// Twenty-four is the honest reading: this account has a catalog that is
+	// almost entirely dead to it, and a probe that walks 24 of 80 entries takes
+	// about ten seconds of mostly-404s. It stays bounded, and the operator can
+	// always fall back to the environment variable, which the error says.
+	chatProbeCandidates = 24
 )
 
 // perRequestVerifyTimeout caps ONE verification request. Measured on the
