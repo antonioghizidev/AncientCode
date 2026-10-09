@@ -677,8 +677,10 @@ func main() {
 				// rank higher, so the page content genuinely moves. Printing the
 				// pre-check list would hide the very result asked for.
 				if didCheck {
+					// Re-render from `entries`: the probe wrote the verdicts there,
+					// and re-filtering from the stale `visible` would drop them.
 					lines, visible, pg = catalogLines(entries, cmd.opts, agent.CurrentModel(), want)
-					for _, l := range checkOutcomeLines(visible, pg, checked) {
+					for _, l := range checkOutcomeLines(entries, pg, checked) {
 						fmt.Println(redactCatalogEcho(l))
 					}
 					fmt.Println()

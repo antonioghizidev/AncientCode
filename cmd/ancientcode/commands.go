@@ -175,7 +175,7 @@ func (c command) isPrompt() bool { return c.kind == cmdNone }
 
 // helpText lists the REPL commands (shared by /help and banner).
 const helpText = "comandos: /exit /quit /reset /help /historico (!N repete) /retry /continue " +
-	"/connect [provedor] [--use-env] /model [nome|N] /models " +
+	"/connect [provedor] [--use-env] /model [nome|N] /models [--free|--all|--viable] " +
 	"/provider [nome] /context | no plano: y aprova e executa, feedback:<msg> replaneja"
 
 // modelsHelpText explains the flags the way an operator needs them: what

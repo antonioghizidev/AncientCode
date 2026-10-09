@@ -27,16 +27,19 @@ func checkConsentMessage(pg catalog.Page) string {
 
 // runCheckPage verifies the entries of the CURRENT page.
 //
-// It takes the page rather than the filtered list on purpose. /models shows 40
+// It takes the SOURCE slice, not the filtered one, and that is load-bearing.
+// catalog.Filter returns copies, so verdicts written into the filtered slice die
+// with it — and the REPL re-renders from the source right after checking, which
+// would silently drop every "verificado" tag it just paid for.
+//
+// It takes the page rather than the whole source on purpose. /models shows 40
 // of 377: probing all 377 because the operator asked to check "the list" would
 // spend nine times what the confirmation promised, which is the same class of
 // surprise the consent exists to prevent.
-func runCheckPage(ctx context.Context, ag modelChecker, visible []catalog.Entry, pg catalog.Page) ([]loop.CheckOutcome, error) {
+func runCheckPage(ctx context.Context, ag modelChecker, entries []catalog.Entry, pg catalog.Page) ([]loop.CheckOutcome, error) {
 	idxs := make([]int, 0, len(pg.Entries))
 	for _, e := range pg.Entries {
-		// Map back to the index in the filtered slice: the probe mutates the
-		// entry in place, and the page holds copies.
-		if idx := indexOfEntry(visible, e.Info.ID); idx >= 0 {
+		if idx := indexOfEntry(entries, e.Info.ID); idx >= 0 {
 			idxs = append(idxs, idx)
 		}
 	}
@@ -44,7 +47,7 @@ func runCheckPage(ctx context.Context, ag modelChecker, visible []catalog.Entry,
 		return nil, nil
 	}
 
-	out := ag.CheckModels(ctx, visible, idxs...)
+	out := ag.CheckModels(ctx, entries, idxs...)
 
 	// An unsupported provider is a capability gap, not a per-model finding: 40
 	// identical rows would bury it. Detect it from the outcomes instead of
@@ -60,11 +63,11 @@ func runCheckPage(ctx context.Context, ag modelChecker, visible []catalog.Entry,
 
 // runCheckPageIfConfirmed asks, and only probes on an explicit yes. The bool is
 // the answer; anything but "y" is a no, so a stray Enter spends nothing.
-func runCheckPageIfConfirmed(ctx context.Context, ag modelChecker, visible []catalog.Entry, pg catalog.Page, confirmed bool) ([]loop.CheckOutcome, bool) {
+func runCheckPageIfConfirmed(ctx context.Context, ag modelChecker, entries []catalog.Entry, pg catalog.Page, confirmed bool) ([]loop.CheckOutcome, bool) {
 	if !confirmed {
 		return nil, false
 	}
-	out, err := runCheckPage(ctx, ag, visible, pg)
+	out, err := runCheckPage(ctx, ag, entries, pg)
 	if err != nil {
 		return nil, false
 	}
@@ -88,13 +91,13 @@ func indexOfEntry(entries []catalog.Entry, id string) int {
 // The per-model line is the difference between "verification ran" and
 // "verification happened": 40 probes that all silently failed look exactly like
 // 40 probes that worked until the operator re-runs and compares.
-func checkOutcomeLines(visible []catalog.Entry, pg catalog.Page, out []loop.CheckOutcome) []string {
+func checkOutcomeLines(entries []catalog.Entry, pg catalog.Page, out []loop.CheckOutcome) []string {
 	lines := make([]string, 0, len(out))
 	for _, o := range out {
-		if o.Index < 0 || o.Index >= len(visible) {
+		if o.Index < 0 || o.Index >= len(entries) {
 			continue
 		}
-		e := visible[o.Index]
+		e := entries[o.Index]
 		num := (pg.Number-1)*pg.PageSize + pageOffsetOf(pg, e.Info.ID) + 1
 		var verdict string
 		switch {

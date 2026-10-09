@@ -36,6 +36,59 @@ func TestCatalogRowShowsFailed(t *testing.T) {
 	}
 }
 
+// The verdicts must survive the re-render. The REPL re-filters from the SOURCE
+// slice after checking, and catalog.Filter returns copies — so writing the
+// verdicts into the filtered slice loses them, and the rows come back without
+// the "verificado" tag the operator just paid for. The Inspiron smoke showed
+// exactly this: the outcome lines said "verificado", the table below did not.
+func TestCheckVerdictsSurviveTheRerender(t *testing.T) {
+	ag := &fakeChecker{probed: map[string]bool{}, fail: map[string]error{}}
+	entries := manyEntries(120)
+	opt := catalogOpts{agentViable: true}
+
+	// Build the page EXACTLY as the REPL does — filter then rank, not filter
+	// alone. A page built by a different path probes a different set of models,
+	// which is how a test can pass while measuring the wrong thing.
+	_, _, pg := catalogLines(entries, opt, "", 1)
+
+	if _, err := runCheckPage(context.Background(), ag, entries, pg); err != nil {
+		t.Fatal(err)
+	}
+
+	// The probed models must carry the verdict in the SOURCE slice. Look them up
+	// by ID rather than reading pg.Entries: the page holds copies taken BEFORE
+	// the probe, so it is expected — and correct — to still read CheckUnverified
+	// there.
+	for _, e := range pg.Entries {
+		idx := indexOfEntry(entries, e.Info.ID)
+		if idx < 0 {
+			t.Fatalf("%s sumiu do slice de origem", e.Info.ID)
+		}
+		if entries[idx].Check != catalog.CheckOK {
+			t.Fatalf("a entry %s nao foi marcada no slice de origem: Check=%v", e.Info.ID, entries[idx].Check)
+		}
+	}
+
+	// ...and survive the re-render, with the tag visible on the row.
+	_, visible, _ := catalogLines(entries, opt, "", 1)
+	seen := map[string]bool{}
+	for _, e := range visible {
+		if !ag.probed[e.Info.ID] {
+			continue
+		}
+		if e.Check != catalog.CheckOK {
+			t.Fatalf("a entry %s perdeu o veredito no re-render: Check=%v", e.Info.ID, e.Check)
+		}
+		if !strings.Contains(catalogRow(0, e, ""), "verificado") {
+			t.Fatalf("a row de %s nao mostra 'verificado': %s", e.Info.ID, catalogRow(0, e, ""))
+		}
+		seen[e.Info.ID] = true
+	}
+	if len(seen) == 0 {
+		t.Fatal("nenhum modelo sondado apareceu no re-render")
+	}
+}
+
 // --check must actually probe the VISIBLE page, not the whole catalog, and not
 // silently skip. Before this, --check was a no-op that only asked for consent.
 func TestCheckPageProbesVisibleEntriesOnly(t *testing.T) {
@@ -95,6 +148,47 @@ func TestCheckPageUnsupportedProvider(t *testing.T) {
 	_, err := runCheckPage(context.Background(), ag, visible, pg)
 	if !errors.Is(err, loop.ErrCheckUnsupported) {
 		t.Fatalf("err = %v, esperava ErrCheckUnsupported", err)
+	}
+}
+
+// The outcome line must carry the SAME number the operator saw in the table.
+// o.Index is an index into the whole catalog; the number shown is the position
+// in the filtered, ranked page. Using the raw index would point the operator at
+// a row that does not exist on their screen — while the check itself was fine.
+func TestCheckOutcomeLinesUseTheDisplayedNumber(t *testing.T) {
+	ag := &fakeChecker{probed: map[string]bool{}, fail: map[string]error{}}
+	entries := manyEntries(120)
+
+	// A QUERY is essential here, not decoration. With no filter, the index in
+	// the catalog and the number on screen are the same integer, so a mutation
+	// that swapped one for the other would be invisible — and it stayed green
+	// for exactly that reason on the first attempt.
+	opt := catalogOpts{agentViable: true, query: "modelo-1"}
+
+	_, _, pg := catalogLines(entries, opt, "", 1)
+	if len(pg.Entries) == 0 {
+		t.Fatal("a consulta nao devolveu nada")
+	}
+	out, err := runCheckPage(context.Background(), ag, entries, pg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := checkOutcomeLines(entries, pg, out)
+	if len(lines) == 0 {
+		t.Fatal("nenhuma linha de resultado")
+	}
+	// The first visible row is number 1 even though it sits deep in the
+	// catalog: the query dropped everything before it.
+	catalogIdx := indexOfEntry(entries, pg.Entries[0].Info.ID)
+	if catalogIdx <= 0 {
+		t.Fatalf("a consulta nao deslocou as posicoes (indice %d); o teste nao prova nada", catalogIdx)
+	}
+	first := strings.TrimSpace(lines[0])
+	if !strings.HasPrefix(first, "1.") {
+		t.Fatalf("primeira linha = %q, esperava o numero 1 (indice no catalogo: %d)", first, catalogIdx)
+	}
+	if !strings.Contains(first, pg.Entries[0].Info.ID) {
+		t.Fatalf("linha %q nao nomeia %s", first, pg.Entries[0].Info.ID)
 	}
 }
 
