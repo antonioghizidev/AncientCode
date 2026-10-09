@@ -58,8 +58,19 @@ func catalogRow(i int, e catalog.Entry, active string) string {
 	if e.Info.ContextLength > 0 {
 		tags = append(tags, "ctx "+strconv.Itoa(e.Info.ContextLength))
 	}
-	if e.Check == catalog.CheckOK {
+	// The verdict must be VISIBLE on the row, not only used by the ranking. A
+	// "sem tool" the operator cannot see is a claim the UI never made.
+	//
+	// CheckUnverified stays silent on purpose: the tri-state tools column
+	// already says nobody knows, and printing "sem tool" for a model nobody
+	// probed is the exact lie this feature exists to prevent.
+	switch e.Check {
+	case catalog.CheckOK:
 		tags = append(tags, "verificado")
+	case catalog.CheckFailed:
+		tags = append(tags, "sem tool")
+	case catalog.CheckError:
+		tags = append(tags, "erro de sonda")
 	}
 	return fmt.Sprintf("%s %3d. %s  [%s]", marker, i+1,
 		sanitizeLine(label), strings.Join(tags, ", "))

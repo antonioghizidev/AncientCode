@@ -38,6 +38,10 @@ type Client struct {
 	keyResolver  KeyResolver
 	http         *http.Client
 	maxRespBytes int64
+	// probeTimeout bounds ONE tool probe request. A field, not a constant, so a
+	// test can prove the ceiling is really applied without waiting the real 60s
+	// against a hung server.
+	probeTimeout time.Duration
 }
 
 // NewOpenAICompatible returns a client for the given base URL. The API key is
@@ -56,6 +60,7 @@ func NewOpenAICompatible(baseURL, model, apiKeyEnv string, hc *http.Client) *Cli
 		apiKeyEnv:    apiKeyEnv,
 		http:         hc,
 		maxRespBytes: maxResponseBytesDefault,
+		probeTimeout: toolProbeTimeout,
 	}
 }
 

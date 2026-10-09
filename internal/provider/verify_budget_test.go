@@ -96,24 +96,24 @@ func TestRateLimitStopsTheProbeImmediately(t *testing.T) {
 // rodam — e uma chave valida e recusada como "nao confirmada".
 func TestBoundedClientCapsASingleRequest(t *testing.T) {
 	// Cliente sem timeout: o caso perigoso, que herdaria "nenhum limite".
-	c := boundedClient(&http.Client{})
+	c := boundedClient(&http.Client{}, perRequestVerifyTimeout)
 	if c.Timeout <= 0 || c.Timeout > perRequestVerifyTimeout {
 		t.Fatalf("cliente sem timeout nao foi limitado: %v", c.Timeout)
 	}
 	// Cliente ja mais apertado e preservado.
 	tight := &http.Client{Timeout: 5 * time.Second}
-	if got := boundedClient(tight).Timeout; got != 5*time.Second {
+	if got := boundedClient(tight, perRequestVerifyTimeout).Timeout; got != 5*time.Second {
 		t.Fatalf("timeout apertado foi alterado: %v", got)
 	}
 	// O cliente do chamador nao pode ser mutado: alguem pode estar reutilizando-o.
 	orig := &http.Client{}
-	_ = boundedClient(orig)
+	_ = boundedClient(orig, perRequestVerifyTimeout)
 	if orig.Timeout != 0 {
 		t.Fatalf("boundedClient alterou o cliente do chamador: %v", orig.Timeout)
 	}
 	// nil precisa virar algo utilizavel.
-	if boundedClient(nil) == nil {
-		t.Fatal("boundedClient(nil) devolveu nil")
+	if boundedClient(nil, perRequestVerifyTimeout) == nil {
+		t.Fatal("boundedClient(nil) devolveu nil", perRequestVerifyTimeout)
 	}
 }
 

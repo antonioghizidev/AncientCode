@@ -640,16 +640,6 @@ func main() {
 				}
 				continue
 			case cmdModels:
-				if cmd.opts.check {
-					// Layer 3 costs one request per candidate model: always ask
-					// before spending the operator's quota.
-					fmt.Fprintf(os.Stderr,
-						"/models --check faz 1 requisicao por modelo candidato (custo de tokens). Continuar? [y/N] ")
-					if line, _ := askLine(""); !strings.EqualFold(strings.TrimSpace(line), "y") {
-						fmt.Fprintln(os.Stderr, "verificacao cancelada; nada foi executado")
-						continue
-					}
-				}
 				entries, err := agent.ListModels(ctx)
 				if err != nil {
 					// Fail-closed: a failed listing never changes the model.
@@ -661,6 +651,38 @@ func main() {
 					want = 1
 				}
 				lines, visible, pg := catalogLines(entries, cmd.opts, agent.CurrentModel(), want)
+
+				// --check runs AFTER the page is resolved, because the consent must
+				// name the real cost: 40 probes for a page, not 377 for the catalog.
+				// Before this, --check asked that question and then did nothing.
+				var checked []loop.CheckOutcome
+				didCheck := false
+				if cmd.opts.check {
+					fmt.Fprint(os.Stderr, checkConsentMessage(pg))
+					line, _ := askLine("")
+					if !strings.EqualFold(strings.TrimSpace(line), "y") {
+						fmt.Fprintln(os.Stderr, "verificacao cancelada; nada foi executado")
+					} else {
+						var cerr error
+						checked, cerr = runCheckPage(ctx, agent, visible, pg)
+						if cerr != nil {
+							fmt.Fprintln(os.Stderr, "erro:", cerr)
+						} else {
+							didCheck = true
+						}
+					}
+				}
+
+				// Re-render: the rows now carry the verdicts, and verified entries
+				// rank higher, so the page content genuinely moves. Printing the
+				// pre-check list would hide the very result asked for.
+				if didCheck {
+					lines, visible, pg = catalogLines(entries, cmd.opts, agent.CurrentModel(), want)
+					for _, l := range checkOutcomeLines(visible, pg, checked) {
+						fmt.Println(redactCatalogEcho(l))
+					}
+					fmt.Println()
+				}
 				catalogPage.page, catalogPage.cur = want, pg.Number
 				for _, l := range lines {
 					fmt.Println(redactCatalogEcho(l))

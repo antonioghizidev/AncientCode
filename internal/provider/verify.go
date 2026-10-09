@@ -198,7 +198,7 @@ func verifyByKeyIdentity(ctx context.Context, httpc *http.Client, base, key stri
 	}
 	setVerifyHeaders(req, key)
 
-	resp, err := boundedClient(httpc).Do(req)
+	resp, err := boundedClient(httpc, perRequestVerifyTimeout).Do(req)
 	if err != nil {
 		// The URL may carry userinfo; redact the whole message.
 		return inconclusive(0, probe, fmt.Errorf("provider: %s request failed: %s", probe, redact.Redact(err.Error())))
@@ -291,7 +291,7 @@ func chatProbeOnce(ctx context.Context, httpc *http.Client, base, key, model str
 	setVerifyHeaders(req, key)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := boundedClient(httpc).Do(req)
+	resp, err := boundedClient(httpc, perRequestVerifyTimeout).Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -309,15 +309,18 @@ func chatProbeOnce(ctx context.Context, httpc *http.Client, base, key, model str
 // Without it, a probe of a dozen candidates against a provider with a slow cold
 // start would fail on the first call and report the key as unconfirmed — which
 // is a lie, and a refusal the operator cannot act on.
-func boundedClient(httpc *http.Client) *http.Client {
+func boundedClient(httpc *http.Client, timeout time.Duration) *http.Client {
+	if timeout <= 0 {
+		timeout = perRequestVerifyTimeout
+	}
 	if httpc == nil {
-		return &http.Client{Timeout: perRequestVerifyTimeout}
+		return &http.Client{Timeout: timeout}
 	}
 	// A client with no timeout inherits none, so a hung call would sit until the
 	// parent context died.
-	if httpc.Timeout <= 0 || httpc.Timeout > perRequestVerifyTimeout {
+	if httpc.Timeout <= 0 || httpc.Timeout > timeout {
 		c := *httpc // copy: mutating the caller's client would be a surprise
-		c.Timeout = perRequestVerifyTimeout
+		c.Timeout = timeout
 		return &c
 	}
 	return httpc
@@ -368,7 +371,7 @@ func catalogIDs(ctx context.Context, httpc *http.Client, base, key string) ([]st
 		return nil, err
 	}
 	setVerifyHeaders(req, key)
-	resp, err := boundedClient(httpc).Do(req)
+	resp, err := boundedClient(httpc, perRequestVerifyTimeout).Do(req)
 	if err != nil {
 		return nil, err
 	}
