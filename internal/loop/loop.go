@@ -81,7 +81,8 @@ type Loop struct {
 	// M14 §3.7: last model per provider. An interface, not *state.Store, so
 	// this package keeps its stdlib-only dependency direction (DIP, like
 	// Approver). nil = no memory, which is the pre-M14 behaviour.
-	modelMemory ModelMemory
+	modelMemory   ModelMemory
+	modelRestored bool // true quando o modelo ativo veio de state.json (M14)
 }
 
 // New builds a loop. reg may be nil (no tools) and appr may be nil (ask

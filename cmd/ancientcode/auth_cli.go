@@ -145,7 +145,35 @@ func runAuthCLI(ctx context.Context, args []string) int {
 	return 2
 }
 
-// rememberedModelFor reports whether the active model came from state.json, so
+// banner builds the first lines the operator sees, as a PURE function.
+//
+// It used to be an inline Fprintf reading cfg.Provider and cfg.Model, and the
+// Inspiron smoke caught why that is a bug waiting to happen: the session was
+// running the model restored from state.json while the banner announced the
+// YAML's. cfg.Provider has the same problem — it never changes on /provider.
+// Everything here is asked of the loop, which is the only component that knows
+// what is actually in use.
+//
+// Pure so it can be tested: an Fprintf in main() had no test at all, and that
+// missing test is how the defect survived a green suite.
+func banner(version string, agent *loop.Loop, sessionName, toolboxMode string) string {
+	provider, model := "", ""
+	restored := false
+	if agent != nil {
+		provider, model = agent.CurrentProvider(), agent.CurrentModel()
+		restored = agent.ModelRestoredFromMemory()
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "ancientcode %s — provider=%s model=%s session=%s\n",
+		version, provider, model, sessionName)
+	if restored && model != "" {
+		fmt.Fprintf(&b, "modelo restaurado de state.json (provider %s)\n", provider)
+	}
+	fmt.Fprintf(&b, "toolbox_mode=%s (plan: nada mutante executa sem o seu 'y')\n%s\n",
+		toolboxMode, helpText)
+	return b.String()
+}
+
 // the banner can say so instead of leaving the operator to wonder why the model
 // differs from the YAML (the Inspiron smoke found exactly that confusion).
 func rememberedModelFor(agent *loop.Loop) (string, bool, error) {

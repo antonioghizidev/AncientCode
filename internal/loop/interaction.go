@@ -130,11 +130,22 @@ type ModelMemory interface {
 // Fail-soft throughout: an unreadable state file must not stop a session.
 func (l *Loop) SetModelMemory(m ModelMemory) {
 	l.modelMemory = m
+	l.modelRestored = false
 	if m == nil {
 		return
 	}
 	l.restoreRememberedModel(l.CurrentProvider())
 }
+
+// ModelRestoredFromMemory reports whether the active model came from state.json
+// rather than from the config.
+//
+// The loop is the single source of truth here on purpose. The banner used to
+// re-read state.json to decide, while the loop had been told by the injected
+// memory — two sources of truth that can disagree, and the disagreement is
+// exactly the "why is this model different from my YAML?" question the banner
+// is trying to answer.
+func (l *Loop) ModelRestoredFromMemory() bool { return l.modelRestored }
 
 // SwitchModel changes the remote model for the rest of the session (D-37) and —
 // unlike the YAML, which never holds a model — remembers it for this provider so
@@ -221,6 +232,7 @@ func (l *Loop) restoreRememberedModel(providerID string) {
 	if !ok {
 		return
 	}
+	l.modelRestored = false
 	if err := pc.SetModel(saved); err != nil {
 		// The provider said no to the remembered model. We do NOT pick another.
 		l.emit(Event{
@@ -230,6 +242,7 @@ func (l *Loop) restoreRememberedModel(providerID string) {
 		})
 		return
 	}
+	l.modelRestored = true
 	l.emit(Event{
 		Phase: PhaseProviderSwitch, Tool: "model",
 		Detail: "provider " + providerID + ": modelo lembrado restaurado: " + saved,

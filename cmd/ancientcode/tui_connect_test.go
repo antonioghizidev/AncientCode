@@ -298,26 +298,55 @@ func TestConnectPanelEmptyKeyIsRefused(t *testing.T) {
 
 // REGRESSAO de um bug que so o smoke do Inspiron pegou: LookupProviderDefault
 // devolve (baseURL, apiKeyEnv, ok), e ler na ordem inversa passou o NOME da
-// variavel de ambiente onde se espera uma URL. O sintoma na TUI era
-// "base_url scheme \"\" must be http(s)" — e nenhum teste falhou, porque todos os
-// anteriores paravam antes do dispatch.
+// variavel de ambiente onde se espera uma URL.
+//
+// A primeira versao deste teste usava um verificador FALSO que ignorava a base
+// URL, entao nao detectava nada — a mutacao do bug continuava verde. Um mock que
+// ignora o argumento sob teste nao cobre o argumento. Agora o verificador
+// RECORDE o que recebeu e o teste exige uma URL.
 func TestConnectPanelDispatchSendsRealBaseURL(t *testing.T) {
-	m, p := newConnPanelForTest(t)
+	store, err := creds.Open(filepath.Join(t.TempDir(), "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := &recordingVerifier{}
+	svc := connect.New(store, rec)
+	m := &tuiModel{credSvc: svc, hoff: map[panelID]int{}}
+	p := newConnectPanel(svc, nil)
 	m.connect = p
-	m.provider = "https://sessao.example/v1" // nao deve ser usada
+
 	p.selectProvider("nvidia")
 	p.key = "chave"
 	cmd := m.handleConnectKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("Enter nao despachou")
 	}
-	// O caminho real de rede e exercitado aqui: o painel so passa a base que o
-	// provider publica, nunca a da sessao nem o nome de uma variavel de ambiente.
-	msg := cmd().(connectDoneMsg)
-	err := msg.err
-	if err != nil && strings.Contains(err.Error(), "scheme") {
-		t.Fatalf("a base URL enviada ao verificador estava errada: %v", err)
+	_ = cmd().(connectDoneMsg)
+
+	if rec.baseURL == "" {
+		t.Fatal("o verificador nao recebeu base URL")
 	}
+	if !strings.HasPrefix(rec.baseURL, "https://") && !strings.HasPrefix(rec.baseURL, "http://") {
+		t.Fatalf("a base URL enviada nao e uma URL: %q (parece o nome de uma env var)", rec.baseURL)
+	}
+	if strings.Contains(rec.baseURL, "API_KEY") {
+		t.Fatalf("a base URL enviada e um nome de env var: %q", rec.baseURL)
+	}
+	if rec.provider != "nvidia" {
+		t.Fatalf("provider = %q", rec.provider)
+	}
+}
+
+// recordingVerifier guarda o que recebeu, em vez de devolver um sucesso fixo.
+type recordingVerifier struct {
+	provider string
+	baseURL  string
+	model    string
+}
+
+func (r *recordingVerifier) Verify(_ context.Context, providerID, baseURL, key, model string) (int, provider.Outcome, error) {
+	r.provider, r.baseURL, r.model = providerID, baseURL, model
+	return 1, provider.OutcomeOK, nil
 }
 
 // O mesmo contrato pelo caminho do REPL, onde a base vem da sessao ativa.
