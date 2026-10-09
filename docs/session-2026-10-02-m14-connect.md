@@ -179,6 +179,63 @@ de restauração já restoration inconsistente):
 
 _(O smoke foi executado; ver a seção de hardware acima.)_
 
+## Rodada 2 do smoke: mais quatro defeitos, todos achados no hardware
+
+O smoke não terminou na primeira ida. Cada rodada seguinte achou algo novo — o
+argumento a favor de smoke real e não só de testes.
+
+### 1. `/connect --use-env` não fazia nada
+
+O argumento chega ao handler como o resto inteiro (`"nvidia --use-env"`), e
+`connectTarget` o validava verbatim — recusando **a própria opção do comando**.
+Sem mensagem de erro visível: o pin simplesmente continuava ativo. Eu tinha
+anotado esse bug no começo da sessão e não corrigi; o hardware encontrou.
+
+### 2. A memória de modelo era só de escrita
+
+`/model X` gravava `state.json` corretamente — e a sessão seguinte começava no
+modelo do config. A única forma de voltar a X era trocar de provider e voltar.
+Um store que nada lê não é persistência. Instalar a memória agora **restaura** o
+modelo do provider ativo.
+
+### 3. O banner dizia o modelo do YAML, não o ativo
+
+Depois de (2) corrigido, o banner ainda anunciava
+`model=nvidia/nemotron-nano-3-30b-a3b` numa sessão que rodava
+`google/diffusiongemma-26b-a4b-it`. Todo o resto do código pergunta ao loop o que
+está em uso; `cfg.Model` era o único lugar que reportava o YAML. A primeira linha
+de orientação do operador contradizia a sessão.
+
+### 4. A TUI passava o nome da variável de ambiente como base URL
+
+`LookupProviderDefault` devolve `(baseURL, apiKeyEnv, ok)` e eu li invertido. O
+sintoma no painel era `base_url scheme "" must be http(s)`. **Nenhum teste
+falhou**: todos os anteriores paravam antes do dispatch.
+
+## O que a rodada 2 validou no hardware
+
+| Verificação | Resultado |
+|---|---|
+| `/models` persiste em `state.json`, `0600` | ok |
+| modelo lembrado volta em sessão nova | ok |
+| banner anuncia `modelo restaurado de state.json` | ok |
+| provider nunca visto orienta `/models` | ok |
+| `--use-env` solta o pin e **mantém** a chave | ok |
+| TUI: `/connect` abre, filtra, `Enter` avança | ok |
+| TUI: chave mascarada — **326 asteriscos, 0 caracteres** | ok |
+| TUI: backspace reduz a máscara | ok |
+| TUI: chave errada → `403`, recusada, nada guardado | ok |
+| TUI: chave errada **não substitui** a guardada (hash idêntico) | ok |
+| TUI: `Esc` fecha sem alterar a credencial | ok |
+| TUI: chave real → guardada, verificada, origem nomeada | ok |
+| `auth logout` apaga chave **e** pin | ok |
+
+### Um achado colateral
+
+Com o store vazio e TTY presente, o **onboarding** dispara antes da TUI e consome
+a entrada. É o D-67 como especificado — mas significa que um driver de smoke
+precisa semear o store antes de testar a TUI, senão está testando o onboarding.
+
 ## Lição que mudou o processo (D-69)
 
 Os testes POSIX de `state` e `creds` têm `Skip` para Windows. **Eles não rodavam no host** — e eu
