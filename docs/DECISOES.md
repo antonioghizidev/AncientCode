@@ -1135,3 +1135,49 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   onboarding anunciar "vou pedir a chave" e só depois falhar. O teste de TTY agora é a sondagem
   `TCGETS` (`termiosFd`), com `fd` parametrizado para o teste apontar para `/dev/null` sem trocar
   o fd 0 do binário de teste.
+
+### D-2026-10-02-70 — Verificar a chave exige um endpoint que **autentique**; "não confirmado" é uma terceira resposta
+
+- **Contexto**: o smoke do M14 no Inspiron digitou uma chave **deliberadamente errada** em
+  `auth login nvidia` e recebeu `chave guardada e verificada (80 modelos)`. A verificação **não
+  verificava**.
+- **Medição** (NVIDIA e OpenRouter reais, 2026-10-02):
+
+  | Endpoint | sem chave | chave inválida | chave válida |
+  |---|---|---|---|
+  | `nvidia/v1/models` | 200 | 200 | 200 |
+  | `openrouter/api/v1/models` | 200 | 200 | 200 |
+  | `openrouter/api/v1/key` | 401 | 401 | **200** |
+  | `nvidia/v1/chat/completions` | 401 | **401** | passa da auth |
+
+  As respostas de `/models` são **byte a byte idênticas** nos três casos (7639 e 774392 bytes).
+  Catálogo prova vivacidade, nunca identidade.
+- **Por que os testes passavam**: o mock devolvia 401 — **mais rigoroso que a realidade**. Um mock
+  mais estrito que o sistema esconde exatamente esta classe de defeito, porque o teste só passa se
+  o código for *pior* que o provider. Um teste de integração com mock devia ser lido como
+  "comportamento exigido", não como "comportamento real".
+- **Decisão**: estratégia por provedor, porque "o" endpoint de verificação não existe:
+  - `openrouter` → `GET /key` (grátis, 401 vs 200, definitivo);
+  - `nvidia` → `POST /chat/completions` com `max_tokens: 1` (custa ~1 token);
+  - `litellm` → sonda de chat (sem contrato publicado e sem instância para medir; a escolha
+    conservadora, porque a sonda não pode ser enganada por endpoint público).
+- **Terceira resposta**: `ErrInconclusive`, distinta de `ErrUnauthorized`. `401/403` = chave
+  recusada. `429/5xx/rede` = **não sabemos**. Dizer "sua chave está errada" quando o provider
+  estava com rate limit manda o operador caçar o problema errado; dizer "verificada" quando nada
+  foi confirmado é pior. Ambos não guardam.
+- **Medições que custaram três idas ao hardware**, e que valem mais que as decisões:
+  - o catálogo da NVIDIA **começa por modelos aposentados para a conta**: de 80, só **1 dos 20
+    primeiros** respondeu 200. O único vivo estava na **posição 11**. Um limite de 3 recusaria uma
+    chave válida quase sempre; 12 erraria por um. Hoje são **24**;
+  - uma entrada pendurada (`deepseek-v4.1-flash`) consumiu **75s** enquanto os vizinhos
+    respondiam em 0.5s. Devolver no primeiro timeout transformava o problema de um vizinho num
+    veredito sobre a chave — agora timeout **pula** e a sonda continua;
+  - `429/5xx` **param** a sonda: o provider está recusando de propósito, e insistir só aprofunda o
+    rate limit;
+  - o orçamento é **por request (75s) e total (6min)** separados. Com um único limite de 90s, a
+    sonda morria na terceira tentativa.
+- **Lição de processo, três vezes nesta milestone**: (a) a âncora de uma mutação que não casa
+  precisa **abortar** o script; (b) um teste que aceita "algum erro" não cobre a propriedade — ele
+  cobre "a API errada"; (c) **um artefato precisa de identidade verificada antes de concluir
+  qualquer coisa sobre ele**. Testei um binário velho (mesmo nome, mesma versão, md5 diferente) e
+  quase escrevi "o fix não funciona".

@@ -34,6 +34,84 @@ modelo lembrado por provedor. Preparo para `go install`.
    usuário. O `0600` protege contra **outro usuário do mesmo host** — e é isso que ele compra.
    A defesa real continua sendo o gate humano. Dizer o contrário seria reassurance falsa.
 
+## Smoke no Inspiron: um defeito que nenhum teste unitário podia achar
+
+O smoke não confirmou o M14 — **achou um buraco nele**.
+
+O teste 1 digitou uma chave **deliberadamente errada** e recebeu:
+
+```
+provider nvidia: chave guardada e verificada (80 modelos)
+```
+
+Ela foi guardada. A verificação **não verificava**. Medição contra os serviços reais:
+
+| Endpoint | sem chave | chave inválida | chave válida |
+|---|---|---|---|
+| `nvidia/v1/models` | **200** | **200** | 200 |
+| `openrouter/api/v1/models` | **200** | **200** | 200 |
+| `openrouter/api/v1/key` | 401 | 401 | **200** |
+| `nvidia/v1/chat/completions` | 401 | **401** | passa da auth |
+
+As respostas de `/models` são **byte a byte idênticas** (7639 e 774392 bytes). `GET /models` é
+catálogo público nos dois provedores: prova vivacidade, nunca identidade.
+
+**Por que a suíte estava verde**: meu mock devolvia 401 — *mais rigoroso que a realidade*. Um mock
+mais estrito que o sistema esconde exatamente esta classe de defeito, porque o teste só passa se
+o código for pior que o provider.
+
+Corrigido (D-2026-10-02-70): estratégia por provedor (`/key` no OpenRouter, sonda de chat de 1
+token na NVIDIA), e uma **terceira resposta** — `ErrInconclusive` — para quando o provider não dá
+resposta definitiva. `401/403` = recusada; `429/5xx/rede` = não sabemos. Antes, as duas eram
+colapsadas, e dizer "sua chave está errada" quando o provider estava com rate limit manda o
+operador caçar o problema errado.
+
+### Três medições que custaram idas ao hardware
+
+1. **O catálogo da NVIDIA começa por modelos aposentados.** De 80, só **1 dos 20 primeiros**
+   respondeu 200. O único vivo estava na **posição 11**. Um limite de 3 recusaria uma chave válida
+   quase sempre; 12 erraria por um. Hoje são 24.
+2. **Uma entrada pendurada consome tudo.** `deepseek-v4.1-flash` gastou 75s enquanto os vizinhos
+   respondiam em 0.5s. Devolver no primeiro timeout transformava o problema de um vizinho num
+   veredito sobre a chave. Timeout agora **pula** e a sonda continua.
+3. **Orçamento por request ≠ orçamento total.** Com um único limite de 90s, a sonda morria na
+   terceira tentativa. Agora são 75s por request e 6min no total.
+
+### O que passou no hardware
+
+- Binário roda no **Core 2 Duo** — `GOAMD64=v1` confirmado. Meu aviso de AVX era falso alarme:
+  o runtime do Go tem assembly vetorial atrás de feature detection.
+- `auth.json` `0600`, diretório `0700`.
+- **A chave nunca apareceu na saída** — o driver de pty a procura explicitamente como 2ª barreira.
+- `/provider` → `chave: store fixada` (S6).
+- **Turno real respondeu com o ambiente limpo** (`NVIDIA_API_KEY` removida): prova de que o store
+  alimenta as requests. Sem ela o turno funcionaria igual com ou sem store.
+- Chave errada → `403`, recusada, **nada gravado**.
+- Chave real → verificada e guardada, `key_len=70`, pin ativo.
+- Onboarding **não** disparou havia chave no ambiente (D-67); sem TTY, nada gravado (S9).
+
+## Não validado
+
+- `/connect` no painel da **TUI** (precisa de pty respondendo DSR).
+- Memória de modelo (`/models` persistindo, `/provider` restaurando).
+- `--use-env` soltando o pin.
+
+## Três lições de processo, todas nesta milestone
+
+1. **A âncora de uma mutação que não casa precisa abortar o script.** Um `python` que falha no
+   assert deixa o arquivo intacto, o teste roda sobre o código bom e sai verde.
+2. **Um teste que aceita "algum erro" não cobre a propriedade.** Mutação G (remove a checagem de
+   transporte) ficou verde porque o pedido a um host inexistente falhava por DNS. Passou a exigir o
+   erro **de transporte**.
+3. **Verifique a identidade do artefato antes de concluir qualquer coisa sobre ele.** Reconstruí o
+   binário no WSL, não recopiei para o Windows, e testei o arquivo velho — mesmo nome, mesma
+   versão. Quase escrevi "o fix não funciona". Agora o script de deploy compara **md5** em três
+   pontos.
+
+E uma sobre o `-race`: a corrida de dados que ele pegou estava **no meu teste**, não no produto —
+o handler da request pendurada continua vivo enquanto o seguinte já começa, e ambos escreviam no
+mesmo slice.
+
 ## Defeitos encontrados no caminho
 
 ### `state.write` não era atômico (o mais sério)
@@ -97,10 +175,9 @@ de restauração já restoration inconsistente):
 
 ## Não validado
 
-- **Smoke no Inspiron**: sem acesso SSH confirmado nesta sessão. `/connect` real com NIM,
-  troca de provedor com restauração de modelo e `/models` entre dois provedores seguem pendentes
-  de hardware.
 - `/models --check` (camada 3 do M12) continua dívida.
+
+_(O smoke foi executado; ver a seção de hardware acima.)_
 
 ## Lição que mudou o processo (D-69)
 
