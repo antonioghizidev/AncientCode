@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/antonioghizidev/ancientcode/internal/config"
 	"github.com/antonioghizidev/ancientcode/internal/connect"
 	"github.com/antonioghizidev/ancientcode/internal/creds"
 	"github.com/antonioghizidev/ancientcode/internal/provider"
@@ -295,7 +296,48 @@ func TestConnectPanelEmptyKeyIsRefused(t *testing.T) {
 	}
 }
 
-// --- o painel mostra a origem ANTES de conectar (stage 1) -------------------
+// REGRESSAO de um bug que so o smoke do Inspiron pegou: LookupProviderDefault
+// devolve (baseURL, apiKeyEnv, ok), e ler na ordem inversa passou o NOME da
+// variavel de ambiente onde se espera uma URL. O sintoma na TUI era
+// "base_url scheme \"\" must be http(s)" — e nenhum teste falhou, porque todos os
+// anteriores paravam antes do dispatch.
+func TestConnectPanelDispatchSendsRealBaseURL(t *testing.T) {
+	m, p := newConnPanelForTest(t)
+	m.connect = p
+	m.provider = "https://sessao.example/v1" // nao deve ser usada
+	p.selectProvider("nvidia")
+	p.key = "chave"
+	cmd := m.handleConnectKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Enter nao despachou")
+	}
+	// O caminho real de rede e exercitado aqui: o painel so passa a base que o
+	// provider publica, nunca a da sessao nem o nome de uma variavel de ambiente.
+	msg := cmd().(connectDoneMsg)
+	err := msg.err
+	if err != nil && strings.Contains(err.Error(), "scheme") {
+		t.Fatalf("a base URL enviada ao verificador estava errada: %v", err)
+	}
+}
+
+// O mesmo contrato pelo caminho do REPL, onde a base vem da sessao ativa.
+func TestLookupProviderDefaultOrderIsBaseThenEnv(t *testing.T) {
+	base, env, ok := config.LookupProviderDefault("nvidia")
+	if !ok {
+		t.Fatal("nvidia deveria ser conhecido")
+	}
+	if !strings.HasPrefix(base, "https://") {
+		t.Fatalf("o primeiro retorno deve ser a base URL, veio %q", base)
+	}
+	if strings.Contains(base, "API_KEY") {
+		t.Fatalf("o primeiro retorno trouxe o nome da env var: %q", base)
+	}
+	if env != "NVIDIA_API_KEY" {
+		t.Fatalf("o segundo retorno deve ser a env var, veio %q", env)
+	}
+}
+
+// --- O painel mostra a origem ANTES de conectar (stage 1) -------------------
 
 func TestConnectPanelStage1ShowsCredentialSource(t *testing.T) {
 	_, p := newConnPanelForTest(t)

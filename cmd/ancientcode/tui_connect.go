@@ -180,8 +180,12 @@ func (m *tuiModel) connectDispatch(p *connectPanel) tea.Cmd {
 	p.busy = true
 	p.stage = connectStageBusy
 	return func() tea.Msg {
-		_, base, ok := config.LookupProviderDefault(target)
-		if !ok {
+		// Order matters: LookupProviderDefault returns (baseURL, apiKeyEnv, ok).
+		// Reading them the other way round passes the env var NAME where a URL
+		// is expected, and the smoke on the Inspiron caught exactly that as
+		// "base_url scheme \"\" must be http(s)".
+		base, _, ok := config.LookupProviderDefault(target)
+		if !ok || base == "" {
 			return connectDoneMsg{err: errUnknownProvider(target)}
 		}
 		res, err := svc.Connect(context.Background(), target, base, key, modelHint(m.agent))
