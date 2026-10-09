@@ -207,6 +207,18 @@ func configuredModelHint() string {
 	return cfg.Model
 }
 
+// verifiedCatalogNote renders the model count only when it is actually KNOWN.
+//
+// The Inspiron smoke printed "guardada e verificada (0 modelos)" for OpenRouter,
+// which publishes 464: the catalog read hit a 64 KiB cap, the parse failed, and
+// zero was reported as if it were a fact. Saying nothing is honest; saying "0"
+// is not.
+func verifiedCatalogNote(res connect.Result) string {
+	if !res.CatalogKnown {
+		return ""
+	}
+	return fmt.Sprintf(" (%d modelos)", res.ModelCount)
+}
 func authLogin(ctx context.Context, svc *connect.Service, args []string) int {
 	// Uma chave passada como argumento seria lida por qualquer usuario do
 	// mesmo host e ficaria no historico. Recusamos explicitamente para que a
@@ -258,9 +270,9 @@ func authLogin(ctx context.Context, svc *connect.Service, args []string) int {
 		return 1
 	}
 	if res.Replaced {
-		fmt.Printf("provider %s: chave substituida e verificada (%d modelos)\n", name, res.ModelCount)
+		fmt.Printf("provider %s: chave substituida e verificada%s\n", name, verifiedCatalogNote(res))
 	} else {
-		fmt.Printf("provider %s: chave guardada e verificada (%d modelos)\n", name, res.ModelCount)
+		fmt.Printf("provider %s: chave guardada e verificada%s\n", name, verifiedCatalogNote(res))
 	}
 	return 0
 }

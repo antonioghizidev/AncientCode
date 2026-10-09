@@ -30,23 +30,23 @@ func newConnPanelForTest(t *testing.T) (*tuiModel, *connectPanel) {
 // about actual files.
 type fakeOKVerifier struct{}
 
-func (fakeOKVerifier) Verify(_ context.Context, _, _, _, _ string) (int, provider.Outcome, error) {
-	return 7, provider.OutcomeOK, nil
+func (fakeOKVerifier) Verify(_ context.Context, _, _, _, _ string) (int, bool, provider.Outcome, error) {
+	return 7, true, provider.OutcomeOK, nil
 }
 
 // fakeRejectVerifier mimics a provider that says 401.
 type fakeRejectVerifier struct{}
 
-func (fakeRejectVerifier) Verify(_ context.Context, _, _, _, _ string) (int, provider.Outcome, error) {
-	return 0, provider.OutcomeInvalid, connect.ErrRejected
+func (fakeRejectVerifier) Verify(_ context.Context, _, _, _, _ string) (int, bool, provider.Outcome, error) {
+	return 0, false, provider.OutcomeInvalid, connect.ErrRejected
 }
 
 // fakeUnconfirmedVerifier mimics a provider that could not answer (rate limit).
 // The panel must not tell the operator their key is wrong in this case.
 type fakeUnconfirmedVerifier struct{}
 
-func (fakeUnconfirmedVerifier) Verify(_ context.Context, _, _, _, _ string) (int, provider.Outcome, error) {
-	return 0, provider.OutcomeInconclusive, connect.ErrUnconfirmed
+func (fakeUnconfirmedVerifier) Verify(_ context.Context, _, _, _, _ string) (int, bool, provider.Outcome, error) {
+	return 0, false, provider.OutcomeInconclusive, connect.ErrUnconfirmed
 }
 
 // --- S4a: a chave nao aparece na projecao, jamais ---------------------------
@@ -344,9 +344,9 @@ type recordingVerifier struct {
 	model    string
 }
 
-func (r *recordingVerifier) Verify(_ context.Context, providerID, baseURL, key, model string) (int, provider.Outcome, error) {
+func (r *recordingVerifier) Verify(_ context.Context, providerID, baseURL, key, model string) (int, bool, provider.Outcome, error) {
 	r.provider, r.baseURL, r.model = providerID, baseURL, model
-	return 1, provider.OutcomeOK, nil
+	return 1, true, provider.OutcomeOK, nil
 }
 
 // O mesmo contrato pelo caminho do REPL, onde a base vem da sessao ativa.

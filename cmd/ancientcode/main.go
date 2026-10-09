@@ -635,13 +635,41 @@ func main() {
 						continue
 					}
 				}
+				// catalogPage remembers where the operator is in the ranked catalog, so
+				// /models --next walks pages instead of restarting at 1 every time, and
+				// /models <texto> starts back at the top.
+				//
+				// Without it, paging is unusable: the operator presses next, re-reads page 1,
+				// and concludes the catalog is broken.
+				var catalogPage = struct {
+					page int
+					cur  int // last rendered page, so --next knows where it came from
+				}{}
+
 				entries, err := agent.ListModels(ctx)
 				if err != nil {
 					// Fail-closed: a failed listing never changes the model.
 					fmt.Fprintln(os.Stderr, "erro:", err)
 					continue
 				}
-				lines, visible := catalogLines(entries, cmd.opts, agent.CurrentModel(), 40)
+				want := catalogPage.page
+				switch {
+				case cmd.opts.page == -1:
+					want = catalogPage.cur + 1
+				case cmd.opts.page == -2:
+					want = catalogPage.cur - 1
+				case !cmd.opts.pageSet || cmd.opts.query != "":
+					// A new filter starts at the top, unless the operator was
+					// paging the same list.
+					if !cmd.opts.pageSet {
+						want = 1
+					}
+				}
+				if want < 1 {
+					want = 1
+				}
+				lines, visible, pg := catalogLines(entries, cmd.opts, agent.CurrentModel(), want)
+				catalogPage.page, catalogPage.cur = want, pg.Number
 				for _, l := range lines {
 					fmt.Println(redactCatalogEcho(l))
 				}

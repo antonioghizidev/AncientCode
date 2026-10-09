@@ -33,6 +33,8 @@ func catalogOptsOf(opt catalogOpts) catalog.Options {
 		Query:          opt.query,
 		FreeOnly:       opt.free,
 		IncludeNonChat: opt.includeNonChat,
+		RequireTools:   opt.agentViable,
+		AgentViable:    opt.agentViable,
 	}
 }
 
@@ -66,23 +68,33 @@ func catalogRow(i int, e catalog.Entry, active string) string {
 // catalogLines renders the visible slice plus a trailing note and the next
 // action. Returns the lines and the filtered slice the numbers refer to (so a
 // later "/model N" cannot drift onto a different list).
-func catalogLines(entries []catalog.Entry, opt catalogOpts, active string, max int) ([]string, []catalog.Entry) {
+// catalogLines renders one PAGE of the filtered, ranked catalog.
+//
+// It used to take a `max` and stop with "... +N", which quietly denied access to
+// the rest: the operator was told they existed and given no way to reach them.
+// Now the remainder is reachable with /models --next / --prev (M14, after
+// measuring 395 models that clear this harness's requirements).
+func catalogLines(entries []catalog.Entry, opt catalogOpts, active string, page int) ([]string, []catalog.Entry, catalog.Page) {
 	visible := catalog.Filter(entries, catalogOptsOf(opt))
 	visible = catalog.Rank(visible, active)
-	lines := make([]string, 0, len(visible)+3)
-	for i, e := range visible {
-		if max > 0 && i >= max {
-			lines = append(lines, fmt.Sprintf("    ... +%d (use /models <texto> para filtrar)", len(visible)-i))
-			break
-		}
-		lines = append(lines, catalogRow(i, e, active))
+	pg := catalog.Paginate(visible, page, catalog.DefaultPageSize)
+	lines := make([]string, 0, len(pg.Entries)+4)
+	for i, e := range pg.Entries {
+		// The number shown is the index in the FULL filtered list, not in the
+		// page: `/model <numero>` selects by that number, so it has to be the
+		// number the operator actually sees.
+		lines = append(lines, catalogRow((pg.Number-1)*pg.PageSize+i, e, active))
 	}
 	if len(visible) == 0 {
 		lines = append(lines, "  (nenhum modelo corresponde ao filtro)")
 	}
+	if pg.TotalPages > 1 {
+		lines = append(lines, fmt.Sprintf("  pagina %d de %d (%d modelos no total)   /models --next  /models --prev",
+			pg.Number, pg.TotalPages, pg.Total))
+	}
 	lines = append(lines, "  "+catalogNote(entries, opt))
 	lines = append(lines, "  selecione com /model <numero>")
-	return lines, visible
+	return lines, visible, pg
 }
 
 // sanitizeLine mirrors the TUI paint hardening for rows produced here (the REPL

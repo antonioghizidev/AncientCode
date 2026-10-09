@@ -209,7 +209,7 @@ func (m *tuiModel) applyConnectDone(p *connectPanel, msg connectDoneMsg) {
 		verb = "chave substituida e verificada"
 	}
 	p.errMsg = ""
-	p.result = verb + " (" + itoa(msg.res.ModelCount) + " modelos); origem em uso: " + string(msg.res.Source)
+	p.result = verb + verifiedCatalogNote(msg.res) + "; origem em uso: " + string(msg.res.Source)
 	// Mirror the outcome onto the session panel so it survives scrolling away.
 	m.appendSession("connect: provider " + msg.res.Provider + ": " + p.result)
 	if m.agent != nil {

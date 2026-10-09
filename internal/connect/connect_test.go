@@ -22,15 +22,15 @@ type fakeVerifier struct {
 	gotProvider string
 }
 
-func (f *fakeVerifier) Verify(_ context.Context, providerID, baseURL, key, _ string) (int, provider.Outcome, error) {
+func (f *fakeVerifier) Verify(_ context.Context, providerID, baseURL, key, _ string) (int, bool, provider.Outcome, error) {
 	f.calls++
 	f.gotProvider = providerID
 	f.gotKey = key
 	f.gotBaseURL = baseURL
 	if f.err != nil {
-		return 0, provider.OutcomeInvalid, f.err
+		return 0, false, provider.OutcomeInvalid, f.err
 	}
-	return f.modelCount, provider.OutcomeOK, nil
+	return f.modelCount, true, provider.OutcomeOK, nil
 }
 
 func newSvc(t *testing.T, v Verifier) (*Service, *creds.Store) {

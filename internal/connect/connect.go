@@ -38,7 +38,7 @@ var ErrUnconfirmed = errors.New("connect: credential could not be confirmed; not
 // the strategy follow the provider instead of assuming one endpoint answers
 // "yes" to every pasted string.
 type Verifier interface {
-	Verify(ctx context.Context, providerID, baseURL, key, modelHint string) (modelCount int, outcome provider.Outcome, err error)
+	Verify(ctx context.Context, providerID, baseURL, key, modelHint string) (modelCount int, catalogKnown bool, outcome provider.Outcome, err error)
 }
 
 // HTTPVerifier is the real Verifier, backed by the provider package. It is a
@@ -53,20 +53,21 @@ type HTTPVerifier struct {
 // It returns the outcome SEPARATELY from the error so the caller can tell
 // "the key is wrong" from "we could not find out". Collapsing those two is what
 // let a public catalog endpoint pass a garbage key as verified.
-func (v HTTPVerifier) Verify(ctx context.Context, providerID, baseURL, key, modelHint string) (int, provider.Outcome, error) {
+func (v HTTPVerifier) Verify(ctx context.Context, providerID, baseURL, key, modelHint string) (int, bool, provider.Outcome, error) {
 	res, err := provider.VerifyCredential(ctx, v.Client, providerID, baseURL, key, modelHint)
-	return res.ModelCount, res.Outcome, err
+	return res.ModelCount, res.CatalogKnown, res.Outcome, err
 }
 
 // Result reports what a connect did, so every surface can tell the operator
 // the truth about which key is now in use (D-2026-10-02-66).
 type Result struct {
-	Provider   string
-	Stored     bool
-	Verified   bool // a real request confirmed the key before storing
-	Replaced   bool // there was already a key for this provider
-	ModelCount int  // how many models the provider listed
-	Source     creds.Source
+	Provider     string
+	Stored       bool
+	Verified     bool // a real request confirmed the key before storing
+	Replaced     bool // there was already a key for this provider
+	ModelCount   int  // how many models the provider listed (0 if CatalogKnown is false)
+	CatalogKnown bool // false quando o catalogo nao pode ser lido; "0 modelos" seria uma afirmacao falsa
+	Source       creds.Source
 }
 
 // String renders the outcome for logs and tests. It carries no key: Result has
@@ -121,7 +122,7 @@ func (s *Service) Connect(ctx context.Context, providerID, baseURL, key, modelHi
 	}
 
 	if s.verifier != nil {
-		count, outcome, err := s.verifier.Verify(ctx, providerID, baseURL, key, modelHint)
+		count, catalogKnown, outcome, err := s.verifier.Verify(ctx, providerID, baseURL, key, modelHint)
 		if err != nil {
 			switch {
 			case errors.Is(err, provider.ErrUnauthorized):
@@ -144,12 +145,13 @@ func (s *Service) Connect(ctx context.Context, providerID, baseURL, key, modelHi
 			return Result{}, err
 		}
 		return Result{
-			Provider:   providerID,
-			Stored:     true,
-			Replaced:   replaced,
-			Verified:   true,
-			ModelCount: count,
-			Source:     creds.SourceStoreFixed,
+			Provider:     providerID,
+			Stored:       true,
+			Replaced:     replaced,
+			Verified:     true,
+			ModelCount:   count,
+			CatalogKnown: catalogKnown,
+			Source:       creds.SourceStoreFixed,
 		}, nil
 	}
 

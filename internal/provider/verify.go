@@ -54,10 +54,14 @@ type VerifyResult struct {
 	// Status is the HTTP status that decided the outcome (0 when the request
 	// never completed). The UI names it so the operator sees the real reason.
 	Status int
-	// ModelCount is how many catalog entries the provider published. It is
-	// free to fetch (the catalog is public on both measured providers) and it
-	// warms the list the /models picker will need.
+	// ModelCount is how many catalog entries the provider published.
 	ModelCount int
+	// CatalogKnown is false when the catalog could not be read. It exists
+	// because ModelCount==0 is ambiguous: it can mean "the provider really
+	// publishes nothing" or "we could not parse the listing", and reporting the
+	// second as "0 modelos" asserts something we do not know. The Inspiron
+	// smoke printed exactly that about OpenRouter, a provider with 464 models.
+	CatalogKnown bool
 	// Probe is a short description of the request that decided the outcome,
 	// for the error message. It never contains the key.
 	Probe string
@@ -66,6 +70,18 @@ type VerifyResult struct {
 const (
 	// maxVerifyResponseBytes bounds the body read during verification.
 	maxVerifyResponseBytes = 64 << 10 // 64 KiB
+
+	// maxCatalogResponseBytes bounds a catalog read. It has to be much larger
+	// than maxVerifyResponseBytes, and the reason is measured, not guessed:
+	// OpenRouter's `/models` answers 756 KiB, so the old 64 KiB cap truncated it
+	// mid-JSON, the parse failed, and /connect reported the honest key as
+	// "guardada e verificada (0 modelos)" — a wrong number about a provider
+	// with 464 models, discovered on the Inspiron.
+	//
+	// Two mebibytes covers the largest catalog observed with room to spare,
+	// while still bounding what a hostile or broken endpoint can make us
+	// buffer.
+	maxCatalogResponseBytes = 2 << 20 // 2 MiB
 	// chatProbeCandidates is how many catalog models the chat probe will try
 	// before declaring itself inconclusive. Bounded on purpose: each attempt is
 	// a real network call, and "keep trying until something answers" would turn
@@ -132,9 +148,12 @@ func VerifyCredential(ctx context.Context, httpc *http.Client, providerID, baseU
 	}
 
 	// Best effort: count the catalog so the operator sees "N modelos" and the
-	// /models picker starts warm. Never turns a successful check into a failure.
+	// /models picker starts warm. Never turns a successful check into a failure —
+	// but it records whether the count is KNOWN, so an unreadable listing is not
+	// reported as a provider with zero models.
 	if count, cerr := catalogCount(ctx, httpc, base, key); cerr == nil {
 		res.ModelCount = count
+		res.CatalogKnown = true
 	}
 	return res, nil
 }
@@ -358,7 +377,7 @@ func catalogIDs(ctx context.Context, httpc *http.Client, base, key string) ([]st
 		drainBody(resp.Body)
 		return nil, fmt.Errorf("provider: catalog HTTP %d", resp.StatusCode)
 	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxVerifyResponseBytes))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxCatalogResponseBytes))
 	if err != nil {
 		return nil, err
 	}

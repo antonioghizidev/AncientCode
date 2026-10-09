@@ -95,9 +95,9 @@ func runConnectREPL(ctx context.Context, cmd command, svc *connect.Service, agen
 
 	switch {
 	case res.Replaced:
-		fmt.Printf("provider %s: chave substituida, verificada, guardada (%d modelos)\n", name, res.ModelCount)
+		fmt.Printf("provider %s: chave substituida, verificada, guardada%s\n", name, verifiedCatalogNote(res))
 	default:
-		fmt.Printf("provider %s: chave guardada, verificada (%d modelos)\n", name, res.ModelCount)
+		fmt.Printf("provider %s: chave guardada, verificada%s\n", name, verifiedCatalogNote(res))
 	}
 	fmt.Printf("  origem da chave em uso: %s\n", res.Source)
 	if name != agent.CurrentProvider() {

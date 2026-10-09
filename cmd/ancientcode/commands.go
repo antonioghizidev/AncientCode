@@ -39,6 +39,19 @@ type catalogOpts struct {
 	includeNonChat bool
 	check          bool
 	query          string
+	// agentViable is ON by default: the catalog hides models this harness cannot
+	// drive (no tool calling disclosed, or a context too small for one turn).
+	//
+	// Measured 2026-10-02 on OpenRouter: 395 of 469 models qualify, so this is a
+	// small filter — ordering and paging carry the usability, not this.
+	// `/models --viable` turns it off and shows everything the provider lists.
+	agentViable bool
+	// page is 1-based. -1 means "next" and -2 means "prev", resolved by the
+	// caller against the page it last rendered; the parser cannot know it.
+	page int
+	// pageSet records that the operator explicitly asked to page, so
+	// /models <texto> starts back at page 1 instead of sticking wherever it was.
+	pageSet bool
 }
 
 // command is the parsed form of one REPL line.
@@ -131,8 +144,16 @@ func parseCatalogOpts(rest string) catalogOpts {
 			o.free = true
 		case "--all":
 			o.includeNonChat = true
+		case "--viable":
+			o.agentViable = false
 		case "--check":
 			o.check = true
+		case "--next":
+			// -1 and -2 are resolved against the current page by the caller;
+			// the parser has no idea what page the operator is on.
+			o.page, o.pageSet = -1, true
+		case "--prev":
+			o.page, o.pageSet = -2, true
 		default:
 			if o.query == "" {
 				o.query = tok

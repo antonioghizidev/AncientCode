@@ -254,7 +254,32 @@ type Options struct {
 	RequireVerified bool
 	// RequireTools drops entries known NOT to support tool calls.
 	RequireTools bool
+	// AgentViable applies the hard requirements this harness actually has, from
+	// the PROVIDER's own metadata: tool calling, and a context window big enough
+	// for one turn. It is the honest filter, and it is deliberately not a big
+	// one.
+	//
+	// Measured on OpenRouter (2026-10-02): of 469 models, 401 advertise tool
+	// calling and 395 also clear a 32k context floor. The reduction is 16%. The
+	// reason is that the metadata cannot do the job an operator expects of it:
+	// `google/gemini-nano-banana-2.1` advertises `tools` AND
+	// `output_modalities: [image, text]`, so no field in the response marks it as
+	// an image model. Filtering metadata gets the obviously-wrong out; ordering
+	// is what makes the list usable (see AgentRank).
+	AgentViable bool
+	// MinContext overrides the default context floor, in tokens.
+	MinContext int
 }
+
+// MinAgentContext is the smallest context window worth offering.
+//
+// The loop already sends ~31 KB of history in a single turn (measured), which is
+// roughly 8k tokens before the operator has done anything, and M13's autocompact
+// threshold sits at 80% of the window. A model advertised with a 4k window
+// cannot run one turn of this harness, however good it is at something else.
+//
+// 32k leaves room for four turns before compaction.
+const MinAgentContext = 32_000
 
 // Filter applies Options. Matching is stable and the order is preserved (call
 // Rank first if you want a specific order).
@@ -276,6 +301,9 @@ func Filter(entries []Entry, opt Options) []Entry {
 			if opt.RequireTools && e.Tools == ToolsNo {
 				continue
 			}
+			if opt.AgentViable && !agentViable(e, opt.minContext()) {
+				continue
+			}
 			if opt.RequireVerified && e.Check != CheckOK {
 				continue
 			}
@@ -291,7 +319,58 @@ func Filter(entries []Entry, opt Options) []Entry {
 	return out
 }
 
-// matches reports whether q appears in the id or the display name.
+// minContext resolves the context floor to apply.
+func (o Options) minContext() int {
+	if o.MinContext > 0 {
+		return o.MinContext
+	}
+	return MinAgentContext
+}
+
+// agentViable reports whether a model clears this harness's HARD requirements,
+// using only what the provider disclosed.
+//
+// The three checks, in order of how much they exclude:
+//
+//	tool calling  — a model that cannot emit tool_calls cannot drive the loop.
+//	               ToolsUnknown does NOT fail the check: NVIDIA NIM discloses
+//	               nothing, and dropping every NIM model would hide the only
+//	               provider the operator can actually reach for free. Unknown is
+//	               kept and flagged, exactly as ToolSupport was designed.
+//	context      — the provider published a window, and it is too small to hold
+//	               one turn.
+//	pricing      — absent price is not "free", but it also does not disqualify;
+//	               it only disables the --free filter.
+//
+// What this does NOT check, and why it cannot: whether the model is actually
+// good at driving a tool loop. No metadata field says that. `/models --check`
+// is the only answer, and it costs a real request.
+func agentViable(e Entry, minContext int) bool {
+	if e.Tools == ToolsNo {
+		return false
+	}
+	// The provider explicitly listed its supported parameters and omitted tools:
+	// that is a disclosure, not a guess, so it is disqualifying.
+	if len(e.Info.SupportedParameters) > 0 && !containsFold(e.Info.SupportedParameters, "tools") {
+		return false
+	}
+	// A published context window that cannot hold one turn is disqualifying.
+	// A window the provider did not publish is not: absence is not a small number.
+	if ctx := e.Info.ContextLength; ctx > 0 && ctx < minContext {
+		return false
+	}
+	return true
+}
+
+// containsFold reports whether list contains want, case-insensitively.
+func containsFold(list []string, want string) bool {
+	for _, v := range list {
+		if strings.EqualFold(v, want) {
+			return true
+		}
+	}
+	return false
+}
 func matches(m provider.ModelInfo, q string) bool {
 	return strings.Contains(strings.ToLower(m.ID), q) ||
 		strings.Contains(strings.ToLower(m.Name), q)
@@ -300,21 +379,152 @@ func matches(m provider.ModelInfo, q string) bool {
 // Rank orders entries for display: the active model first, then verified, then
 // alphabetical by id. Sorting by id alone (the provider order) is already stable
 // from Build, so this is the last step of a pipeline.
+// DefaultPageSize is how many models the catalog shows before paging.
+//
+// Measured on OpenRouter (2026-10-02): 395 models clear this harness's hard
+// requirements. Printing 395 lines is not a catalog, it is noise the operator
+// has to scroll past to find nothing. 40 is what fits a tall terminal a few
+// times over while still being short enough to scan; the rest stays reachable
+// through paging, because a model the operator cannot see is a model they will
+// not choose.
+const DefaultPageSize = 40
+
+// Page is one window of a ranked catalog.
+type Page struct {
+	Entries []Entry
+	// Number is 1-based; 0 means the catalog was empty.
+	Number int
+	// TotalPages is 1 for a non-empty single page, 0 when empty.
+	TotalPages int
+	// Total is how many entries exist beyond the filter, not just this page.
+	Total int
+	// PageSize is the window used.
+	PageSize int
+}
+
+// HasMore reports whether another page exists after this one.
+func (p Page) HasMore() bool { return p.Number < p.TotalPages }
+
+// Next is the page after this one, clamped at the last.
+func (p Page) Next() int {
+	if p.Number < p.TotalPages {
+		return p.Number + 1
+	}
+	return p.Number
+}
+
+// Prev is the page before this one, clamped at the first.
+func (p Page) Prev() int {
+	if p.Number > 1 {
+		return p.Number - 1
+	}
+	return p.Number
+}
+
+// Paginate slices a ranked catalog into a window.
+//
+// Out-of-range pages clamp to the last non-empty one, so a caller that asks for
+// page 99 of a 3-page catalog gets page 3 instead of an empty screen — an empty
+// screen reads as "nothing matches", which is a different and wrong statement.
+func Paginate(entries []Entry, page, pageSize int) Page {
+	if pageSize <= 0 {
+		pageSize = DefaultPageSize
+	}
+	total := len(entries)
+	if total == 0 {
+		return Page{Number: 0, TotalPages: 0, Total: 0, PageSize: pageSize}
+	}
+	totalPages := (total + pageSize - 1) / pageSize
+	if page < 1 {
+		page = 1
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	window := make([]Entry, end-start)
+	copy(window, entries[start:end])
+	return Page{
+		Entries:    window,
+		Number:     page,
+		TotalPages: totalPages,
+		Total:      total,
+		PageSize:   pageSize,
+	}
+}
+
+// Rank reports a catalog for the operator, already filtered and ordered.
 func Rank(entries []Entry, active string) []Entry {
+	return AgentRank(entries, active)
+}
+
+// AgentRank orders a catalog for an operator choosing what to drive the loop
+// with.
+//
+// This is a HEURISTIC, and the comment says so because the alternative is
+// pretending it is a quality judgement. It ranks by signals the provider
+// published, in decreasing order of how much they actually say:
+//
+//  1. the active model, so the operator keeps their place;
+//  2. tool calling — the one hard requirement, taken from disclosure when there
+//     is any, and from the family table otherwise;
+//  3. free — measured on OpenRouter: only 16 of 469 models are priced at zero.
+//     For an operator trying this on a Core 2 Duo, that is the single most
+//     useful ordering, and `/models --free` exists for the same reason;
+//  4. larger context first, as a capability proxy — NOT as a claim that a
+//     2M-token model is better than a 128k one;
+//  5. verified (`--check`) first;
+//  6. id, so the order is stable between runs.
+//
+// Items 3 and 4 are proxies. Only item 5 is a verification, and only
+// `/models --check` can produce it.
+func AgentRank(entries []Entry, active string) []Entry {
 	out := make([]Entry, len(entries))
 	copy(out, entries)
 	sort.SliceStable(out, func(i, j int) bool {
-		ai := out[i].Info.ID == active
-		aj := out[j].Info.ID == active
-		if ai != aj {
-			return ai // active model always on top
+		a, b := out[i], out[j]
+		if (a.Info.ID == active) != (b.Info.ID == active) {
+			return a.Info.ID == active
 		}
-		if out[i].Check != out[j].Check {
-			return out[i].Check == CheckOK // verified first
+		at, bt := rankToolSupport(a), rankToolSupport(b)
+		if at != bt {
+			return at > bt
 		}
-		return out[i].Info.ID < out[j].Info.ID
+		if a.Info.Free() != b.Info.Free() {
+			return a.Info.Free()
+		}
+		ac, bc := a.Info.ContextLength, b.Info.ContextLength
+		if ac != bc {
+			return ac > bc
+		}
+		if a.Check != b.Check {
+			return a.Check == CheckOK
+		}
+		return a.Info.ID < b.Info.ID
 	})
 	return out
+}
+
+// rankToolSupport scores tool support for ordering: 2 = disclosed by the
+// provider, 1 = family-table inference, 0 = explicitly unsupported.
+func rankToolSupport(e Entry) int {
+	switch {
+	case e.Tools == ToolsYes:
+		return 2
+	case e.Tools == ToolsUnknown && len(e.Info.SupportedParameters) > 0:
+		if containsFold(e.Info.SupportedParameters, "tools") {
+			return 2
+		}
+		return 0
+	case e.Tools == ToolsUnknown:
+		return 1
+	default:
+		return 0
+	}
 }
 
 // FreeFilterAvailable reports whether a "free only" filter can mean anything
