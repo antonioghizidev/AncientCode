@@ -161,7 +161,7 @@ func TestCheckOutcomeLinesUseTheDisplayedNumber(t *testing.T) {
 
 	// A QUERY is essential here, not decoration. With no filter, the index in
 	// the catalog and the number on screen are the same integer, so a mutation
-	// that swapped one for the other would be invisible — and it stayed green
+	// that swapped one for the other would be invisible - and it stayed green
 	// for exactly that reason on the first attempt.
 	opt := catalogOpts{agentViable: true, query: "modelo-1"}
 
@@ -189,6 +189,53 @@ func TestCheckOutcomeLinesUseTheDisplayedNumber(t *testing.T) {
 	}
 	if !strings.Contains(first, pg.Entries[0].Info.ID) {
 		t.Fatalf("linha %q nao nomeia %s", first, pg.Entries[0].Info.ID)
+	}
+}
+
+// The call site must pass the SOURCE slice, and this asserts it end to end.
+//
+// This is the exact defect the Inspiron smoke showed: main.go passed `visible`
+// (the filtered copies) to runCheckPage while the REPL re-rendered from
+// `entries`, so every verdict was written to a throwaway slice. The check ran,
+// the request was spent, and the operator saw the model named wrong in the
+// outcome line and no "verificado" tag on the row.
+//
+// A helper-level test cannot catch this — the helper was correct; the caller
+// was wrong. So the assertion is on the effect through the same two calls main
+// makes, in the same order.
+func TestCheckPageFromTheCallSiteKeepsVerdictsAndNames(t *testing.T) {
+	ag := &fakeChecker{probed: map[string]bool{}, fail: map[string]error{}}
+	entries := manyEntries(120)
+	opt := catalogOpts{agentViable: true, query: "modelo-1"}
+
+	lines, visible, pg := catalogLines(entries, opt, "", 1)
+	if len(visible) == 0 {
+		t.Fatal("nada visivel")
+	}
+	wantID := pg.Entries[0].Info.ID
+
+	// What main.go does: check the SOURCE, then re-render from the SOURCE.
+	checked, err := runCheckPage(context.Background(), ag, entries, pg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines, visible, pg = catalogLines(entries, opt, "", 1)
+	outLines := checkOutcomeLines(entries, pg, checked)
+
+	if len(outLines) == 0 {
+		t.Fatal("nenhuma linha de resultado")
+	}
+	if !strings.Contains(outLines[0], wantID) {
+		t.Fatalf("linha de resultado nomeia %s, mas a pagina mostra %s como 1",
+			strings.TrimSpace(outLines[0]), wantID)
+	}
+	// And the row itself carries the verdict.
+	if !strings.Contains(catalogRow(0, visible[0], ""), "verificado") {
+		t.Fatalf("a row de %s nao mostra 'verificado' depois do re-render: %s",
+			visible[0].Info.ID, catalogRow(0, visible[0], ""))
+	}
+	if len(lines) == 0 {
+		t.Fatal("nenhuma linha de tabela")
 	}
 }
 

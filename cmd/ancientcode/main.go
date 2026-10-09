@@ -664,7 +664,7 @@ func main() {
 						fmt.Fprintln(os.Stderr, "verificacao cancelada; nada foi executado")
 					} else {
 						var cerr error
-						checked, cerr = runCheckPage(ctx, agent, visible, pg)
+						checked, cerr = runCheckPage(ctx, agent, entries, pg)
 						if cerr != nil {
 							fmt.Fprintln(os.Stderr, "erro:", cerr)
 						} else {
