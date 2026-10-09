@@ -71,6 +71,47 @@ func (m ModelInfo) SupportsTextInput() bool {
 	return false
 }
 
+// AliasTarget is OpenRouter's redirect for a deprecated id.
+//
+// It is NOT a string, despite what the field looked like for years. Measured on
+// 2026-10-02 across the 469 models OpenRouter lists: the field is `null` in 451
+// and an OBJECT `{name, slug}` in 18. Decoding it as `string` therefore failed
+// the entire listing on the first object it met — which is fail-closed in the
+// WRONG direction: one odd entry hid all 469 models, and `/models` printed an
+// error while every model was perfectly readable.
+//
+// A tolerant type accepts both shapes and keeps the slug, which is the part
+// worth showing. An unrecognised shape yields "" (no redirect) rather than
+// killing the catalog.
+type AliasTarget struct {
+	Slug string
+	Name string
+}
+
+// UnmarshalJSON accepts null, a bare string (the older shape), or an object with
+// `slug`/`name`.
+func (a *AliasTarget) UnmarshalJSON(b []byte) error {
+	trimmed := strings.TrimSpace(string(b))
+	switch {
+	case trimmed == "" || trimmed == "null":
+		return nil
+	case strings.HasPrefix(trimmed, `"`):
+		return json.Unmarshal(b, &a.Slug)
+	default:
+		var obj struct {
+			Slug string `json:"slug"`
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(b, &obj); err != nil {
+			return nil // shape we do not understand: no redirect, catalog intact
+		}
+		a.Slug, a.Name = obj.Slug, obj.Name
+		return nil
+	}
+}
+
+func (a AliasTarget) String() string { return a.Slug }
+
 // modelsPayload is the OpenAI-compatible list shape. The extra fields are
 // optional and provider-specific; unknown fields are ignored by encoding/json.
 type modelsPayload struct {
@@ -88,9 +129,9 @@ type modelsPayload struct {
 		Architecture struct {
 			InputModalities []string `json:"input_modalities"`
 		} `json:"architecture"`
-		SupportedParameters []string `json:"supported_parameters"`
-		AliasTarget         string   `json:"alias_target"`
-		CanonicalSlug       string   `json:"canonical_slug"`
+		SupportedParameters []string    `json:"supported_parameters"`
+		AliasTarget         AliasTarget `json:"alias_target"`
+		CanonicalSlug       string      `json:"canonical_slug"`
 	} `json:"data"`
 }
 
@@ -167,7 +208,7 @@ func (c *Client) ListModels(ctx context.Context) ([]ModelInfo, error) {
 			PricingCompletion:   cleanCatalogString(e.Pricing.Completion),
 			InputModalities:     cleanCatalogStrings(e.Architecture.InputModalities),
 			SupportedParameters: cleanCatalogStrings(e.SupportedParameters),
-			AliasTarget:         cleanCatalogString(e.AliasTarget),
+			AliasTarget:         cleanCatalogString(e.AliasTarget.Slug),
 		})
 		if len(out) >= maxModelEntries {
 			break
