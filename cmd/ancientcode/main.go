@@ -176,6 +176,36 @@ var catalogPage = struct {
 	cur  int // last rendered page, so --next knows where it came from
 }{}
 
+// restoreSavedProjectRoot reopens the project from the previous session.
+//
+// Extracted so the STARTUP behaviour is testable. A test that built its own
+// Workspace restore would pass while main() did the wrong thing — which is D-75,
+// and it already bit this codebase twice.
+//
+// It returns the notice instead of printing it, so the caller decides the
+// stream and the test can read it.
+func restoreSavedProjectRoot(ws *workspace.Workspace, st rootReader, fallback string) string {
+	if st == nil || ws == nil {
+		return ""
+	}
+	saved, ok, err := st.ProjectRoot()
+	if err != nil || !ok || saved == "" {
+		return ""
+	}
+	if err := ws.RestoreProjectRoot(saved); err != nil {
+		return savedRootNotice(saved, err.Error(), ws.ProjectRoot())
+	}
+	fallback = ws.ProjectRoot()
+	_ = fallback
+	return ""
+}
+
+// rootReader is the slice of internal/state this needs, so main and the test
+// agree on the contract without importing the store here.
+type rootReader interface {
+	ProjectRoot() (string, bool, error)
+}
+
 func main() {
 	flag.Parse()
 	if *flagVersion {
@@ -330,15 +360,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "workspace:", err)
 		os.Exit(1)
 	}
-	// M15: reopen in the last project the operator cd'ed into. Silently ignored
-	// on any failure — a missing or hand-edited state.json falls back to the
-	// config, and refusing to start over a convenience would be worse.
+	// M15: reopen in the last project the operator cd'ed into. A failure falls
+	// back to the config — but SAYS so: silently landing somewhere else is how
+	// the agent ends up writing to a folder the operator thinks it moved out of.
 	if st, serr := stateStore(); serr == nil {
-		if saved, ok, perr := st.ProjectRoot(); perr == nil && ok {
-			if serr := ws.SetProjectRoot(saved); serr == nil {
-				cfg.ProjectRoot = ws.ProjectRoot()
-			}
+		if aviso := restoreSavedProjectRoot(ws, st, cfg.ProjectRoot); aviso != "" {
+			fmt.Fprintln(os.Stderr, aviso)
 		}
+		cfg.ProjectRoot = ws.ProjectRoot()
 	}
 	rootRef := workspace.NewRef(ws)
 

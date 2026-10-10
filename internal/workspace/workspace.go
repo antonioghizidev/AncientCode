@@ -188,6 +188,36 @@ func (w *Workspace) SetProjectRoot(path string) error {
 	return nil
 }
 
+// RestoreProjectRoot reopens a root remembered from a previous session.
+//
+// It refuses to CREATE the directory, and that difference from SetProjectRoot
+// is the whole point. /cd creates because the operator may be typing the path
+// of a project they are about to clone. A startup restore is not that: if the
+// folder is gone, someone deleted it on purpose, and recreating it would be
+// the harness overriding a removal — creating a directory the operator had
+// already decided against.
+//
+// Same refusals as /cd: never the agent home, never inside it, never above it.
+func (w *Workspace) RestoreProjectRoot(path string) error {
+	st, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("a pasta nao existe mais")
+		}
+		return fmt.Errorf("nao da para acessar a pasta: %w", err)
+	}
+	if !st.IsDir() {
+		return ErrNotDirectory
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := checkNotAgentHome(filepath.Clean(path), w.agentHome); err != nil {
+		return err
+	}
+	w.projectRoot = filepath.Clean(path)
+	return nil
+}
+
 // ProjectRoot is where the shell runs and where file/code tools are confined.
 func (w *Workspace) ProjectRoot() string {
 	w.mu.RLock()
