@@ -13,7 +13,7 @@ que fica em outro caminho e nunca é o que o agente edita.
 
 ## 2. Motivação — a topologia real hoje é impossível
 
-O usuário roda o harness instalado em `/home/ancientai` e trabalha em
+O usuário roda o harness instalado em `<agent_home>` e trabalha em
 `/home/USUARIO/workspace/projeto`. **Essa configuração não sobe.** `config.Validate()` exige:
 
 ```go
@@ -22,14 +22,14 @@ if !withinDir(c.Workdir, c.CodeRoot) {         // internal/config/config.go:265
 }
 ```
 
-`/home/USUARIO/workspace/projeto` não está dentro de `/home/ancientai`, então a validação falha.
+`/home/USUARIO/workspace/projeto` não está dentro de `<agent_home>`, então a validação falha.
 Esse invariante nasceu no M6, quando as duas pastas eram irmãs dentro de `/home/ancientcode` e
 o `workdir` ainda era uma pasta genérica. Ele **não protege nada que importe** e é exatamente o
 que impede a separação pedida.
 
 A nomenclatura também está invertida em relação à intuição do operador: `workdir` **não** é a
 pasta onde se trabalha — é a casa do agente; e `code_root` é a raiz do projeto, mas tem nome de
-"código-fonte-só". Um `workdir: /home/ancientai/tasks` no YAML parece "pasta de trabalho" e na
+"código-fonte-só". Um `workdir: ~/ancientcode/tasks` no YAML parece "pasta de trabalho" e na
 verdade move logs e sessões.
 
 ### 2.1 Por que hoje o shell roda em pasta diferente da do projeto
