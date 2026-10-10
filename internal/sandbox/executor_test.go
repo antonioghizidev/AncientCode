@@ -171,7 +171,15 @@ func TestExecTimeoutKillsProcess(t *testing.T) {
 }
 
 func TestExecOutputTruncated(t *testing.T) {
-	ex := NewExecutor(t.TempDir(), "", time.Second, 64)
+	// 15s, not 1s. The fake re-executes the TEST BINARY as a helper process, and
+	// a cold Go binary on a loaded machine (the WSL mutation runs hammer the
+	// disk at the same time) can take more than a second to start. With a 1s
+	// ceiling this test failed intermittently for a reason that had nothing to
+	// do with truncation — the failure mode being a timeout error, which is a
+	// DIFFERENT property.
+	//
+	// The point of the test is the output ceiling; the timeout has its own test.
+	ex := NewExecutor(t.TempDir(), "", 15*time.Second, 64)
 	orig := execCommand
 	execCommand = fakeExec(t, "long")
 	t.Cleanup(func() { execCommand = orig })

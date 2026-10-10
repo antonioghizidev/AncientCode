@@ -100,10 +100,15 @@ Achei ao marcar os checkboxes, e são a razão de o checklist existir:
 
 ## Um flake, honestamente
 
-`TestExecOutputTruncated` (sandbox) falhou **uma** vez na suíte completa e passou 3× isolado e
-2× em suítes completas seguintes. As mutações WSL rodavam em paralelo nesse momento. Não é
-regressão desta sessão (a mudança no executor foi trocar `string` por `func() string`), mas
-**não foiinvestigado até a raiz** — fica registrado como pendência.
+`TestExecOutputTruncated` (sandbox) falhou **uma** vez na suite completa. **Causa raiz
+encontrada e corrigida:** o teste da **1 segundo** de timeout para um helper que **re-executa o
+proprio binario de teste**. Medido: levava **0,96s de 1s disponivel** - margem de 40ms. Com as
+mutacoes WSL carregando o disco, o helper demorava mais que 1s e o teste falhava por
+**timeout**, que e uma propriedade diferente da truncagem que ele deveria verificar.
+
+Subiu para 15s; o timeout tem teste proprio. Seis execucoes limpas depois da correcao. A licao
+que fica: **um teste que mede uma coisa nao deve poder falhar por outra.** A margem de 40ms
+escondia isso atras de um "flake".
 
 ## Critérios de aceite
 
@@ -129,13 +134,12 @@ regressão desta sessão (a mudança no executor foi trocar `string` por `func()
 
 ## Próxima sessão
 
-- [ ] Escrever os **2 testes de segurança que faltam** (§6): `/cd` não exposto ao modelo, e
-      `audit.jsonl` imutável após `/cd`.
+- [x] Escrever os **2 testes de segurança que faltavam** (§6): `/cd` não exposto ao modelo, e
+      `audit.jsonl` imutável após `/cd` — ambos com mutação.
 - [ ] **Smoke no Inspiron** com o binário `GOAMD64=v1`:
   - [ ] os 5 itens de "Não validado" acima;
   - [ ] renomear o usuário de execução do smoke (o `run_user` do config já é
         `ancientcode`, então hoje ele **não casa** com o usuário real do host);
   - [ ] verificar se a casa do agente atual (o diretório pessoal com o nome antigo do projeto)
         pode ser removida depois da renomeação, e limpar os resíduos de smoke.
-- [ ] Investigar o flake de `TestExecOutputTruncated`.
 - [ ] Push da branch e PR.
