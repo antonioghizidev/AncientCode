@@ -84,6 +84,8 @@ Qualquer endpoint compatível com OpenAI funciona por `base_url`. Overrides por 
 | `/models [filtro]` | lista o catálogo do provedor — `--free`, `--all`, `--check`, ou texto |
 | `/model [nome\|N]` | troca o modelo **só nesta sessão** (não persiste no YAML) |
 | `/provider [nome]` | mostra a base URL ou troca de provedor na sessão |
+| `/cd [pasta]` | troca a **raiz do projeto** (shell + file/code tools); sem argumento, mostra onde estamos |
+| `/grant [pasta]` | libera escrita fora do projeto, até o fim da sessão; sem argumento, lista as concessões |
 | `/historico`, `!N` | lista os prompts e reenvia o N-ésimo |
 | `/retry`, `/continue` | repete o turno / retoma o turno **cancelado** |
 | `/context` | uso de contexto em bytes e em % da janela |
@@ -111,6 +113,38 @@ digitado, são letras.
 
 `--cleanup` só roda **no startup**, remove `.jsonl` antigos por mtime e nunca é automático.
 `--reset` apaga a sessão. `/new` (que preserva) ainda está no backlog — ver abaixo.
+
+### Pastas: projeto, rascunho e casa do agente
+
+São três coisas diferentes, e confundi-las é o que o `/cd` veio desamarrar.
+
+| | onde é | muda quando |
+|---|---|---|
+| **projeto** | `project_root` | `/cd <pasta>` — shell e file/code tools passam a operar nela |
+| **rascunho** | `<workdir>/scratch` | nunca; é saída descartável, sem gate |
+| **casa do agente** | `workdir` | nunca: `sessions/`, `audit.jsonl`, config |
+
+O `workdir` do YAML é a **casa do agente**, não a pasta onde você trabalha. É criada na
+instalação e ninguém mexe. O `project_root` é a pasta do seu código e pode estar em qualquer
+caminho — os dois são **irmãos**.
+
+```
+/cd ~/workspace/projeto     # vira a raiz do projeto
+/cd                          # onde estamos?
+/cd ~/workspace/projeto/pkg # desce: não pergunta
+/grant ~/artefatos           # libera escrita ali, até o fim da sessão
+/grant                       # lista as concessões
+```
+
+Confirmar é só quando o comando **amplia** o alcance (sobe na árvore). Descer não pergunta.
+Na TUI, confirmar é **repetir o comando**.
+
+**O que o harness não promete**: o `shell` não é confinado por pasta. O "caminho" de um comando
+é texto livre, e `find / -name x` e `ls .` são ambos shell. Os controles reais dele são rodar
+como `run_user` sem privilégio e passar pelo gate, que mostra o comando inteiro. O que se aperta
+é a **escrita** fora do projeto e do rascunho.
+
+`/cd` nunca aceita a casa do agente (nem dentro dela) — lá mora a credencial.
 
 ## Plataformas
 
