@@ -25,7 +25,13 @@ const (
 	cmdProvider // /provider [nome]
 	cmdContext  // /context
 	cmdModels   // /models [--free|--all|--check|texto]
+	cmdConnect  // /connect [provedor] [--use-env]
 )
+
+// connectOpts are the /connect flags (M14, D-2026-10-02-66).
+type connectOpts struct {
+	useEnv bool
+}
 
 // catalogOpts are the /models filters (M12, D-2026-10-01-53).
 type catalogOpts struct {
@@ -33,14 +39,28 @@ type catalogOpts struct {
 	includeNonChat bool
 	check          bool
 	query          string
+	// agentViable is ON by default: the catalog hides models this harness cannot
+	// drive (no tool calling disclosed, or a context too small for one turn).
+	//
+	// Measured 2026-10-02 on OpenRouter: 395 of 469 models qualify, so this is a
+	// small filter — ordering and paging carry the usability, not this.
+	// `/models --viable` turns it off and shows everything the provider lists.
+	agentViable bool
+	// page is 1-based. -1 means "next" and -2 means "prev", resolved by the
+	// caller against the page it last rendered; the parser cannot know it.
+	page int
+	// pageSet records that the operator explicitly asked to page, so
+	// /models <texto> starts back at page 1 instead of sticking wherever it was.
+	pageSet bool
 }
 
 // command is the parsed form of one REPL line.
 type command struct {
-	kind  cmdKind
-	arg   string // /model X, /provider Y
-	index int    // !N → 1-based prompt index
-	opts  catalogOpts
+	kind    cmdKind
+	arg     string // /model X, /provider Y, /connect [provedor]
+	index   int    // !N → 1-based prompt index
+	opts    catalogOpts
+	connOpt connectOpts
 }
 
 // parseCommand interprets a single trimmed REPL line. Plain text returns
@@ -76,6 +96,8 @@ func parseCommand(line string) (command, bool) {
 		return command{kind: cmdModels, opts: parseCatalogOpts(rest)}, true
 	case "/provider":
 		return command{kind: cmdProvider, arg: rest}, true
+	case "/connect":
+		return command{kind: cmdConnect, arg: rest, connOpt: parseConnectOpts(rest)}, true
 	}
 
 	// !N re-enqueues the N-th newest prompt (1 = most recent). Numbers that do
@@ -98,19 +120,44 @@ func parseCommand(line string) (command, bool) {
 	return command{}, false
 }
 
+// parseConnectOpts reads /connect flags. Only --use-env exists; an unknown
+// token is left in arg so the caller reports it rather than silently treating a
+// typo as "connect to this provider".
+func parseConnectOpts(rest string) connectOpts {
+	var o connectOpts
+	for _, tok := range strings.Fields(rest) {
+		if strings.EqualFold(tok, "--use-env") {
+			o.useEnv = true
+		}
+	}
+	return o
+}
+
 // parseCatalogOpts reads /models flags. Unrecognized tokens are treated as the
 // search query, so "/models llama" just searches — a filter can never fail
 // silently into an empty list because of a typo.
 func parseCatalogOpts(rest string) catalogOpts {
-	var o catalogOpts
+	// agentViable starts ON: the catalog hides models this harness cannot drive
+	// unless the operator asks for everything with --viable. Measured: 395 of 469
+	// OpenRouter models qualify, so this is a small filter — but a small filter
+	// applied by default is the difference between a curated list and a dump.
+	o := catalogOpts{agentViable: true}
 	for _, tok := range strings.Fields(rest) {
 		switch strings.ToLower(tok) {
 		case "--free":
 			o.free = true
 		case "--all":
 			o.includeNonChat = true
+		case "--viable":
+			o.agentViable = false
 		case "--check":
 			o.check = true
+		case "--next":
+			// -1 and -2 are resolved against the current page by the caller;
+			// the parser has no idea what page the operator is on.
+			o.page, o.pageSet = -1, true
+		case "--prev":
+			o.page, o.pageSet = -2, true
 		default:
 			if o.query == "" {
 				o.query = tok
@@ -128,5 +175,11 @@ func (c command) isPrompt() bool { return c.kind == cmdNone }
 
 // helpText lists the REPL commands (shared by /help and banner).
 const helpText = "comandos: /exit /quit /reset /help /historico (!N repete) /retry /continue " +
-	"/model [nome|N] /models [--free|--all|--check|texto] /provider [nome] /context | " +
-	"no plano: y aprova e executa, feedback:<msg> replaneja"
+	"/connect [provedor] [--use-env] /model [nome|N] /models [--free|--all|--viable] " +
+	"/provider [nome] /context | no plano: y aprova e executa, feedback:<msg> replaneja"
+
+// modelsHelpText explains the flags the way an operator needs them: what
+// changes the *filter*, what changes the *slice*, and what spends tokens.
+const modelsHelpText = "/models [--free|--all|--viable] [--next|--prev] [texto] [--check] " +
+	"  --free so gratuitos | --all inclui nao-chat | --viable tira o filtro de adequacao\n" +
+	"  --next/--prev paginam 40 por vez | texto filtra | --check pede tool calling real (gasta tokens)"

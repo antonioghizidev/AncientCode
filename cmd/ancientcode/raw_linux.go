@@ -52,8 +52,15 @@ func (t *rawTerm) restore() {
 }
 
 func stdinTermios() (syscall.Termios, bool) {
+	return termiosFd(uintptr(syscall.Stdin))
+}
+
+// termiosFd is the isatty probe behind stdinTermios. It takes the fd as an
+// argument so tests can point it at /dev/null — the exact file that made the
+// stat-based check lie — without swapping fd 0 under a running test binary.
+func termiosFd(fd uintptr) (syscall.Termios, bool) {
 	var t syscall.Termios
-	if err := ioctlTermios(syscall.Stdin, syscall.TCGETS, &t); err != nil {
+	if err := ioctlTermios(int(fd), syscall.TCGETS, &t); err != nil {
 		return t, false
 	}
 	return t, true

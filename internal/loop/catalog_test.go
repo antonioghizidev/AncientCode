@@ -40,6 +40,13 @@ func (c *catalogProvider) SetBaseURL(u, e string) error {
 	return nil
 }
 
+// newLoopForCatalog builds a Loop around a catalog-capable fake, reusing the
+// existing test harness so the loop is wired exactly as in production.
+func newLoopForCatalog(t *testing.T, p provider.Provider) *Loop {
+	t.Helper()
+	return newTestLoopA(t, p, nil, nil, t.TempDir())
+}
+
 func testCatalogEntries() []catalog.Entry {
 	return catalog.Build([]provider.ModelInfo{
 		{ID: "nvidia/nemotron-3.5-lightning-30b-a3b"},

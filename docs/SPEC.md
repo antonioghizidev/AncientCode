@@ -266,11 +266,34 @@ Toda execução passa por **4 camadas independentes**:
 
 | Regra | Descrição |
 |---|---|
-| Fonte | Apenas env var / secret manager; config referencia a variável (`api_key_env`) |
-| Repositório | `.env*` no `.gitignore`; secret scan (gitleaks/trufflehog) no CI e pré-commit |
+| Fonte | Env var / secret manager; config referencia a variável (`api_key_env`). **Exceção nomeada e delimitada: um store de credenciais em arquivo `0600`, escrito só por ato explícito do operador** (M14, abaixo) |
+| Repositório | `.env*` e `auth.json`/`state.json` no `.gitignore`; secret scan (gitleaks/trufflehog) no CI e pré-commit |
 | Logs | redação automática de padrões de chave conhecidos (sk-, nvapi-, etc.) no audit log |
 | Histórico | respostas guardadas nunca incluem Authorization; máscara aplicada antes de persistir |
 | Memória | chaves carregadas uma vez; não condicionar em structs que vão a logs |
+
+#### 5.5.1 Store de credenciais (M14 — o relaxamento, e o seu limite)
+
+O M14 relaxa **uma** regra desta seção: antes, o valor da chave só existia em variável de
+ambiente ou secret manager. Agora ele pode existir em **um** arquivo, escrito **apenas** por
+comando explícito do operador. O relaxamento é nomeado aqui, e não espalhado.
+
+O que **não** mudou:
+
+- `ancientcode.yaml` **nunca** contém valor de chave — só `api_key_env`;
+- a chave nunca entra em argv, log, audit, histórico ou system prompt;
+- `/connect` verifica a chave com um request real antes de gravar; chave recusada não é gravada;
+- `api_key_env` continua funcionando como caminho de CI, sem regressão.
+
+O store fica em `~/.local/share/ancientcode/auth.json` (`0600`, diretório `0700`, escrita
+atômica `tmp`+`fsync`+`rename`, schema estrito fail-closed), separado de `state.json`
+(`~/.local/share/ancientcode/state.json`), que guarda apenas o último modelo por provedor.
+
+**Limite honesto do `0600`**: permissão de arquivo **não** protege contra o próprio agente. O
+`shell` roda como `run_user`, sem privilégio, e o processo é do mesmo usuário — de modo que a
+defesa real continua sendo o gate humano (§5.7) e a política `ask`. O `0600` protege contra
+**outro usuário do mesmo host**, que é o que o modo de arquivo compra de fato. Tratar `0600`
+como defesa contra o agente seria uma reassurance falsa.
 
 ### 5.6 Prompt injection e conteúdo não confiável
 

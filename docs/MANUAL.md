@@ -4,6 +4,44 @@
 > inteligência fica no provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM — contrato
 > OpenAI-compatible). Tudo o que você digita é processado lá; aqui roda só o cliente fino.
 
+## 0. Plataformas
+
+O alvo é Linux amd64 sem AVX. **Linux é o único alvo onde tudo funciona**; nas outras
+plataformas há ausências que o harness **recusa explicitamente**, em vez de degradar calado.
+
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| TUI (`--tui`) | ✅ | ✅ | ✅ |
+| `--run` (pipe/arquivo) | ✅ | ✅ | ✅ |
+| Loop, tools, gate, auditoria | ✅ | ✅ | ✅ |
+| `/models` paginado + `--check` | ✅ | ✅ | ✅ |
+| `/connect` com entrada **mascarada** | ✅ | ❌ | ❌ |
+| Edição de linha raw no REPL | ✅ | ⚠️ cooked | ⚠️ cooked |
+| `0600` real no `auth.json` | ✅ | ❌ | ✅ |
+| `run_user` sem privilégio | ✅ | ⚠️ usuário da sessão | ⚠️ usuário da sessão |
+
+**O que isso significa na prática.**
+
+1. **`/connect` não funciona fora do Linux.** Não existe driver de terminal raw para
+   mascarar o que você digita, e o harness **não** faz fallback para ecoar a chave. Ele
+   falha e manda usar `--use-env`:
+
+   ```powershell
+   $env:OPENROUTER_API_KEY = "sk-..."
+   .\ancientcode.exe --tui
+   ```
+
+   O `auth.json` em si é multiplataforma — só a *digitação mascarada* que não é.
+
+2. **No REPL fora do Linux a edição fica primitiva.** Modo *cooked*: `←`/`→` e `↑` para
+   histórico não funcionam, e `Ctrl+C` chega como byte. A TUI (`--tui`) não depende de raw
+   mode e é a melhor opção no Windows.
+
+3. **No Windows o `auth.json` fica legível por qualquer processo local.** O bit `0600` é
+   ignorado pelo sistema de arquivos (medido: `-rw-rw-rw-`), então `tightenDir` não roda lá.
+   Isso **não** é a defesa contra o agente de qualquer forma (§5.6 da SPEC: a defesa real é
+   o gate humano), mas num host compartilhado, prefira `--use-env`.
+
 ## 1. Execução
 
 Baixe o binário `ancientcode` (um único arquivo, Linux amd64, `GOAMD64=v1`) e configure:

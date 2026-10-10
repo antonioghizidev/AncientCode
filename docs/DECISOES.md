@@ -1109,3 +1109,150 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   chave é o que o `/connect` entrega.
 - **Fora de escopo**: `/sessions` — é do backlog `/new`+`/compact`+`/autocompact` (spec do M13 §10).
   Registrado o risco herdado: sem ele, trocar de sessão perde o acesso à anterior.
+
+### D-2026-10-02-69 — Gate de segurança POSIX só é válido onde os testes POSIX rodam
+
+- **Contexto**: o gate final do M14 (race no WSL) reprovou `internal/state` com
+  `TestAtomicWriteLeavesNoTruncatedState`. Investigando: **`state.write` não era atômico**. O
+  comentário prometia `tmp + fsync + rename`; o código abria `s.path` com `O_TRUNC` e escrevia
+  por cima. O efeito é o que o S2 do milestone proíbe — um processo morto no meio da escrita deixa
+  `state.json` truncado, e truncado faz `GetModel` errar para todo modelo já escolhido, ou seja,
+  o harness perde a memória de modelo sem o operador ter feito nada.
+- **Por que só agora**: os testes POSIX de `state` e `creds` têm `t.Skip` para
+  `runtime.GOOS == "windows"`. No host Windows eles **não rodam** — e uma suíte verde no host
+  reporta pulados como se fossem passado. Eu havia reportado "verde" para esses pacotes várias
+  vezes sem que isso significasse nada para S1/S2.
+- **Decisão**: qualquer afirmação de gate sobre **permissão POSIX, atomicidade ou filesystem**
+  só vale se o teste rodou em ambiente POSIX. Para esses casos o gate obrigatório passa a ser o
+  WSL, e a saída deve distinguir `ok` de `SKIP` (`go test -v`, não só o código de saída).
+  Correção aplicada: `state.write` agora faz `CreateTemp` + `Chmod 0600` + `Write` + `Sync` +
+  `Close` + `Rename` + `verifyPerms`, igual ao `creds`.
+- **Lição geral**: *um teste pulado é um teste que não existe*. Contar pulados junto das falhas
+  nos gates, e desconfiar de qualquer número de "N testes passando" que não diga em que
+  plataforma rodaram.
+- **Segunda lição, do mesmo gate**: `hasStdinTerminal()` usava `ModeCharDevice`, e `/dev/null`
+  **é** char device — o gate de `go install` (binário fora da árvore, stdin em `</dev/null`) viu o
+  onboarding anunciar "vou pedir a chave" e só depois falhar. O teste de TTY agora é a sondagem
+  `TCGETS` (`termiosFd`), com `fd` parametrizado para o teste apontar para `/dev/null` sem trocar
+  o fd 0 do binário de teste.
+
+### D-2026-10-02-70 — Verificar a chave exige um endpoint que **autentique**; "não confirmado" é uma terceira resposta
+
+- **Contexto**: o smoke do M14 no Inspiron digitou uma chave **deliberadamente errada** em
+  `auth login nvidia` e recebeu `chave guardada e verificada (80 modelos)`. A verificação **não
+  verificava**.
+- **Medição** (NVIDIA e OpenRouter reais, 2026-10-02):
+
+  | Endpoint | sem chave | chave inválida | chave válida |
+  |---|---|---|---|
+  | `nvidia/v1/models` | 200 | 200 | 200 |
+  | `openrouter/api/v1/models` | 200 | 200 | 200 |
+  | `openrouter/api/v1/key` | 401 | 401 | **200** |
+  | `nvidia/v1/chat/completions` | 401 | **401** | passa da auth |
+
+  As respostas de `/models` são **byte a byte idênticas** nos três casos (7639 e 774392 bytes).
+  Catálogo prova vivacidade, nunca identidade.
+- **Por que os testes passavam**: o mock devolvia 401 — **mais rigoroso que a realidade**. Um mock
+  mais estrito que o sistema esconde exatamente esta classe de defeito, porque o teste só passa se
+  o código for *pior* que o provider. Um teste de integração com mock devia ser lido como
+  "comportamento exigido", não como "comportamento real".
+- **Decisão**: estratégia por provedor, porque "o" endpoint de verificação não existe:
+  - `openrouter` → `GET /key` (grátis, 401 vs 200, definitivo);
+  - `nvidia` → `POST /chat/completions` com `max_tokens: 1` (custa ~1 token);
+  - `litellm` → sonda de chat (sem contrato publicado e sem instância para medir; a escolha
+    conservadora, porque a sonda não pode ser enganada por endpoint público).
+- **Terceira resposta**: `ErrInconclusive`, distinta de `ErrUnauthorized`. `401/403` = chave
+  recusada. `429/5xx/rede` = **não sabemos**. Dizer "sua chave está errada" quando o provider
+  estava com rate limit manda o operador caçar o problema errado; dizer "verificada" quando nada
+  foi confirmado é pior. Ambos não guardam.
+- **Medições que custaram três idas ao hardware**, e que valem mais que as decisões:
+  - o catálogo da NVIDIA **começa por modelos aposentados para a conta**: de 80, só **1 dos 20
+    primeiros** respondeu 200. O único vivo estava na **posição 11**. Um limite de 3 recusaria uma
+    chave válida quase sempre; 12 erraria por um. Hoje são **24**;
+  - uma entrada pendurada (`deepseek-v4.1-flash`) consumiu **75s** enquanto os vizinhos
+    respondiam em 0.5s. Devolver no primeiro timeout transformava o problema de um vizinho num
+    veredito sobre a chave — agora timeout **pula** e a sonda continua;
+  - `429/5xx` **param** a sonda: o provider está recusando de propósito, e insistir só aprofunda o
+    rate limit;
+  - o orçamento é **por request (75s) e total (6min)** separados. Com um único limite de 90s, a
+    sonda morria na terceira tentativa.
+- **Lição de processo, três vezes nesta milestone**: (a) a âncora de uma mutação que não casa
+  precisa **abortar** o script; (b) um teste que aceita "algum erro" não cobre a propriedade — ele
+  cobre "a API errada"; (c) **um artefato precisa de identidade verificada antes de concluir
+  qualquer coisa sobre ele**. Testei um binário velho (mesmo nome, mesma versão, md5 diferente) e
+  quase escrevi "o fix não funciona".
+
+### D-2026-10-03-71 - O catálogo não cabe em 64 KiB, e afirmar "0 modelos" por causa disso é pior que errar
+
+A OpenRouter devolve **469 modelos**. O leitor limitado a 64 KiB cortava o corpo pela metade,
+o JSON ficava truncado, e o parse falhava: o REPL imprimia **"erro"** e o operador via um
+catálogo inexistente. O limite subiu para **2 MiB**.
+
+O dado certo não é o limite: é o `CatalogKnown` que o acompanha. Quando o corpo vem no teto,
+agora o harness diz "o provedor devolveu um catálogo grande demais para ler inteiro" em vez de
+falhar como se o provedor não tivesse modelos. **Ausência de resposta não é resposta.**
+
+### D-2026-10-03-72 - `alias_target` da OpenRouter não é string: é `null` ou objeto
+
+Medido: **`null` em 451 dos 469 modelos, e `{name, slug}` em 18**. Decodificar o campo como
+`string` derrubava o `Unmarshal` inteiro no primeiro objeto — **um item estranho escondia os
+469**, e o `/models` imprimia erro com todo modelo legível.
+
+Fail-closed no sentido errado: uma forma não reconhecida derrubou o catálogo inteiro em vez de
+degradar um campo. O tipo agora é tolerante (preserva o slug) e forma desconhecida vira "sem
+redirect". **Medir o lado não-2xx do payload não mede o payload.**
+
+### D-2026-10-03-73 - Estado que precisa sobreviver entre comandos não pode ser declarado dentro do laço
+
+`/models --next` não fazia nada. `catalogPage` estava declarado **dentro** do laço de comandos,
+então nascia zerado a cada iteração: página 1 de 12, para sempre. O smoke no Inspiron foi
+que pegou; nenhum teste falhou porque o comportamento observável ("página 1") era o esperado.
+
+O mesmo smoke pegou o filtro de adequação **nunca ligado**: `parseCatalogOpts` usava
+`var o catalogOpts` em vez do inicializador, e eu tinha perdido a edição num `-replace` do
+PowerShell sem reler o resultado.
+
+A resolução de página virou função pura (`resolveCatalogPage`) justamente para poder ser
+testada: enquanto ficou inline no laço, um teste que recalculava `cur+1` **dentro do teste**
+passava verde e a mutação que fixava `--next` na página 1 ficava sem cobertura.
+
+### D-2026-10-03-74 - "Respondeu 200" e "sabe fazer tool calling" são coisas diferentes
+
+`/models --check` era **no-op**: pedia consentimento para gastar tokens e não sondava nada —
+pior que não existir, porque o operador saía acreditando ter verificado.
+
+Agora envia uma requisição real com **`tool_choice` forçado** e um tool declarado, e só aprova
+quem devolveu um bloco `tool_calls`. **O mapeamento do desfecho é o ponto, não o encanamento:**
+
+| resposta | veredito |
+|---|---|
+| bloco `tool_calls` | `verificado` |
+| prosa ("Sure, I'll read it") | `sem tool calling` |
+| truncada no teto de leitura | **inconclusivo** |
+| 404 / timeout de rede | **erro**, nunca veredito negativo |
+
+Prova no hardware: `gpt-4o-mini` e `gpt-4o-mini-2024-07-18` verificados com tool call real;
+`gpt-4o-mini:batch` deu 404 ("cannot be used with the chat/completions endpoint") e ficou
+registrado como **erro**, não como "sem tool" — que é o que ele de fato é, mas por um motivo
+que o operador precisa poder ver.
+
+Forçar `tool_choice` não é detalhe: sem ele um modelo de chat responde "Sure, I'll read it" em
+prosa e pontua como suportando tools, enquanto o harness — que precisa de `tool_calls` para
+agir — ficaria parado.
+
+### D-2026-10-03-75 - Helper certo, chamador errado: só um teste de *call site* pega
+
+O veredito da sondagem **sumia** da tela. `catalog.Filter` devolve **cópias**; `main.go` passava
+o slice **filtrado** para a sonda e re-renderizava a partir do slice de **origem**. Os 40
+vereditos eram escritos num slice descartável. Corrigi o helper e escrevi 17 mutações — e a
+mutação do defeito real continuou **verde**, porque **o helper estava certo e quem o chamava
+estava errado**.
+
+A linha de resultado também nomeava o modelo errado, pelo mesmo motivo.
+
+Escrevemos então testes de **call site por AST**, que leem a expressão passada em `main.go` e
+afirmam que é `entries`. É a única forma de prender a propriedade: replicar o comportamento no
+teste e afirmar que o comportamento está certo foi o que deixou o bug sobreviver.
+
+**Regra que sai daqui**: quando o defeito está na fronteira entre dois pacotes, mutação de
+helper não serve. Suba um nível e teste a chamada.

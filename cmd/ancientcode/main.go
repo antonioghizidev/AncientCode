@@ -26,6 +26,8 @@ import (
 	"github.com/antonioghizidev/ancientcode/internal/audit"
 	"github.com/antonioghizidev/ancientcode/internal/catalog"
 	"github.com/antonioghizidev/ancientcode/internal/config"
+	"github.com/antonioghizidev/ancientcode/internal/connect"
+	"github.com/antonioghizidev/ancientcode/internal/creds"
 	"github.com/antonioghizidev/ancientcode/internal/loop"
 	"github.com/antonioghizidev/ancientcode/internal/model"
 	"github.com/antonioghizidev/ancientcode/internal/provider"
@@ -68,7 +70,7 @@ var skillFlags []string
 // would abort before the provider itself gives up.
 const turnTimeout = 5 * time.Minute
 
-const version = "0.13.0-m13"
+const version = "0.14.0-m14"
 
 // terminalApprover is the human gate (SPEC §5.6.6). It shows the exact command
 // before deciding. Answering "d" registers a veto for the tool: from then on
@@ -166,6 +168,21 @@ func cleanupSessions(workdir string, days int) ([]string, error) {
 	return removed, nil
 }
 
+// catalogPage remembers where the operator is in the ranked catalog, so
+// /models --next walks pages instead of restarting at 1 every time, and
+// /models <texto> starts back at the top.
+//
+// It is package-level on purpose. Declared inside the command loop it is
+// re-initialised on every iteration and --next silently does nothing — which is
+// exactly what the Inspiron smoke showed: page 1 of 12, over and over.
+//
+// Without state here, paging is unusable: the operator presses next, re-reads
+// page 1, and concludes the catalog is broken.
+var catalogPage = struct {
+	page int
+	cur  int // last rendered page, so --next knows where it came from
+}{}
+
 func main() {
 	flag.Parse()
 	if *flagVersion {
@@ -173,7 +190,49 @@ func main() {
 		return
 	}
 
-	cfg, err := config.Load(*flagConfig)
+	// M14: `auth` is handled BEFORE the config is loaded. It must work on a
+	// machine that has no config yet — that is precisely when the operator
+	// needs it — and it must never require a credential to manage credentials.
+	if len(flag.Args()) > 0 && strings.EqualFold(flag.Args()[0], "auth") {
+		os.Exit(runAuthCLI(context.Background(), flag.Args()[1:]))
+	}
+
+	// M14: first-use onboarding. config.Load() below fails with
+	// "api_key_env is not set", which reads like a missing secret when the real
+	// cause is that the operator never connected. Offering /connect first turns
+	// that dead end into a question with an answer (D-2026-10-02-67).
+	if !*flagRun && *flagVerifySkill == "" {
+		if svc, err := credSvc(); err == nil {
+			ok, oerr := svc.HasAny(knownCandidates())
+			if oerr != nil {
+				fmt.Fprintln(os.Stderr, "erro:", oerr)
+				os.Exit(1)
+			}
+
+			if !ok {
+				if deployed, derr := runOnboarding(context.Background(), svc); derr != nil {
+					fmt.Fprintln(os.Stderr, "erro:", derr)
+					os.Exit(1)
+				} else if deployed {
+					fmt.Fprintln(os.Stderr, "credencial guardada; seguindo")
+					fmt.Fprintln(os.Stderr, "")
+				} else if !hasStdinTerminal() {
+					printNoCredentialHelp()
+					os.Exit(1)
+				}
+			}
+		}
+	}
+
+	// M14: the credential store must be wired BEFORE the config is validated,
+	// because Validate is what decides "no credential". SetCredentialResolver
+	// after Load would be too late — Load would already have exited 1.
+	var credStoreForConfig *creds.Store
+	if cs, cerr := credStore(); cerr == nil {
+		credStoreForConfig = cs
+	}
+
+	cfg, err := config.LoadWithResolver(*flagConfig, credStoreForConfig)
 	if err != nil {
 		// Name the config that was consulted. A missing file is legal (defaults
 		// apply), so the failure usually shows up later as "api_key_env is not
@@ -259,6 +318,13 @@ func main() {
 	}
 
 	client := provider.NewOpenAICompatible(cfg.BaseURL, cfg.Model, cfg.APIKeyEnv, nil)
+
+	// M14: wire the credential store into the provider so a key saved by /connect
+	// is actually used by requests. Chat and ListModels resolve per request
+	// instead of only reading the environment.
+	if credStoreForConfig != nil {
+		client.SetKeyResolver(keyResolverFor(credStoreForConfig))
+	}
 
 	// The filesystem tools are rooted at code_root (SPEC §10.3): every
 	// read/write for the coding agent stays inside the dedicated code tree.
@@ -391,6 +457,12 @@ func main() {
 	}
 
 	agent := loop.New(client, store, cfg, reg, appr)
+	// M14 §3.7: the model chosen with /models is remembered per provider, so
+	// returning to a provider restores it. Best-effort: a state.json that
+	// cannot be opened must not stop a session that works without it.
+	if st, serr := stateStore(); serr == nil {
+		agent.SetModelMemory(st)
+	}
 	agent.SetAudit(rec)
 	// M7: adopt the shared skill set and activate every requested skill.
 	if err := agent.SetSkills(set); err != nil {
@@ -406,7 +478,7 @@ func main() {
 	// M9: the TUI frontend owns the terminal; everything above (config, tools,
 	// audit, approver) is shared with the REPL. runTUI blocks until exit.
 	if *flagTUI {
-		runTUI(agent, gate, cfg, version, filepath.Base(sessionPath))
+		runTUI(agent, gate, cfg, version, filepath.Base(sessionPath), credSvcForTUI())
 		return
 	}
 	// M8: structured observer replaces the D-35 status string on TTYs — the
@@ -415,10 +487,7 @@ func main() {
 		agent.SetObserver(func(ev loop.Event) { renderStatus(ev.Phase.Label()) })
 	}
 
-	fmt.Fprintf(os.Stderr, "ancientcode %s — provider=%s model=%s session=%s\n",
-		version, cfg.Provider, cfg.Model, filepath.Base(sessionPath))
-	fmt.Fprintf(os.Stderr, "toolbox_mode=%s (plan: nada mutante executa sem o seu 'y')\n%s\n",
-		cfg.ToolboxMode, helpText)
+	fmt.Fprint(os.Stderr, banner(version, agent, filepath.Base(sessionPath), cfg.ToolboxMode))
 
 	// Ctrl+C semantics (M8, D-37): a signal during a turn cancels the turn
 	// context (tools never run post-cancel, loop-level guarantee); a signal at
@@ -444,6 +513,14 @@ func main() {
 	}()
 
 	ctx := context.Background()
+
+	// M14: the credential store. A failure to open it must NOT be fatal: the
+	// harness still works through api_key_env alone, which is the pre-M14 path.
+	// Only /connect and `auth` are unavailable, and they say so when invoked.
+	var credService *connect.Service
+	if svc, err := credSvc(); err == nil {
+		credService = svc
+	}
 
 	// M12: the entries shown by the last /models, so "/model <N>" resolves the
 	// number the operator actually saw.
@@ -563,23 +640,52 @@ func main() {
 				}
 				continue
 			case cmdModels:
-				if cmd.opts.check {
-					// Layer 3 costs one request per candidate model: always ask
-					// before spending the operator's quota.
-					fmt.Fprintf(os.Stderr,
-						"/models --check faz 1 requisicao por modelo candidato (custo de tokens). Continuar? [y/N] ")
-					if line, _ := askLine(""); !strings.EqualFold(strings.TrimSpace(line), "y") {
-						fmt.Fprintln(os.Stderr, "verificacao cancelada; nada foi executado")
-						continue
-					}
-				}
 				entries, err := agent.ListModels(ctx)
 				if err != nil {
 					// Fail-closed: a failed listing never changes the model.
 					fmt.Fprintln(os.Stderr, "erro:", err)
 					continue
 				}
-				lines, visible := catalogLines(entries, cmd.opts, agent.CurrentModel(), 40)
+				want := resolveCatalogPage(cmd.opts, catalogPage.cur)
+				if want < 1 {
+					want = 1
+				}
+				lines, visible, pg := catalogLines(entries, cmd.opts, agent.CurrentModel(), want)
+
+				// --check runs AFTER the page is resolved, because the consent must
+				// name the real cost: 40 probes for a page, not 377 for the catalog.
+				// Before this, --check asked that question and then did nothing.
+				var checked []loop.CheckOutcome
+				didCheck := false
+				if cmd.opts.check {
+					fmt.Fprint(os.Stderr, checkConsentMessage(pg))
+					line, _ := askLine("")
+					if !strings.EqualFold(strings.TrimSpace(line), "y") {
+						fmt.Fprintln(os.Stderr, "verificacao cancelada; nada foi executado")
+					} else {
+						var cerr error
+						checked, cerr = runCheckPage(ctx, agent, entries, pg)
+						if cerr != nil {
+							fmt.Fprintln(os.Stderr, "erro:", cerr)
+						} else {
+							didCheck = true
+						}
+					}
+				}
+
+				// Re-render: the rows now carry the verdicts, and verified entries
+				// rank higher, so the page content genuinely moves. Printing the
+				// pre-check list would hide the very result asked for.
+				if didCheck {
+					// Re-render from `entries`: the probe wrote the verdicts there,
+					// and re-filtering from the stale `visible` would drop them.
+					lines, visible, pg = catalogLines(entries, cmd.opts, agent.CurrentModel(), want)
+					for _, l := range checkOutcomeLines(entries, pg, checked) {
+						fmt.Println(redactCatalogEcho(l))
+					}
+					fmt.Println()
+				}
+				catalogPage.page, catalogPage.cur = want, pg.Number
 				for _, l := range lines {
 					fmt.Println(redactCatalogEcho(l))
 				}
@@ -589,11 +695,22 @@ func main() {
 				if cmd.arg == "" {
 					fmt.Println("provider base_url:", agent.CurrentProviderBaseURL())
 					fmt.Println("opcoes:", strings.Join(agent.ProviderNames(), ", "))
+					if credService != nil {
+						st := credService.StatusFor(agent.CurrentProvider(), cfg.APIKeyEnv)
+						fmt.Println(st.Describe())
+					}
 				} else if err := agent.SwitchProvider(cmd.arg); err != nil {
 					fmt.Fprintln(os.Stderr, "erro:", err)
 				} else {
 					fmt.Println("provider:", strings.ToLower(strings.TrimSpace(cmd.arg)), "ativo (vale nesta sessao)")
+					if credService != nil {
+						st := credService.StatusFor(agent.CurrentProvider(), cfg.APIKeyEnv)
+						fmt.Println(st.Describe())
+					}
 				}
+				continue
+			case cmdConnect:
+				runConnectREPL(ctx, cmd, credService, agent, cfg)
 				continue
 			case cmdResend:
 				if cmd.index < 0 {
@@ -642,6 +759,32 @@ func setHasScripts(loaded []*skills.Skill) bool {
 // it (switching the session to run mode), n discards, feedback:<msg> feeds the
 // model back and replans. Returns true when the session should keep the turn.
 // ask reads one answer line honouring the input mode (raw TTY or cooked).
+// resolveCatalogPage decides which page a /models invocation should show.
+//
+// It was inline in the command loop, which made it untestable: a test could
+// check that the state variable survived, but not that --next actually resolved
+// to the NEXT page — and a mutation that pinned --next to page 1 stayed green.
+//
+// Two rules:
+//   - explicit paging (--next/--prev) moves relative to where the operator is;
+//   - anything else (a bare /models, or a new search) starts at the top, because
+//     a search landing on page 7 of a stale list reads as "nothing matches".
+func resolveCatalogPage(opt catalogOpts, cur int) int {
+	want := cur
+	switch {
+	case opt.page == -1:
+		want = cur + 1
+	case opt.page == -2:
+		want = cur - 1
+	case !opt.pageSet || opt.query != "":
+		want = 1
+	}
+	if want < 1 {
+		want = 1
+	}
+	return want
+}
+
 func runPlanFlow(ctx context.Context, agent *loop.Loop, ask func(prompt string) (string, error), plan string) bool {
 	for {
 		fmt.Println(plan)

@@ -172,6 +172,18 @@ func (m *tuiModel) openPicker(opts catalogOpts) tea.Cmd {
 		m.banner = "erro: agente nao configurado; catalogo indisponivel"
 		return nil
 	}
+	if opts.check {
+		// Say so instead of silently ignoring it.
+		//
+		// The REPL used to do exactly this — accept --check, ask for consent to
+		// spend tokens, and then run nothing, which is worse than refusing: the
+		// operator believes they verified a model that nobody probed. The TUI
+		// has no gate for it yet, so it names the command that does work.
+		m.banner = ""
+		m.appendSession("  --check nao esta disponivel na TUI ainda; " +
+			"use /models --check no modo REPL (linha de comando), que faz a sondagem real.")
+		opts.check = false
+	}
 	m.picker = &picker{opts: opts, active: m.agent.CurrentModel(), loading: true}
 	m.appendSession("  abrindo catalogo de modelos do provedor…")
 	return openPickerCmd(m)

@@ -16,3 +16,10 @@
 sessions/
 *.log
 docs/.obsidian/
+
+# M14: credential store and per-provider model memory (S7). Both live outside
+# code_root in normal operation (~/.local/share/ancientcode), but a run from a
+# checkout with HOME pointed inside the repo would otherwise stage a live key.
+auth.json
+state.json
+.ancientcode-verified

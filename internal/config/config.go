@@ -77,6 +77,11 @@ type Config struct {
 
 	Approval Approval `yaml:"approval"`
 
+	// resolver is optional: nil means the environment is the only credential source.
+	resolver CredentialResolver
+	// credSource records the origin Validate resolved, for /provider to display.
+	credSource string
+
 	JSONModeFallback string `yaml:"json_mode_fallback"`
 }
 
@@ -84,7 +89,15 @@ type Config struct {
 // overrides, and validates the final configuration. A missing file is not an
 // error — the configuration is then built from defaults + environment.
 func Load(path string) (*Config, error) {
-	cfg := &Config{}
+	return LoadWithResolver(path, nil)
+}
+
+// LoadWithResolver is Load with the credential source supplied up front, so
+// Validate can accept a key saved by /connect instead of insisting on
+// api_key_env (M14, D-65). Passing nil is exactly Load: the environment is the
+// only source, which is the CI path.
+func LoadWithResolver(path string, resolver CredentialResolver) (*Config, error) {
+	cfg := &Config{resolver: resolver}
 
 	if path != "" {
 		data, err := os.ReadFile(path)
@@ -206,8 +219,26 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.APIKeyEnv) == "" {
 		return errors.New("config: api_key_env is required")
 	}
-	if os.Getenv(c.APIKeyEnv) == "" {
+	// M14: a chave pode vir de api_key_env (caminho de CI, inalterado) OU do
+	// store pinado por /connect. A precedencia e do resolver (D-66); aqui so se
+	// pergunta se existe ALGUMA credencial utilizavel. Fail-closed: sem
+	// resolver, ou com resolver que falha, o comportamento e o de sempre —
+	// exigir a variavel de ambiente.
+	c.credSource = ""
+	if c.resolver != nil {
+		key, source, err := c.resolver.ResolveCredential(c.Provider, c.APIKeyEnv)
+		switch {
+		case err != nil:
+			return fmt.Errorf("config: %w", err)
+		case key == "":
+			return fmt.Errorf("config: provider %q sem credencial utilizavel", c.Provider)
+		default:
+			c.credSource = source
+		}
+	} else if os.Getenv(c.APIKeyEnv) == "" {
 		return fmt.Errorf("config: environment variable %q (from api_key_env) is not set", c.APIKeyEnv)
+	} else {
+		c.credSource = "env"
 	}
 
 	u, err := url.Parse(c.BaseURL)
@@ -299,6 +330,13 @@ func (c *Config) apiKey() string { return os.Getenv(c.APIKeyEnv) }
 // litellm) to its default base URL and API key env var (M8, /provider). An
 // unknown name returns ok=false — the session switch fails closed.
 func (c *Config) ProviderDefault(name string) (baseURL, apiKeyEnv string, ok bool) {
+	return LookupProviderDefault(name)
+}
+
+// LookupProviderDefault resolves a built-in provider without a Config instance,
+// so a CLI subcommand (`auth login`) can verify a candidate key against the same
+// endpoint the session switch would install. Unknown names return ok=false.
+func LookupProviderDefault(name string) (baseURL, apiKeyEnv string, ok bool) {
 	key := strings.ToLower(strings.TrimSpace(name))
 	base, baseOK := defaultBaseURLs[key]
 	env, envOK := defaultAPIKeyEnv[key]
@@ -310,7 +348,7 @@ func (c *Config) ProviderDefault(name string) (baseURL, apiKeyEnv string, ok boo
 
 // ProviderNames lists the built-in named providers, sorted, for /provider
 // help and error messages.
-func (c *Config) ProviderNames() []string {
+func ProviderNames() []string {
 	names := make([]string, 0, len(defaultBaseURLs))
 	for name := range defaultBaseURLs {
 		names = append(names, name)
@@ -318,6 +356,9 @@ func (c *Config) ProviderNames() []string {
 	sort.Strings(names)
 	return names
 }
+
+// ProviderNames lists the built-in named providers, sorted.
+func (c *Config) ProviderNames() []string { return ProviderNames() }
 
 func isLoopbackHost(host string) bool {
 	switch strings.ToLower(host) {
@@ -352,3 +393,25 @@ func (c *Config) ToolTimeout(name string) (time.Duration, error) {
 	}
 	return time.ParseDuration(raw)
 }
+
+// CredentialResolver reports which key would be used for a provider, and from
+// where. It is the seam that lets Validate accept a key stored by /connect
+// WITHOUT this package knowing that a credential store exists (M14, D-65).
+//
+// The source is a plain string on purpose: config must not depend on the creds
+// package to display it. The store's own Source type satisfies this interface
+// by accident of its underlying type — creds.Source IS a string — which keeps
+// the dependency pointing one way only.
+type CredentialResolver interface {
+	ResolveCredential(provider, envName string) (key string, source string, err error)
+}
+
+// SetCredentialResolver wires the credential store consulted by Validate.
+// Passing nil restores the environment-only behaviour.
+func (c *Config) SetCredentialResolver(r CredentialResolver) { c.resolver = r }
+
+// CredentialSource reports where the key for the configured provider came from,
+// as Validate resolved it. Empty means "no credential" (Validate would have
+// failed). It is what /provider prints so the operator can see which key is in
+// use (D-2026-10-02-66).
+func (c *Config) CredentialSource() string { return c.credSource }
