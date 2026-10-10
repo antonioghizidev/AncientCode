@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/antonioghizidev/ancientcode/internal/redact"
 	"github.com/antonioghizidev/ancientcode/internal/workspace"
@@ -64,6 +65,11 @@ func (m *tuiModel) applyCd(res cdResult) {
 		persistRoot(m.persist, out.Root)
 	}
 	m.appendSession("> raiz do projeto: " + redact.Redact(out.Root))
+	if res.Warning != "" {
+		for _, l := range strings.Split(res.Warning, "\n") {
+			m.appendSession("! " + redact.Redact(l))
+		}
+	}
 }
 
 // projectLine is the always-visible indicator of WHERE the agent works.

@@ -48,6 +48,11 @@ func runCdREPL(w *workspace.Workspace, cmd command, ask func(string) (string, er
 	}
 	persistRoot(persist, out.Root)
 	fmt.Println("raiz do projeto:", out.Root)
+	// O aviso vem DEPOIS da troca: ele descreve a pasta nova, e falar antes
+	// faria o operador ler um aviso sobre o lugar onde ele ainda esta.
+	if res.Warning != "" {
+		fmt.Fprintln(os.Stderr, res.Warning)
+	}
 }
 
 // cmdErrOut lets tests capture the error stream without touching os.Stderr

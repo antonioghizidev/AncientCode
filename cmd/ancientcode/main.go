@@ -345,7 +345,7 @@ func main() {
 	// The filesystem tools are rooted at the project root (SPEC §10.3): every
 	// read/write for the coding agent stays inside the folder the operator is
 	// working in.
-	fs := files.NewFilesLive(rootRef.CodeRoot, cfg.OutputMaxBytes)
+	fs := files.NewFilesGranted(rootRef.CodeRoot, rootRef.Writable, cfg.OutputMaxBytes)
 	reg, set, err := buildRegistry(cfg, rootRef, fs)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "tools:", err)

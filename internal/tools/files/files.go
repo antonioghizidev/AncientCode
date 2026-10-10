@@ -39,6 +39,10 @@ var sensitiveSegments = []string{
 type Files struct {
 	root  func() string
 	limit int
+	// granted reports whether a path outside the project root was allowed by the
+	// operator (/grant). nil means "no grant mechanism", which keeps the
+	// pre-M15 behaviour byte for byte: absolute paths refused, full stop.
+	granted func(path string) bool
 }
 
 // NewFiles returns the filesystem tools rooted on a FIXED directory. limit is
@@ -57,6 +61,19 @@ func NewFilesLive(get func() string, limit int) *Files {
 		get = func() string { return "" }
 	}
 	return &Files{root: get, limit: limit}
+}
+
+// NewFilesGranted returns the filesystem tools rooted on a live directory, with
+// a predicate deciding which paths OUTSIDE that root the operator allowed.
+//
+// It exists because /grant (M15) was bookkeeping until the tools consulted it:
+// the shell could already write anywhere (it is not path-confined, D-77), so the
+// grant changed nothing there — and the file tools, where confinement IS
+// enforceable, refused the granted folder. The dialog had no consequence.
+func NewFilesGranted(get func() string, granted func(path string) bool, limit int) *Files {
+	f := NewFilesLive(get, limit)
+	f.granted = granted
+	return f
 }
 
 // Root returns the confined root directory as it is RIGHT NOW.
@@ -120,15 +137,18 @@ func (f *Files) ResolveWrite(rel string) (string, error) { return f.resolveWrite
 // CheckSensitive rejects paths located in sensitive locations (SPEC §5.6.3).
 func (f *Files) CheckSensitive(rel string) error { return f.checkSensitive(rel) }
 
-// resolve validates and resolves a user-supplied path against the root for
-// read-only operations. The final resolved path (after symlinks) must stay
-// inside the root.
+// resolve validates and resolves a user-supplied path for read-only
+// operations.
+//
+// An ABSOLUTE path is refused outright — unless the operator granted that
+// folder with /grant (M15). The grant is checked against the RESOLVED path, so
+// granting /tmp does not hand over the filesystem through a symlink inside it.
 func (f *Files) resolve(rel string) (string, error) {
 	if strings.TrimSpace(rel) == "" {
 		return "", errors.New("files: path is required")
 	}
 	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("files: path %q must be relative to the root %q (absolute paths are refused fail-closed)", rel, f.Root())
+		return f.resolveAbsolute(rel, "read")
 	}
 	clean := filepath.Clean(filepath.Join(f.Root(), rel))
 	if !f.within(clean) {
@@ -144,13 +164,47 @@ func (f *Files) resolve(rel string) (string, error) {
 	return resolved, nil
 }
 
+// resolveAbsolute handles the only case where a path outside the project root
+// is legal: the operator granted it.
+//
+// Two rules keep this from becoming "grant = root":
+//   - the grant is tested on the RESOLVED path, so a symlink inside a granted
+//     folder cannot point out of it;
+//   - a relative path never reaches here, so ".." can never escape into a
+//     granted folder by accident.
+func (f *Files) resolveAbsolute(abs, what string) (string, error) {
+	if f.granted == nil {
+		return "", fmt.Errorf("files: path %q must be relative to the root %q "+
+			"(absolute paths are refused fail-closed)", abs, f.Root())
+	}
+	clean := filepath.Clean(abs)
+	resolved, err := filepath.EvalSymlinks(clean)
+	if err != nil {
+		// Not there yet: judge the cleaned path, and the write path will create
+		// the parent. A missing path is not an escape.
+		if os.IsNotExist(err) {
+			if !f.granted(clean) {
+				return "", fmt.Errorf("files: %s de %q recusado: fora do projeto e sem concessao",
+					what, abs)
+			}
+			return clean, nil
+		}
+		return "", err
+	}
+	if !f.granted(resolved) {
+		return "", fmt.Errorf("files: %s de %q recusado: fora do projeto e sem concessao",
+			what, abs)
+	}
+	return resolved, nil
+}
+
 // resolveWrite is the private body of ResolveWrite.
 func (f *Files) resolveWrite(rel string) (string, error) {
 	if strings.TrimSpace(rel) == "" {
 		return "", errors.New("files: path is required")
 	}
 	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("files: path %q must be relative to the root %q (absolute paths are refused fail-closed)", rel, f.Root())
+		return f.resolveAbsolute(rel, "escrita")
 	}
 	clean := filepath.Clean(filepath.Join(f.Root(), rel))
 	if !f.within(clean) {

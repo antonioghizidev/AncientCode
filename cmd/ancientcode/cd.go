@@ -20,6 +20,11 @@ type cdResult struct {
 	Message string
 	// Err is set when the destination is invalid. Nothing is applied.
 	Err error
+	// Warning is set when the destination cannot be WRITTEN by this process. It
+	// does not block the switch — reading a read-only project is legitimate —
+	// but the operator must learn it here, not three commands later when
+	// write_file fails with a message that points nowhere near this decision.
+	Warning string
 	// path is the resolved destination, kept private so only Apply uses it.
 	path string
 }
@@ -55,6 +60,7 @@ func cdCommand(w *workspace.Workspace, arg string) cdResult {
 	}
 	res := cdResult{path: resolved}
 	res.NeedsConfirm = w.Widens(resolved)
+	res.Warning = writableWarning(resolved)
 	res.Message = fmt.Sprintf("raiz do projeto: %s -> %s (amplia o alcance%s)", w.ProjectRoot(), resolved, grantSuffix(w))
 	return res
 }

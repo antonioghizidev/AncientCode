@@ -89,6 +89,14 @@ func NewToolsetLive(get func() string, limit int) *Toolset {
 	return &Toolset{fs: files.NewFilesLive(get, limit), limit: limit}
 }
 
+// NewToolsetGranted returns the code tools with the operator's /grant
+// allowances wired in, same as NewFilesGranted. Both toolsets must honour the
+// same concessions: a /grant that works for write_file and not for edit_file
+// would be a dialog the operator thinks settled twice.
+func NewToolsetGranted(get func() string, granted func(path string) bool, limit int) *Toolset {
+	return &Toolset{fs: files.NewFilesGranted(get, granted, limit), limit: limit}
+}
+
 // Root returns the confined project root as it is right now.
 func (t *Toolset) Root() string { return t.fs.Root() }
 

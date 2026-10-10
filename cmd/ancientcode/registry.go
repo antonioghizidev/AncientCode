@@ -57,7 +57,7 @@ func buildRegistry(cfg *config.Config, rootRef workspace.Ref, fs *files.Files) (
 
 	// M6: coding-agent tools (SPEC §10). code_review is read-only; scaffold and
 	// edit always require human approval. Generated code is never executed.
-	codeTools := code.NewToolsetLive(rootRef.CodeRoot, cfg.OutputMaxBytes)
+	codeTools := code.NewToolsetGranted(rootRef.CodeRoot, rootRef.Writable, cfg.OutputMaxBytes)
 	if err := regAll(codeTools.ToolCodeScaffold(), codeTools.ToolEditFile(), codeTools.ToolCodeReview()); err != nil {
 		return nil, nil, err
 	}
