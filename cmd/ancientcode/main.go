@@ -502,7 +502,7 @@ func main() {
 		agent.SetObserver(func(ev loop.Event) { renderStatus(ev.Phase.Label()) })
 	}
 
-	fmt.Fprint(os.Stderr, banner(version, agent, filepath.Base(sessionPath), cfg.ToolboxMode))
+	fmt.Fprint(os.Stderr, banner(version, agent, filepath.Base(sessionPath), cfg.ToolboxMode, ws.ProjectRoot()))
 
 	// Ctrl+C semantics (M8, D-37): a signal during a turn cancels the turn
 	// context (tools never run post-cancel, loop-level guarantee); a signal at

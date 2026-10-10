@@ -26,7 +26,7 @@ func TestBannerReportsActiveModelNotConfigModel(t *testing.T) {
 		t.Fatalf("pre-condicao: o loop nao restaurou o modelo (%q)", agent.CurrentModel())
 	}
 
-	out := banner("9.9.9-test", agent, "default.jsonl", "run")
+	out := banner("9.9.9-test", agent, "default.jsonl", "run", "")
 
 	if strings.Contains(out, "nvidia/modelo-restaurado") == false {
 		t.Fatalf("o banner nao mostra o modelo ATIVO:\n%s", out)
@@ -48,7 +48,7 @@ func TestBannerReportsActiveProvider(t *testing.T) {
 	if err := agent.SwitchProvider("nvidia"); err != nil {
 		t.Fatal(err)
 	}
-	out := banner("9.9.9-test", agent, "default.jsonl", "plan")
+	out := banner("9.9.9-test", agent, "default.jsonl", "plan", "")
 	if !strings.Contains(out, "provider=nvidia") {
 		t.Fatalf("o banner nao mostra o provider ATIVO apos /provider:\n%s", out)
 	}
@@ -62,7 +62,7 @@ func TestBannerReportsActiveProvider(t *testing.T) {
 func TestBannerOnlySaysRestoredWhenItWasRestored(t *testing.T) {
 	// Sem memoria instalada: nada de linha extra.
 	agent := newLoopForBanner(t, nil, "nvidia")
-	out := banner("9.9.9-test", agent, "default.jsonl", "run")
+	out := banner("9.9.9-test", agent, "default.jsonl", "run", "")
 	if strings.Contains(out, "restaurado de state.json") {
 		t.Fatalf("anunciou restauracao sem ter restaurado:\n%s", out)
 	}
@@ -71,7 +71,7 @@ func TestBannerOnlySaysRestoredWhenItWasRestored(t *testing.T) {
 	mem["openrouter"] = "outro/modelo"
 	agent2 := newLoopForBanner(t, nil, "nvidia")
 	agent2.SetModelMemory(mem)
-	out2 := banner("9.9.9-test", agent2, "default.jsonl", "run")
+	out2 := banner("9.9.9-test", agent2, "default.jsonl", "run", "")
 	if strings.Contains(out2, "restaurado de state.json") {
 		t.Fatalf("anunciou restauracao de outro provider:\n%s", out2)
 	}
@@ -79,7 +79,7 @@ func TestBannerOnlySaysRestoredWhenItWasRestored(t *testing.T) {
 
 // O banner nao pode derrubar a sessao: um agente nil ainda produz texto.
 func TestBannerIsTotal(t *testing.T) {
-	out := banner("9.9.9-test", nil, "default.jsonl", "run")
+	out := banner("9.9.9-test", nil, "default.jsonl", "run", "")
 	if !strings.Contains(out, "ancientcode 9.9.9-test") {
 		t.Fatalf("banner com agente nil saiu vazio:\n%s", out)
 	}
@@ -115,4 +115,23 @@ func (m bannerMem) GetModel(p string) (string, bool, error) {
 func (m bannerMem) SetModel(p, model string) error {
 	m[p] = model
 	return nil
+}
+
+// O banner precisa dizer ONDE o agente trabalha.
+//
+// Sem essa linha, `pwd` no shell e a pasta que as file tools confinam podem
+// discordar em silêncio, e o operador edita um projeto acreditando estar em
+// outro. E o banner é a única coisa vista antes do primeiro comando.
+func TestBannerShowsTheProjectRoot(t *testing.T) {
+	agent := newLoopForBanner(t, bannerMem{}, "openrouter")
+	out := banner("9.9.9-test", agent, "default.jsonl", "run", "/home/user/workspace/projeto")
+	if !strings.Contains(out, "/home/user/workspace/projeto") {
+		t.Fatalf("o banner nao mostrou a raiz do projeto:\n%s", out)
+	}
+	// E sem raiz conhecida, não inventa uma: uma pasta inventada é pior que
+	// nenhuma, porque o operador passaria a conferir a errada.
+	out2 := banner("9.9.9-test", agent, "default.jsonl", "run", "")
+	if strings.Contains(out2, "projeto:") {
+		t.Fatalf("sem raiz conhecida, o banner nao deveria inventar uma:\n%s", out2)
+	}
 }
