@@ -4,7 +4,7 @@
 
 ## Objetivo da sessão
 
-Validar M1–M6 no hardware-alvo real (Dell Inspiron 1545 via SSH, `USUARIO@192.168.x.x`,
+Validar M1–M6 no hardware-alvo real (Dell Inspiron 1545 via SSH, `USUARIO@SERVIDOR-LAN`,
 Core 2 Duo T6600 / sem AVX / Ubuntu 24.04.5 LTS) com o binário `0.6.0-m6`, provider
 `openrouter` + modelo `openrouter/free`, todas as tools habilitadas (`shell`, `docker`,
 `apt`, `code_scaffold`, `edit_file`, `code_review`). Corrigir o que o smoke revelar e só
