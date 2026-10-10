@@ -26,6 +26,8 @@ const (
 	cmdContext  // /context
 	cmdModels   // /models [--free|--all|--check|texto]
 	cmdConnect  // /connect [provedor] [--use-env]
+	cmdCd       // /cd [pasta] — raiz do projeto (M15)
+	cmdGrant    // /grant [pasta] — escrita liberada fora do projeto (M15)
 )
 
 // connectOpts are the /connect flags (M14, D-2026-10-02-66).
@@ -98,6 +100,10 @@ func parseCommand(line string) (command, bool) {
 		return command{kind: cmdProvider, arg: rest}, true
 	case "/connect":
 		return command{kind: cmdConnect, arg: rest, connOpt: parseConnectOpts(rest)}, true
+	case "/cd":
+		return command{kind: cmdCd, arg: rest}, true
+	case "/grant":
+		return command{kind: cmdGrant, arg: rest}, true
 	}
 
 	// !N re-enqueues the N-th newest prompt (1 = most recent). Numbers that do
@@ -175,7 +181,8 @@ func (c command) isPrompt() bool { return c.kind == cmdNone }
 
 // helpText lists the REPL commands (shared by /help and banner).
 const helpText = "comandos: /exit /quit /reset /help /historico (!N repete) /retry /continue " +
-	"/connect [provedor] [--use-env] /model [nome|N] /models [--free|--all|--viable] " +
+	"/connect [provedor] [--use-env] /cd [pasta] /grant [pasta] " +
+	"/model [nome|N] /models [--free|--all|--viable] " +
 	"/provider [nome] /context | no plano: y aprova e executa, feedback:<msg> replaneja"
 
 // modelsHelpText explains the flags the way an operator needs them: what

@@ -29,22 +29,38 @@ var sensitiveSegments = []string{
 }
 
 // Files groups the three filesystem tools around one confined root.
+//
+// root is a FUNCTION, not a field, because the root changes at runtime (M15's
+// /cd) and Registry.Register refuses duplicates — so there is no way to
+// re-register the tool with a new root. Reading the root per call is what makes
+// a directory switch actually take effect; capturing it at construction left
+// the tools writing to the previous project, which is worse than not having the
+// command at all.
 type Files struct {
-	root  string
+	root  func() string
 	limit int
 }
 
-// NewFiles returns the filesystem tools rooton. limit is the maximum number
-// of output bytes returned to the model (SPEC §5.2).
+// NewFiles returns the filesystem tools rooted on a FIXED directory. limit is
+// the maximum number of output bytes returned to the model (SPEC §5.2).
 func NewFiles(root string, limit int) *Files {
+	return NewFilesLive(func() string { return root }, limit)
+}
+
+// NewFilesLive returns the filesystem tools rooted on whatever get returns at
+// the moment of each call.
+func NewFilesLive(get func() string, limit int) *Files {
 	if limit <= 0 {
 		limit = 65536
 	}
-	return &Files{root: root, limit: limit}
+	if get == nil {
+		get = func() string { return "" }
+	}
+	return &Files{root: get, limit: limit}
 }
 
-// Root returns the confined root directory.
-func (f *Files) Root() string { return f.root }
+// Root returns the confined root directory as it is RIGHT NOW.
+func (f *Files) Root() string { return f.root() }
 
 // ToolReadFile returns the read_file tool.
 func (f *Files) ToolReadFile() tools.Tool { return readFile{fs: f} }
@@ -56,7 +72,7 @@ func (f *Files) ToolWriteFile() tools.Tool { return writeFile{fs: f} }
 func (f *Files) ToolListDir() tools.Tool { return listDir{fs: f} }
 
 func (f *Files) within(p string) bool {
-	rel, err := filepath.Rel(f.root, p)
+	rel, err := filepath.Rel(f.Root(), p)
 	if err != nil {
 		return false
 	}
@@ -112,18 +128,18 @@ func (f *Files) resolve(rel string) (string, error) {
 		return "", errors.New("files: path is required")
 	}
 	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("files: path %q must be relative to the root %q (absolute paths are refused fail-closed)", rel, f.root)
+		return "", fmt.Errorf("files: path %q must be relative to the root %q (absolute paths are refused fail-closed)", rel, f.Root())
 	}
-	clean := filepath.Clean(filepath.Join(f.root, rel))
+	clean := filepath.Clean(filepath.Join(f.Root(), rel))
 	if !f.within(clean) {
-		return "", fmt.Errorf("files: path %q escapes the root %q", rel, f.root)
+		return "", fmt.Errorf("files: path %q escapes the root %q", rel, f.Root())
 	}
 	resolved, err := filepath.EvalSymlinks(clean)
 	if err != nil {
 		return "", err
 	}
 	if !f.within(resolved) {
-		return "", fmt.Errorf("files: path %q resolves outside the root %q (symlink)", rel, f.root)
+		return "", fmt.Errorf("files: path %q resolves outside the root %q (symlink)", rel, f.Root())
 	}
 	return resolved, nil
 }
@@ -134,11 +150,11 @@ func (f *Files) resolveWrite(rel string) (string, error) {
 		return "", errors.New("files: path is required")
 	}
 	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("files: path %q must be relative to the root %q (absolute paths are refused fail-closed)", rel, f.root)
+		return "", fmt.Errorf("files: path %q must be relative to the root %q (absolute paths are refused fail-closed)", rel, f.Root())
 	}
-	clean := filepath.Clean(filepath.Join(f.root, rel))
+	clean := filepath.Clean(filepath.Join(f.Root(), rel))
 	if !f.within(clean) {
-		return "", fmt.Errorf("files: path %q escapes the root %q", rel, f.root)
+		return "", fmt.Errorf("files: path %q escapes the root %q", rel, f.Root())
 	}
 	dir := filepath.Dir(clean)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -149,7 +165,7 @@ func (f *Files) resolveWrite(rel string) (string, error) {
 		return "", err
 	}
 	if !f.within(rdir) {
-		return "", fmt.Errorf("files: path %q resolves outside the root %q (symlink)", rel, f.root)
+		return "", fmt.Errorf("files: path %q resolves outside the root %q (symlink)", rel, f.Root())
 	}
 	return filepath.Join(rdir, filepath.Base(clean)), nil
 }
@@ -158,7 +174,7 @@ func (f *Files) checkSensitive(rel string) error {
 	if IsSensitivePath(rel) {
 		return fmt.Errorf("files: path %q is a sensitive location and is blocked (fail-closed)", rel)
 	}
-	if IsSensitivePath(filepath.Join(f.root, rel)) {
+	if IsSensitivePath(filepath.Join(f.Root(), rel)) {
 		return fmt.Errorf("files: path %q resolves into a sensitive location and is blocked (fail-closed)", rel)
 	}
 	return nil

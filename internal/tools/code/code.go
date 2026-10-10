@@ -66,19 +66,30 @@ type template struct {
 	files []templateFile
 }
 
-// Toolset groups the coding-agent tools around one confined code_root.
+// Toolset groups the coding-agent tools around one confined project root.
+//
+// fs.root is a FUNCTION for the same reason as in internal/tools/files: the
+// project root changes at runtime (M15's /cd) and the registry refuses
+// duplicates, so the tools cannot be re-registered. A captured string left
+// code_scaffold writing into the previous project.
 type Toolset struct {
 	fs    *files.Files
 	limit int
 }
 
-// NewToolset returns the code-agent tools rooted at code_root. limit bounds
-// how many bytes code_review echoes back.
+// NewToolset returns the code-agent tools rooted on a FIXED directory. limit
+// bounds how many bytes code_review echoes back.
 func NewToolset(root string, limit int) *Toolset {
-	return &Toolset{fs: files.NewFiles(root, limit), limit: limit}
+	return NewToolsetLive(func() string { return root }, limit)
 }
 
-// Root returns the confined code_root.
+// NewToolsetLive returns the code-agent tools rooted on whatever get returns at
+// the moment of each call.
+func NewToolsetLive(get func() string, limit int) *Toolset {
+	return &Toolset{fs: files.NewFilesLive(get, limit), limit: limit}
+}
+
+// Root returns the confined project root as it is right now.
 func (t *Toolset) Root() string { return t.fs.Root() }
 
 // templates loads and validates every embedded template once.

@@ -40,6 +40,7 @@ import (
 	"github.com/antonioghizidev/ancientcode/internal/tools/files"
 	"github.com/antonioghizidev/ancientcode/internal/tools/shell"
 	skillstool "github.com/antonioghizidev/ancientcode/internal/tools/skills"
+	"github.com/antonioghizidev/ancientcode/internal/workspace"
 )
 
 var (
@@ -326,9 +327,23 @@ func main() {
 		client.SetKeyResolver(keyResolverFor(credStoreForConfig))
 	}
 
-	// The filesystem tools are rooted at code_root (SPEC §10.3): every
-	// read/write for the coding agent stays inside the dedicated code tree.
-	fs := files.NewFiles(cfg.CodeRoot, cfg.OutputMaxBytes)
+	// M15: one live root, shared by the shell and the file/code tools.
+	//
+	// These used to be two different directories (workdir for the shell,
+	// code_root for the tools), which meant the agent could read in one place
+	// and write in another. One root fixes that and is what makes /cd mean
+	// "this folder is now the project".
+	ws, err := workspace.New(cfg.ProjectRoot, cfg.Workdir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "workspace:", err)
+		os.Exit(1)
+	}
+	rootRef := workspace.NewRef(ws)
+
+	// The filesystem tools are rooted at the project root (SPEC §10.3): every
+	// read/write for the coding agent stays inside the folder the operator is
+	// working in.
+	fs := files.NewFilesLive(rootRef.CodeRoot, cfg.OutputMaxBytes)
 	reg := tools.NewRegistry()
 	for _, t := range []tools.Tool{fs.ToolReadFile(), fs.ToolWriteFile(), fs.ToolListDir()} {
 		if err := reg.Register(t); err != nil {
@@ -338,7 +353,7 @@ func main() {
 	}
 	// M6: coding-agent tools (SPEC §10). code_review is read-only; scaffold and
 	// edit always require human approval. Generated code is never executed.
-	codeTools := code.NewToolset(cfg.CodeRoot, cfg.OutputMaxBytes)
+	codeTools := code.NewToolsetLive(rootRef.CodeRoot, cfg.OutputMaxBytes)
 	for _, t := range []tools.Tool{codeTools.ToolCodeScaffold(), codeTools.ToolEditFile(), codeTools.ToolCodeReview()} {
 		if err := reg.Register(t); err != nil {
 			fmt.Fprintln(os.Stderr, "tools:", err)
@@ -352,7 +367,7 @@ func main() {
 			os.Exit(1)
 		}
 		policy := sandbox.NewPolicy(sandbox.DefaultAllowed)
-		exec := sandbox.NewExecutor(cfg.Workdir, cfg.RunUser, shellTimeout, cfg.OutputMaxBytes)
+		exec := sandbox.NewExecutorLive(rootRef.Workdir, cfg.RunUser, shellTimeout, cfg.OutputMaxBytes)
 		if err := reg.Register(shell.New(policy, exec, cfg.OutputMaxBytes)); err != nil {
 			fmt.Fprintln(os.Stderr, "tools:", err)
 			os.Exit(1)
@@ -388,7 +403,7 @@ func main() {
 	// any turn (fail-closed activation). skill_run is always registered but the
 	// loop only exposes it when a scripted skill is active in run mode.
 	set := skills.NewSet()
-	exec := sandbox.NewExecutor(cfg.Workdir, cfg.RunUser, 60*time.Second, cfg.OutputMaxBytes)
+	exec := sandbox.NewExecutorLive(rootRef.Workdir, cfg.RunUser, 60*time.Second, cfg.OutputMaxBytes)
 	if err := reg.Register(skillstool.New(set, exec, cfg.OutputMaxBytes)); err != nil {
 		fmt.Fprintln(os.Stderr, "tools:", err)
 		os.Exit(1)
@@ -478,7 +493,7 @@ func main() {
 	// M9: the TUI frontend owns the terminal; everything above (config, tools,
 	// audit, approver) is shared with the REPL. runTUI blocks until exit.
 	if *flagTUI {
-		runTUI(agent, gate, cfg, version, filepath.Base(sessionPath), credSvcForTUI())
+		runTUI(agent, gate, cfg, version, filepath.Base(sessionPath), credSvcForTUI(), ws)
 		return
 	}
 	// M8: structured observer replaces the D-35 status string on TTYs — the
@@ -708,6 +723,17 @@ func main() {
 						fmt.Println(st.Describe())
 					}
 				}
+				continue
+			case cmdCd:
+				runCdREPL(ws, cmd, askLine)
+				continue
+			case cmdGrant:
+				msg, gerr := grantCommand(ws, cmd.arg)
+				if gerr != nil {
+					fmt.Fprintln(os.Stderr, "erro:", msg)
+					continue
+				}
+				fmt.Println(msg)
 				continue
 			case cmdConnect:
 				runConnectREPL(ctx, cmd, credService, agent, cfg)

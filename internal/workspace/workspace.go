@@ -87,6 +87,14 @@ func New(projectRoot, agentHome string) (*Workspace, error) {
 	return &Workspace{projectRoot: root, agentHome: home, scratch: scratch}, nil
 }
 
+// ResolveDir exposes path validation to the frontend, so /cd can SHOW the
+// resolved destination in the confirmation prompt.
+//
+// Showing the resolved path is the point: the operator is asked to approve a
+// directory switch, and the directory that matters is the one after symlinks,
+// not the one they typed.
+func ResolveDir(path string) (string, error) { return resolveDir(path) }
+
 // resolveDir makes an absolute, symlink-resolved directory path, creating it
 // when absent. The check runs AFTER resolving so a link cannot slip past.
 func resolveDir(path string) (string, error) {
@@ -144,6 +152,22 @@ func sameOrUnder(p, base string) bool {
 		return true
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+// CanUse reports whether path may become the project root, WITHOUT changing
+// anything.
+//
+// SetProjectRoot enforces the same rule, but a frontend that learned about it
+// only at commit time would first show the operator a confirmation prompt for a
+// destination that can never be accepted. Validate before you ask.
+func (w *Workspace) CanUse(path string) error {
+	root, err := resolveDir(path)
+	if err != nil {
+		return err
+	}
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return checkNotAgentHome(root, w.agentHome)
 }
 
 // SetProjectRoot points the session at a new project root.
