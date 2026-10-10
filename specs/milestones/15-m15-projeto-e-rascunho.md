@@ -15,7 +15,7 @@ que fica em outro caminho e nunca é o que o agente edita.
 ## 2. Motivação — a topologia real hoje é impossível
 
 O usuário roda o harness instalado em `<agent_home>` e trabalha em
-`/home/USUARIO/workspace/projeto`. **Essa configuração não sobe.** `config.Validate()` exige:
+`/home/USUARIO/workspace/PROJETO`. **Essa configuração não sobe.** `config.Validate()` exige:
 
 ```go
 if !withinDir(c.Workdir, c.CodeRoot) {         // internal/config/config.go:265
@@ -23,7 +23,7 @@ if !withinDir(c.Workdir, c.CodeRoot) {         // internal/config/config.go:265
 }
 ```
 
-`/home/USUARIO/workspace/projeto` não está dentro de `<agent_home>`, então a validação falha.
+`/home/USUARIO/workspace/PROJETO` não está dentro de `<agent_home>`, então a validação falha.
 Esse invariante nasceu no M6, quando as duas pastas eram irmãs dentro de `/home/ancientcode` e
 o `workdir` ainda era uma pasta genérica. Ele **não protege nada que importe** e é exatamente o
 que impede a separação pedida.

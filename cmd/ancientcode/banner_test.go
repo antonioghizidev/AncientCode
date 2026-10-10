@@ -124,8 +124,8 @@ func (m bannerMem) SetModel(p, model string) error {
 // outro. E o banner é a única coisa vista antes do primeiro comando.
 func TestBannerShowsTheProjectRoot(t *testing.T) {
 	agent := newLoopForBanner(t, bannerMem{}, "openrouter")
-	out := banner("9.9.9-test", agent, "default.jsonl", "run", "/home/user/workspace/projeto")
-	if !strings.Contains(out, "/home/user/workspace/projeto") {
+	out := banner("9.9.9-test", agent, "default.jsonl", "run", "/home/USUARIO/workspace/PROJETO")
+	if !strings.Contains(out, "/home/USUARIO/workspace/PROJETO") {
 		t.Fatalf("o banner nao mostrou a raiz do projeto:\n%s", out)
 	}
 	// E sem raiz conhecida, não inventa uma: uma pasta inventada é pior que

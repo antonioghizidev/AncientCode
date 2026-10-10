@@ -45,7 +45,7 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
 - **M15 — `/cd` em runtime.** Separar a **casa do agente** (config, `sessions/`, `audit.jsonl`)
   da **raiz do projeto** (onde shell e file/code tools operam). Hoje `config.Validate()`
   **exige** `code_root` dentro de `workdir` (`config.go:265`), o que torna a topologia real
-  — agente em `<agent_home>`, fonte em `/home/USUARIO/workspace/projeto` — **não
+  — agente em `<agent_home>`, fonte em `/home/USUARIO/workspace/PROJETO` — **não
   representável**. Entregaria: `/cd <pasta>`, pasta de rascunho para não poluir o repo,
   `/grant <pasta>` para escrita liberada com registro no audit, e a pasta atual visível na UI.
   Decidido com o usuário: leitura fora do projeto segue pelo gate do shell (confinamento por

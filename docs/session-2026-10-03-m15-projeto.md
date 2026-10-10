@@ -11,7 +11,7 @@ Permitir que o operador **mude a pasta de trabalho durante a execução**, e que
 **casa do agente** (config, `sessions/`, `audit.jsonl`, scratch), que fica em outro caminho.
 
 O pedido nasceu de uma impossibilidade concreta: a topologia real do usuário (agente instalado
-num caminho, fonte em `/home/USUARIO/workspace/projeto`) **não subia**, porque `config.Validate()`
+num caminho, fonte em `/home/USUARIO/workspace/PROJETO`) **não subia**, porque `config.Validate()`
 exigia `code_root ⊂ workdir`.
 
 ## O que foi feito

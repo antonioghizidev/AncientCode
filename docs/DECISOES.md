@@ -1260,7 +1260,7 @@ helper não serve. Suba um nível e teste a chamada.
 ### D-2026-10-03-76 - A raiz do projeto e a casa do agente são IRMÃS, não mãe e filha
 
 - **Contexto**: o usuário tem o harness instalado num caminho e a fonte em outro
-  (`<agent_home>` vs `/home/USUARIO/workspace/projeto`). Essa configuração **não subia**:
+  (`<agent_home>` vs `/home/USUARIO/workspace/PROJETO`). Essa configuração **não subia**:
   `config.Validate()` exigia `code_root ⊂ workdir` (`config.go:265`).
 - **Por que existia o invariante**: nasceu no M6, quando `code_root` precisava ser uma raiz
   mais apertada que a do shell (o agente de código é `allowlist` separado) e as duas pastas

@@ -129,9 +129,9 @@ instalação e ninguém mexe. O `project_root` é a pasta do seu código e pode 
 caminho — os dois são **irmãos**.
 
 ```
-/cd ~/workspace/projeto     # vira a raiz do projeto
+/cd ~/workspace/PROJETO     # vira a raiz do projeto
 /cd                          # onde estamos?
-/cd ~/workspace/projeto/pkg # desce: não pergunta
+/cd ~/workspace/PROJETO/pkg # desce: não pergunta
 /grant ~/artefatos           # libera escrita ali, até o fim da sessão
 /grant                       # lista as concessões
 ```
