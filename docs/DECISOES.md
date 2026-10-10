@@ -1181,3 +1181,78 @@ As decisões que alteram a SPEC devem ser refletidas lá.
   cobre "a API errada"; (c) **um artefato precisa de identidade verificada antes de concluir
   qualquer coisa sobre ele**. Testei um binário velho (mesmo nome, mesma versão, md5 diferente) e
   quase escrevi "o fix não funciona".
+
+### D-2026-10-03-71 - O catálogo não cabe em 64 KiB, e afirmar "0 modelos" por causa disso é pior que errar
+
+A OpenRouter devolve **469 modelos**. O leitor limitado a 64 KiB cortava o corpo pela metade,
+o JSON ficava truncado, e o parse falhava: o REPL imprimia **"erro"** e o operador via um
+catálogo inexistente. O limite subiu para **2 MiB**.
+
+O dado certo não é o limite: é o `CatalogKnown` que o acompanha. Quando o corpo vem no teto,
+agora o harness diz "o provedor devolveu um catálogo grande demais para ler inteiro" em vez de
+falhar como se o provedor não tivesse modelos. **Ausência de resposta não é resposta.**
+
+### D-2026-10-03-72 - `alias_target` da OpenRouter não é string: é `null` ou objeto
+
+Medido: **`null` em 451 dos 469 modelos, e `{name, slug}` em 18**. Decodificar o campo como
+`string` derrubava o `Unmarshal` inteiro no primeiro objeto — **um item estranho escondia os
+469**, e o `/models` imprimia erro com todo modelo legível.
+
+Fail-closed no sentido errado: uma forma não reconhecida derrubou o catálogo inteiro em vez de
+degradar um campo. O tipo agora é tolerante (preserva o slug) e forma desconhecida vira "sem
+redirect". **Medir o lado não-2xx do payload não mede o payload.**
+
+### D-2026-10-03-73 - Estado que precisa sobreviver entre comandos não pode ser declarado dentro do laço
+
+`/models --next` não fazia nada. `catalogPage` estava declarado **dentro** do laço de comandos,
+então nascia zerado a cada iteração: página 1 de 12, para sempre. O smoke no Inspiron foi
+que pegou; nenhum teste falhou porque o comportamento observável ("página 1") era o esperado.
+
+O mesmo smoke pegou o filtro de adequação **nunca ligado**: `parseCatalogOpts` usava
+`var o catalogOpts` em vez do inicializador, e eu tinha perdido a edição num `-replace` do
+PowerShell sem reler o resultado.
+
+A resolução de página virou função pura (`resolveCatalogPage`) justamente para poder ser
+testada: enquanto ficou inline no laço, um teste que recalculava `cur+1` **dentro do teste**
+passava verde e a mutação que fixava `--next` na página 1 ficava sem cobertura.
+
+### D-2026-10-03-74 - "Respondeu 200" e "sabe fazer tool calling" são coisas diferentes
+
+`/models --check` era **no-op**: pedia consentimento para gastar tokens e não sondava nada —
+pior que não existir, porque o operador saía acreditando ter verificado.
+
+Agora envia uma requisição real com **`tool_choice` forçado** e um tool declarado, e só aprova
+quem devolveu um bloco `tool_calls`. **O mapeamento do desfecho é o ponto, não o encanamento:**
+
+| resposta | veredito |
+|---|---|
+| bloco `tool_calls` | `verificado` |
+| prosa ("Sure, I'll read it") | `sem tool calling` |
+| truncada no teto de leitura | **inconclusivo** |
+| 404 / timeout de rede | **erro**, nunca veredito negativo |
+
+Prova no hardware: `gpt-4o-mini` e `gpt-4o-mini-2024-07-18` verificados com tool call real;
+`gpt-4o-mini:batch` deu 404 ("cannot be used with the chat/completions endpoint") e ficou
+registrado como **erro**, não como "sem tool" — que é o que ele de fato é, mas por um motivo
+que o operador precisa poder ver.
+
+Forçar `tool_choice` não é detalhe: sem ele um modelo de chat responde "Sure, I'll read it" em
+prosa e pontua como suportando tools, enquanto o harness — que precisa de `tool_calls` para
+agir — ficaria parado.
+
+### D-2026-10-03-75 - Helper certo, chamador errado: só um teste de *call site* pega
+
+O veredito da sondagem **sumia** da tela. `catalog.Filter` devolve **cópias**; `main.go` passava
+o slice **filtrado** para a sonda e re-renderizava a partir do slice de **origem**. Os 40
+vereditos eram escritos num slice descartável. Corrigi o helper e escrevi 17 mutações — e a
+mutação do defeito real continuou **verde**, porque **o helper estava certo e quem o chamava
+estava errado**.
+
+A linha de resultado também nomeava o modelo errado, pelo mesmo motivo.
+
+Escrevemos então testes de **call site por AST**, que leem a expressão passada em `main.go` e
+afirmam que é `entries`. É a única forma de prender a propriedade: replicar o comportamento no
+teste e afirmar que o comportamento está certo foi o que deixou o bug sobreviver.
+
+**Regra que sai daqui**: quando o defeito está na fronteira entre dois pacotes, mutação de
+helper não serve. Suba um nível e teste a chamada.
