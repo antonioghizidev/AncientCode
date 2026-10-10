@@ -13,7 +13,7 @@ import (
 // The confirmation lives here rather than in cdCommand because asking is an
 // interaction with a person, and a pure function cannot ask. cdCommand decides
 // and validates; this decides when to ask and what to print.
-func runCdREPL(w *workspace.Workspace, cmd command, ask func(string) (string, error)) {
+func runCdREPL(w *workspace.Workspace, cmd command, ask func(string) (string, error), persist rootPersister) {
 	res := cdCommand(w, cmd.arg)
 	if res.Err != nil {
 		fmt.Fprintln(cmdErrOut(), "erro:", res.Message)
@@ -46,6 +46,7 @@ func runCdREPL(w *workspace.Workspace, cmd command, ask func(string) (string, er
 		fmt.Println("ja estamos em", out.Root)
 		return
 	}
+	persistRoot(persist, out.Root)
 	fmt.Println("raiz do projeto:", out.Root)
 }
 

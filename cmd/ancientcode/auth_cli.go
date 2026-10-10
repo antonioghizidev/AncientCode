@@ -53,6 +53,19 @@ func stateStore() (*state.Store, error) {
 	return state.Open(path)
 }
 
+// cdPersister returns the preference store used to remember the last /cd.
+//
+// Returning nil on failure is deliberate: persistence is a convenience, and a
+// state file that cannot be opened must not stop /cd from working in this
+// session. persistRoot treats nil as "do not persist".
+func cdPersister(_ *config.Config) rootPersister {
+	st, err := stateStore()
+	if err != nil {
+		return nil
+	}
+	return st
+}
+
 // credSvc builds the connect service wired to a real HTTP verifier.
 func credSvc() (*connect.Service, error) {
 	store, err := credStore()

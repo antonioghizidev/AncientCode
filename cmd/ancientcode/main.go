@@ -338,6 +338,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, "workspace:", err)
 		os.Exit(1)
 	}
+	// M15: reopen in the last project the operator cd'ed into. Silently ignored
+	// on any failure — a missing or hand-edited state.json falls back to the
+	// config, and refusing to start over a convenience would be worse.
+	if st, serr := stateStore(); serr == nil {
+		if saved, ok, perr := st.ProjectRoot(); perr == nil && ok {
+			if serr := ws.SetProjectRoot(saved); serr == nil {
+				cfg.ProjectRoot = ws.ProjectRoot()
+			}
+		}
+	}
 	rootRef := workspace.NewRef(ws)
 
 	// The filesystem tools are rooted at the project root (SPEC §10.3): every
@@ -493,7 +503,9 @@ func main() {
 	// M9: the TUI frontend owns the terminal; everything above (config, tools,
 	// audit, approver) is shared with the REPL. runTUI blocks until exit.
 	if *flagTUI {
-		runTUI(agent, gate, cfg, version, filepath.Base(sessionPath), credSvcForTUI(), ws)
+		tuiWs := ws
+		tuiPersist := cdPersister(cfg)
+		runTUI(agent, gate, cfg, version, filepath.Base(sessionPath), credSvcForTUI(), tuiWs, tuiPersist)
 		return
 	}
 	// M8: structured observer replaces the D-35 status string on TTYs — the
@@ -725,7 +737,7 @@ func main() {
 				}
 				continue
 			case cmdCd:
-				runCdREPL(ws, cmd, askLine)
+				runCdREPL(ws, cmd, askLine, cdPersister(cfg))
 				continue
 			case cmdGrant:
 				msg, gerr := grantCommand(ws, cmd.arg)

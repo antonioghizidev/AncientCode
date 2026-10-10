@@ -122,6 +122,8 @@ type tuiModel struct {
 	// ws is the live workspace (M15): /cd and /grant change the project root
 	// and the write allowances without restarting the harness.
 	ws *workspace.Workspace
+	// persist remembers the last /cd for the next run (M15).
+	persist rootPersister
 	// pendingCd holds a widening /cd waiting for a confirmation by retyping.
 	// It is cleared by any other /cd so a stale one can never fire later.
 	pendingCd string
@@ -981,6 +983,7 @@ func (m *tuiModel) View() string {
 		Model:    m.model,
 		Toolbox:  m.toolbox,
 		Session:  m.sessionName,
+		Project:  projectLine(m.ws),
 		Status:   m.statusTone(),
 		Usage:    m.usage,
 	}
@@ -1058,11 +1061,12 @@ func (m *tuiModel) openConnectPanel() tea.Cmd {
 	return nil
 }
 
-func runTUI(agent *loop.Loop, gate *tuiGate, cfg *config.Config, version, sessionName string, credSvc *connect.Service, ws *workspace.Workspace) {
+func runTUI(agent *loop.Loop, gate *tuiGate, cfg *config.Config, version, sessionName string, credSvc *connect.Service, ws *workspace.Workspace, persist rootPersister) {
 	m := &tuiModel{
 		agent:       agent,
 		gate:        gate,
 		ws:          ws,
+		persist:     persist,
 		runner:      loopRunner{agent: agent},
 		usageFn:     agent.ContextUsage,
 		version:     version,

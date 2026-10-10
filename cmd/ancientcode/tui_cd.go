@@ -60,6 +60,9 @@ func (m *tuiModel) applyCd(res cdResult) {
 		m.appendSession("> ja estamos em " + redact.Redact(out.Root))
 		return
 	}
+	if m.persist != nil {
+		persistRoot(m.persist, out.Root)
+	}
 	m.appendSession("> raiz do projeto: " + redact.Redact(out.Root))
 }
 

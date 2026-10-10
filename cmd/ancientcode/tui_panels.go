@@ -56,8 +56,12 @@ type footerInfo struct {
 	Model    string
 	Toolbox  string
 	Session  string
-	Status   statusTone
-	Usage    loop.Usage
+	// Project is the basename of the project root (M15). The footer is the only
+	// always-on place in the TUI, and without it the operator cannot tell which
+	// project the tools are confined to while a turn runs.
+	Project string
+	Status  statusTone
+	Usage   loop.Usage
 }
 
 const (
@@ -91,6 +95,11 @@ func buildFooter(f footerInfo) []string {
 	line1 := fmt.Sprintf("ancientcode %s | %s | %s | %s", f.Version, f.Provider, f.Model, f.Toolbox)
 	if f.Session != "" {
 		line1 += " | " + f.Session
+	}
+	// A pasta entra por último para ser a última a ser cortada: ela é curta,
+	// e o rodapé é o único lugar sempre visível para dizer onde o agente está.
+	if f.Project != "" {
+		line1 += " | " + f.Project
 	}
 	if n := len([]rune(line1)); n > lineCap {
 		line1 = string([]rune(line1)[:lineCap-2]) + ".."

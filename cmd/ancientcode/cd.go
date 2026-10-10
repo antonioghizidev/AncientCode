@@ -88,7 +88,25 @@ func (r cdResult) Apply(w *workspace.Workspace, confirmed bool) cdOutcome {
 	return cdOutcome{Changed: w.ProjectRoot() != before, Root: w.ProjectRoot()}
 }
 
-// grantCommand implements /grant: writing allowed in one more folder, for the
+// rootPersister remembers the root for the next run (M15). It is an interface
+// so cdCommand and its tests stay free of the state package.
+type rootPersister interface {
+	SetProjectRoot(root string) error
+}
+
+// persistRoot saves the new root, but never fails the switch.
+//
+// Order matters: the workspace is already changed when this runs, and a state
+// write that errors must NOT roll the session back to the old folder — that
+// would leave the operator believing a /cd that visibly worked did not happen.
+// The cost of failing to persist is one lost convenience, not a lying prompt.
+func persistRoot(p rootPersister, root string) {
+	if p == nil || root == "" {
+		return
+	}
+	_ = p.SetProjectRoot(root)
+}
+
 // rest of the session, recorded so the UI can show it.
 //
 // This exists because the shell cannot be confined by path — the honest answer
