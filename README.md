@@ -58,6 +58,12 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 \
 `GOAMD64=v1` não é sugestão: impede o compilador de emitir instruções pós-SSE2, o que garante
 execução no Core 2 Duo **por contrato** — uma build futura não introduz AVX por acidente.
 
+Para build **local** (Windows ou macOS), dispense as flags de cross-compilação:
+
+```sh
+go build -o ancientcode ./cmd/ancientcode   # ou: go install ./cmd/ancientcode
+```
+
 ### Provedores
 
 | `provider` | endpoint | chave |
@@ -105,6 +111,40 @@ digitado, são letras.
 
 `--cleanup` só roda **no startup**, remove `.jsonl` antigos por mtime e nunca é automático.
 `--reset` apaga a sessão. `/new` (que preserva) ainda está no backlog — ver abaixo.
+
+## Plataformas
+
+O alvo é **Linux sem AVX** (Inspiron 1545 / Core 2 Duo). Linux é o único alvo onde tudo
+funciona; o restante é suportado com ausências declaradas, não com degradação silenciosa.
+
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| TUI (`--tui`) | ✅ | ✅ | ✅ |
+| `--run` (pipe/arquivo) | ✅ | ✅ | ✅ |
+| Loop, tools, gate, auditoria | ✅ | ✅ | ✅ |
+| `/models` paginado + `--check` | ✅ | ✅ | ✅ |
+| `/connect` com entrada **mascarada** | ✅ | ❌ | ❌ |
+| Edição de linha raw no REPL | ✅ | ⚠️ cooked | ⚠️ cooked |
+| `0600` real no `auth.json` | ✅ | ❌ | ✅ |
+| `run_user` sem privilégio | ✅ | ⚠️ usuário da sessão | ⚠️ usuário da sessão |
+
+Três ausências, e cada uma **recusa** em vez de fingir:
+
+1. **Entrada mascarada (`/connect`).** Não há driver raw fora do Linux
+   (`secret_other.go`). O harness **não** faz fallback para ecoar a chave — em vez disso,
+   `/connect` falha e manda usar `--use-env`. Uma chave aparecendo na tela não é um
+   detalhe de UX.
+2. **Edição raw.** Sem raw mode o REPL cai para modo *cooked*: `←`/`→` e histórico com
+   `↑` não funcionam, e `Ctrl+C` chega como byte. O REPL e a TUI continuam utilizáveis —
+   a TUI não depende de raw mode.
+3. **Permissões de arquivo.** No Windows o bit `0600` é **ignorado** pelo sistema de
+   arquivos: medido aqui, o `auth.json` fica `-rw-rw-rw-`. Por isso `tightenDir` não roda
+   lá. **Consequência a levar em conta:** no Windows, qualquer processo local com acesso ao
+   perfil do usuário consegue ler a chave. A defesa continua sendo o gate humano (§5.6 da
+   SPEC), não a permissão do arquivo — mas se você não confia no host, use `--use-env`.
+
+No Windows, para ter tudo, use a TUI (`--tui`): ela cobre os comandos que o raw mode do
+REPLakia.
 
 ## Segurança
 

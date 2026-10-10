@@ -228,6 +228,25 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   `TestConfigDefaultFilenameMatchesBinaryName`) — o primeiro **não cobria a raiz do repo**, então o
   README nunca era verificado; descoberto ao injetar o nome antigo e ver o gate passar (D-64). Smoke
   Inspiron: binário, banner, config, sessão preservada e todos os comandos.
+- **M14 implementado e validado** (branch `m14-connect-credenciais`; ver
+  `docs/session-2026-10-03-m14-connect.md`): `internal/creds` (`auth.json`, escrita atômica),
+  `internal/state` (modelo por provedor), `/connect` no REPL e na TUI, onboarding de primeiro
+  uso, `--use-env`, `--models` persistindo por provedor. Smoke real no Inspiron com NVIDIA e
+  OpenRouter. **Pós-commit (catálogo, D-71..75)**: o metadata do provedor foi medido em
+  469 modelos na OpenRouter (401 declaram tools, 395 têm tools + ctx ≥32k, 16 gratuitos) e
+  **não dá para filtrar o suficiente** — `output_modalities` não separa gerador de imagem de
+  chat (`gemini-nano-banana-2.1` diz `[image, text]`). Daí a triagem + ordenação
+  (`AgentViable`, `AgentRank`) e a paginação de 40. **Defeitos achados no caminho**:
+  `alias_target` da OpenRouter é `null` em 451 modelos e objeto `{name,slug}` em 18, e decodificar
+  como `string` derrubava o catálogo inteiro (D-72); `--next` não fazia nada porque
+  `catalogPage` era declarado **dentro** do loop de comandos; o filtro de adequância nunca ligou
+  (D-73). `--check` era **no-op** — pedia consentimento para gastar tokens e não sondava nada;
+  agora envia uma requisição real com `tool_choice` forçado, e só aprova quem devolveu
+  `tool_calls`: prosa, truncamento e erro de rede **não** viram veredito negativo (D-74).
+  **Lição registrada**: o veredito sumia porque `catalog.Filter` devolve *cópias* e o `main.go`
+  passava o slice filtrado para a sonda mas re-renderizava do original — **nenhuma mutação de
+  helper pega isso** (o helper está certo, quem chama está errado), e só um teste de *call site*
+  por AST prende a propriedade (D-75). 25 mutações com cobertura; `-race` no WSL verde.
 - **M14 especificado** (`specs/milestones/14-m14-connect-credenciais.md`, D-65..68), **não
   implementado** — é o próximo. Tira o usuário do `.env` no caminho principal: `internal/creds`
   (`~/.local/share/ancientcode/auth.json`, `0600`, escrita atômica, verificar antes de gravar),
@@ -240,7 +259,9 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   contra o agente** — `shell` roda como `run_user`, sem privilégio; a defesa é o gate humano.
   Preparo para `go install`. Fora de escopo com motivo: keyring (não existe em server minimal),
   senha mestra (pior que `.env`), OAuth (nenhum provedor atual exige).
-- **Próximo**: mergear `rename-ancientcode` → `main`; depois implementar o M14.
+- **Próximo**: mergear `m14-connect-credenciais` → `main` (PR aberto à mão: o fine-grained PAT
+  tem `contents: write` mas não `pull requests: write`). Depois: decidir o driver raw do
+  Windows, se a experiência de edição justificar `golang.org/x/term`.
 - **Backlog anotado para a PRÓXIMA sessão de specs** (pedido do usuário em 2026-10-02; **não
   implementar no M13**, seção 10 da spec M13): **`/compact`**, **`/new`** e **`/autocompact`** —
   **paridade com o opencode** (decisão do usuário em 2026-10-02, medida em `dev.opencode.ai/docs/tui`
@@ -282,6 +303,33 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
   enviar ao modelo; nunca citar valores de chave em erros.
 - **Fail-closed**: parser estrito, tool desconhecida recusada, loop com teto de iterações.
 - **Sem downgrade silencioso**: não desligar verificação TLS, não enfraquecer para passar teste.
+
+## Portabilidade — o que NÃO assumir
+
+O dev machine é **Windows**; o alvo é **Linux sem AVX**. A suíte roda no host Windows, mas
+os testes de permissão/POSIX são **pulados** lá (`runtime.GOOS == "windows"`), então o
+`-race` no WSL continua sendo gate.
+
+Medido neste host, não de memória:
+
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| `0600` no `auth.json` | real | **ignorado** (`-rw-rw-rw-`) | real |
+| entrada mascarada (`/connect`) | ✅ | ❌ (`secret_other.go`) | ❌ |
+| edição raw no REPL | ✅ | cooked (`raw_other.go`) | cooked |
+| `run_user` sem privilégio | ✅ | usuário da sessão | usuário da sessão |
+
+Regras que decorrem disso, e que **não** devem ser afrouxadas:
+
+- **Ausência ≠ degradação.** `readSecret` falha fora do Linux em vez de ecoar a chave; é
+  intencional. Não "simplifique" esse fallback.
+- **Permissão de arquivo não é controle de segurança aqui.** `0600` no `auth.json` não protege
+  contra o agente (`shell` roda como `run_user`); a defesa é o gate humano. Não escreva texto
+  que sugira o contrário.
+- **Testes de segurança que dependem de `0600`/`0700` devem pular no Windows**, e o WSL é
+  quem valida de fato.
+- Ao medir permissão num host novo, **meça** (`os.Stat().Mode().Perm()`); não deduza do
+  código que a chamada existe.
 
 ## Convenções de código (Go)
 
