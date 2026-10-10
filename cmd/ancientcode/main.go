@@ -23,7 +23,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/antonioghizidev/ancientcode/internal/audit"
 	"github.com/antonioghizidev/ancientcode/internal/catalog"
 	"github.com/antonioghizidev/ancientcode/internal/config"
 	"github.com/antonioghizidev/ancientcode/internal/connect"
@@ -31,15 +30,8 @@ import (
 	"github.com/antonioghizidev/ancientcode/internal/loop"
 	"github.com/antonioghizidev/ancientcode/internal/model"
 	"github.com/antonioghizidev/ancientcode/internal/provider"
-	"github.com/antonioghizidev/ancientcode/internal/sandbox"
 	"github.com/antonioghizidev/ancientcode/internal/skills"
-	"github.com/antonioghizidev/ancientcode/internal/tools"
-	"github.com/antonioghizidev/ancientcode/internal/tools/apttools"
-	"github.com/antonioghizidev/ancientcode/internal/tools/code"
-	"github.com/antonioghizidev/ancientcode/internal/tools/docker"
 	"github.com/antonioghizidev/ancientcode/internal/tools/files"
-	"github.com/antonioghizidev/ancientcode/internal/tools/shell"
-	skillstool "github.com/antonioghizidev/ancientcode/internal/tools/skills"
 	"github.com/antonioghizidev/ancientcode/internal/workspace"
 )
 
@@ -354,67 +346,8 @@ func main() {
 	// read/write for the coding agent stays inside the folder the operator is
 	// working in.
 	fs := files.NewFilesLive(rootRef.CodeRoot, cfg.OutputMaxBytes)
-	reg := tools.NewRegistry()
-	for _, t := range []tools.Tool{fs.ToolReadFile(), fs.ToolWriteFile(), fs.ToolListDir()} {
-		if err := reg.Register(t); err != nil {
-			fmt.Fprintln(os.Stderr, "tools:", err)
-			os.Exit(1)
-		}
-	}
-	// M6: coding-agent tools (SPEC §10). code_review is read-only; scaffold and
-	// edit always require human approval. Generated code is never executed.
-	codeTools := code.NewToolsetLive(rootRef.CodeRoot, cfg.OutputMaxBytes)
-	for _, t := range []tools.Tool{codeTools.ToolCodeScaffold(), codeTools.ToolEditFile(), codeTools.ToolCodeReview()} {
-		if err := reg.Register(t); err != nil {
-			fmt.Fprintln(os.Stderr, "tools:", err)
-			os.Exit(1)
-		}
-	}
-	if cfg.ShellTool == "enabled" {
-		shellTimeout, err := cfg.ToolTimeout("shell")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "config:", err)
-			os.Exit(1)
-		}
-		policy := sandbox.NewPolicy(sandbox.DefaultAllowed)
-		exec := sandbox.NewExecutorLive(rootRef.Workdir, cfg.RunUser, shellTimeout, cfg.OutputMaxBytes)
-		if err := reg.Register(shell.New(policy, exec, cfg.OutputMaxBytes)); err != nil {
-			fmt.Fprintln(os.Stderr, "tools:", err)
-			os.Exit(1)
-		}
-	}
-	// M5: docker and apt only operate with human approval (ask), and only when
-	// explicitly enabled in the config. Both are argument-vector wrappers —
-	// model text never becomes a shell line.
-	if cfg.DockerTool == "enabled" {
-		dockerTimeout, err := cfg.ToolTimeout("docker")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "config:", err)
-			os.Exit(1)
-		}
-		if err := reg.Register(docker.New(dockerTimeout, cfg.OutputMaxBytes)); err != nil {
-			fmt.Fprintln(os.Stderr, "tools:", err)
-			os.Exit(1)
-		}
-	}
-	if cfg.AptTool == "enabled" {
-		aptTimeout, err := cfg.ToolTimeout("apt")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "config:", err)
-			os.Exit(1)
-		}
-		if err := reg.Register(apttools.New(aptTimeout, cfg.OutputMaxBytes)); err != nil {
-			fmt.Fprintln(os.Stderr, "tools:", err)
-			os.Exit(1)
-		}
-	}
-	// M7: skills (SPEC §11.1). One shared skills.Set bonds the loop and the
-	// skill_run tool; --skill loads are validated against the registry before
-	// any turn (fail-closed activation). skill_run is always registered but the
-	// loop only exposes it when a scripted skill is active in run mode.
-	set := skills.NewSet()
-	exec := sandbox.NewExecutorLive(rootRef.Workdir, cfg.RunUser, 60*time.Second, cfg.OutputMaxBytes)
-	if err := reg.Register(skillstool.New(set, exec, cfg.OutputMaxBytes)); err != nil {
+	reg, set, err := buildRegistry(cfg, rootRef, fs)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "tools:", err)
 		os.Exit(1)
 	}
@@ -437,7 +370,7 @@ func main() {
 
 	// M4: append-only audit (SPEC §5.7). Fail-closed: only the hash of the
 	// output and the redacted args go to disk; never the model's secrets.
-	rec, err := audit.NewRecorder(filepath.Join(cfg.Workdir, "audit.jsonl"), 10<<20, 5)
+	rec, err := newAuditRecorder(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "audit:", err)
 		os.Exit(1)

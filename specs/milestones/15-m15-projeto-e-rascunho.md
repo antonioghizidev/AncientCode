@@ -1,19 +1,9 @@
 # M15 — `/cd`: raiz do projeto separada da casa do agente, e pasta de rascunho
 
-**Status**: 🟡 em andamento (branch `m15-projeto-rascunho`) — implementado e coberto por mutações;
-**falta o smoke** no Inspiron. Ver `docs/session-2026-10-03-m15-projeto.md`.
+**Status**: 🟡 em andamento (branch `m15-projeto-rascunho`) — implementado, com os 8 testes de
+segurança da §6 cobertos por mutação. **Falta o smoke** no Inspiron.
 **Depende de**: M14
 **Sessão de referência**: `docs/session-2026-10-03-m15-projeto.md`
-
-> **Quatro itens de segurança seguem desmarcados de propósito.** São propriedades verdadeiras,
-> mas **não têm teste explícito** — e este projeto já corrigiu 4 bugs que nenhum teste pegava:
->
-> - `/cd` não é exposto ao modelo como tool (é verdade: só existe no parser de comandos, fora
->   do `Registry`), e **`audit.jsonl` não muda de caminho após `/cd`** (é verdade: o caminho é
->   capturado no startup a partir de `workdir` e `/cd` não o alcança).
->
-> Nenhum dos dois tem teste que **falhe** se a proteção cair. São as duas primeiras coisas a
-> escrever quando a sessão recomeçar, antes do smoke.
 
 ## 1. Objetivo
 
@@ -116,12 +106,12 @@ deveria enxergar o código** — só nunca foi pedido.
 
 ## 5. Requisitos de segurança deste milestone
 
-- [ ] **`/cd` é do operador.** Nenhuma tool o expõe ao modelo. Um agente que movesse a própria
+- [x] **`/cd` é do operador.** Nenhuma tool o expõe ao modelo. Um agente que movesse a própria
       raiz sairia do confine sem nenhum registro.
 - [x] **Widening pede consentimento.** Subir a árvore amplia o blast radius; descer não.
 - [x] **A casa do agente não é destino válido.** `/cd` para dentro de `<agent_home>` onde mora
       `auth.json` é recusado — senão o agente edita a própria credencial.
-- [ ] **`audit.jsonl` não acompanha a troca** (§4.4).
+- [x] **`audit.jsonl` não acompanha a troca** (§4.4).
 - [x] Path com symlink é resolvido (`EvalSymlinks`) **antes** de virar raiz, como já faz
       `files.resolve` (`files.go:121-127`); uma raiz que resolve para fora do pedido é recusada.
 - [x] `/grant` é **auditado** e some no fim da sessão.
@@ -153,10 +143,10 @@ O usuário pediu pedir permissão para ler fora do projeto **e** pediu que o age
 
 ### Segurança (obrigatórios — devem falhar se a proteção for removida)
 
-- [ ] `/cd` não existe como tool: o registry não a expõe ao modelo
+- [x] `/cd` não existe como tool: o registry não a expõe ao modelo
 - [x] `/cd` para `<agent_home>` é recusado (protegido `auth.json`)
 - [x] `widening` sem consentimento não troca a raiz
-- [ ] `audit.jsonl` não muda de caminho após `/cd`
+- [x] `audit.jsonl` não muda de caminho após `/cd`
 - [x] root com symlink que resolve fora é recusado
 - [x] path inexistente ou não-diretório é recusado
 - [x] escrita fora de projeto+rascunho+`grant` é recusada

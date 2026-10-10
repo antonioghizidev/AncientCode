@@ -133,8 +133,9 @@ regressão desta sessão (a mudança no executor foi trocar `string` por `func()
       `audit.jsonl` imutável após `/cd`.
 - [ ] **Smoke no Inspiron** com o binário `GOAMD64=v1`:
   - [ ] os 5 itens de "Não validado" acima;
-  - [ ] renomear o usuário `ancientai` → `ancientcode` (o `run_user` do config já é
-        `ancientcode`, então hoje ele **não casa** com o usuário real);
-  - [ ] verificar se `/home/ancientai` pode ser removida e limpar os resíduos de smoke.
+  - [ ] renomear o usuário de execução do smoke (o `run_user` do config já é
+        `ancientcode`, então hoje ele **não casa** com o usuário real do host);
+  - [ ] verificar se a casa do agente atual (o diretório pessoal com o nome antigo do projeto)
+        pode ser removida depois da renomeação, e limpar os resíduos de smoke.
 - [ ] Investigar o flake de `TestExecOutputTruncated`.
 - [ ] Push da branch e PR.
