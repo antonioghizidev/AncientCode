@@ -172,39 +172,21 @@ func TestValidateRejectsBadApprovalValue(t *testing.T) {
 	}
 }
 
+// M15 removeu o invariante "code_root dentro de workdir" (SPEC §10.3). Este
+// teste foi SUBSTITUÍDO por workspace_config_test.go, que registra o contrato
+// novo: a raiz do projeto e a casa do agente são irmãs e nenhuma contém a
+// outra. O teste antigo é preservado aqui como histórico do que mudou:
+//
+//	code_root == workdir  -> recusado  (agente trabalharia sobre sessions/)
+//	code_root fora do wd   -> recusado  (só porque não estava dentro)
+//	code_root dentro do wd -> aceito
+//
+// A recusa que SOBREVIVEU é a primeira, e agora vive em internal/workspace,
+// verificada a cada /cd em vez de uma vez no load.
 func TestValidateCodeRootInsideWorkdir(t *testing.T) {
-	base, err := os.MkdirTemp("", "aai-code-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(base)
-	wd := filepath.Join(base, "wd")
-	out := filepath.Join(base, "outside")
-	if err := os.MkdirAll(wd, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := loadWithKey(t, "model: x/y\nworkdir: "+wd+"\ncode_root: "+wd); err == nil || !strings.Contains(err.Error(), "code_root") {
-		t.Fatalf("code_root == workdir deveria falhar (SPEC §10.3), got %v", err)
-	}
-	if _, err := loadWithKey(t, "model: x/y\nworkdir: "+wd+"\ncode_root: "+out); err == nil || !strings.Contains(err.Error(), "code_root") {
-		t.Fatalf("code_root fora do workdir deveria falhar (SPEC §10.3), got %v", err)
-	}
-	// Descendente estrito passa e dispara o default workdir/code.
-	cfg, err := loadWithKey(t, "model: x/y\nworkdir: "+wd+"\ncode_root: "+filepath.Join(wd, "code"))
-	if err != nil {
-		t.Fatalf("code_root dentro do workdir rejeitado: %v", err)
-	}
-	if cfg.CodeRoot != filepath.Join(wd, "code") {
-		t.Errorf("code_root = %q", cfg.CodeRoot)
-	}
-	// Default segue o workdir.
-	cfg2, err := loadWithKey(t, "model: x/y\nworkdir: "+wd)
-	if err != nil {
-		t.Fatalf("default config rejeitada: %v", err)
-	}
-	if cfg2.CodeRoot != filepath.Join(wd, "code") {
-		t.Errorf("default code_root = %q, want %q", cfg2.CodeRoot, filepath.Join(wd, "code"))
-	}
+	t.Skip("removido no M15: o invariante code_root ⊂ workdir foi retirado em favor " +
+		"da checagem em internal/workspace (a raiz do projeto não pode ser, estar " +
+		"dentro nem conter a casa do agente). Ver workspace_config_test.go")
 }
 
 // TestDefaultSkillsDir: M7 skills_dir defaults to <home>/.config/ancientcode/skills

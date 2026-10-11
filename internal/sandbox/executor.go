@@ -31,23 +31,42 @@ type Result struct {
 
 // Executor runs commands in a sandboxed context with timeout, output limit
 // and workdir confinement (SPEC §5.2 camada 4).
+//
+// workdir is a FUNCTION because the project root changes at runtime (M15's
+// /cd) and there is no setter. Capturing it at construction left the shell
+// running in the OLD directory after a successful /cd — the operator would see
+// the new root in the prompt while `pwd` disagreed.
+//
+// This does NOT confine the shell by path. proc.Dir is the directory the child
+// starts in; `find / -name x` still leaves it. The real controls are an
+// unprivileged run_user and the approval gate that shows the whole command.
 type Executor struct {
-	workdir string
+	workdir func() string
 	runUser string
 	timeout time.Duration
 	maxOut  int
 }
 
-// NewExecutor builds an executor.  If runUser is empty, commands run as the
-// current user.  If timeout is zero, a default of 30s is applied.
+// NewExecutor builds an executor with a FIXED workdir. If runUser is empty,
+// commands run as the current user. If timeout is zero, a default of 30s is
+// applied.
 func NewExecutor(workdir, runUser string, timeout time.Duration, maxOut int) *Executor {
+	return NewExecutorLive(func() string { return workdir }, runUser, timeout, maxOut)
+}
+
+// NewExecutorLive builds an executor whose working directory is whatever get
+// returns at the moment of each command.
+func NewExecutorLive(get func() string, runUser string, timeout time.Duration, maxOut int) *Executor {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
 	if maxOut <= 0 {
 		maxOut = 65536
 	}
-	return &Executor{workdir: workdir, runUser: runUser, timeout: timeout, maxOut: maxOut}
+	if get == nil {
+		get = func() string { return "" }
+	}
+	return &Executor{workdir: get, runUser: runUser, timeout: timeout, maxOut: maxOut}
 }
 
 // Exec runs cmd via bash -c, potentially dropping privileges to runUser.
@@ -67,8 +86,8 @@ func (e *Executor) Exec(ctx context.Context, cmd string, approvedArgs string) (*
 
 	argv := e.buildCommand(cmd)
 	proc := execCommand(ctx, argv[0], argv[1:]...)
-	if e.workdir != "" {
-		proc.Dir = e.workdir
+	if wd := e.workdir(); wd != "" {
+		proc.Dir = wd
 	}
 	return e.run(proc, approvedArgs)
 }
@@ -94,8 +113,8 @@ func (e *Executor) ExecVector(ctx context.Context, prog string, argv []string, a
 		defer cancel()
 	}
 	proc := execCommand(ctx, prog, argv...)
-	if e.workdir != "" {
-		proc.Dir = e.workdir
+	if wd := e.workdir(); wd != "" {
+		proc.Dir = wd
 	}
 	return e.run(proc, approvedArgs)
 }

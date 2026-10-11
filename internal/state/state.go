@@ -52,6 +52,9 @@ func ValidateModelID(id string) error {
 type file struct {
 	Version int               `json:"version"`
 	Models  map[string]string `json:"models"`
+	// ProjectRoot is the last root the operator cd'ed into (M15). Absent in
+	// files written before M15, which is fine: the caller falls back to config.
+	ProjectRoot string `json:"project_root,omitempty"`
 }
 
 // Store persists the last model chosen per provider.

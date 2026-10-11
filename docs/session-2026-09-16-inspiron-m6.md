@@ -4,7 +4,7 @@
 
 ## Objetivo da sessão
 
-Validar M1–M6 no hardware-alvo real (Dell Inspiron 1545 via SSH, `USUARIO@192.168.x.x`,
+Validar M1–M6 no hardware-alvo real (Dell Inspiron 1545 via SSH, `USUARIO@SERVIDOR`,
 Core 2 Duo T6600 / sem AVX / Ubuntu 24.04.5 LTS) com o binário `0.6.0-m6`, provider
 `openrouter` + modelo `openrouter/free`, todas as tools habilitadas (`shell`, `docker`,
 `apt`, `code_scaffold`, `edit_file`, `code_review`). Corrigir o que o smoke revelar e só
@@ -38,7 +38,7 @@ então avaliar M7.
   validação ao vivo de que output de modelo é untrusted. Conclusão: implantar o harness **no
   usuário dedicado `ancientcode`** (D-2026-09-16-30). Com `run_user == atual`, o executor roda
   direto (validado de ponta a ponta no caminho docker).
-- **Smoke F** (docker real): `docker ps` via tool listou os containers projeto reais;
+- **Smoke F** (docker real): `docker ps` via tool listou os containers reais do host;
   2 chamadas aprovadas+executadas+auditadas (<150 ms cada).
 - **Smoke G** (apt real): `apt update` executado de verdade; sem root → exit 100 (lock de
   `/var/lib/apt/lists`), erro propagado com honestidade e auditado (D-2026-09-16-31).

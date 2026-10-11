@@ -1256,3 +1256,80 @@ teste e afirmar que o comportamento está certo foi o que deixou o bug sobrevive
 
 **Regra que sai daqui**: quando o defeito está na fronteira entre dois pacotes, mutação de
 helper não serve. Suba um nível e teste a chamada.
+
+### D-2026-10-03-76 - A raiz do projeto e a casa do agente são IRMÃS, não mãe e filha
+
+- **Contexto**: o usuário tem o harness instalado num caminho e a fonte em outro
+  (`<agent_home>` vs `/home/USUARIO/workspace/PROJETO`). Essa configuração **não subia**:
+  `config.Validate()` exigia `code_root ⊂ workdir` (`config.go:265`).
+- **Por que existia o invariante**: nasceu no M6, quando `code_root` precisava ser uma raiz
+  mais apertada que a do shell (o agente de código é `allowlist` separado) e as duas pastas
+  eram irmãs dentro de `/home/ancientcode`. Era coerente **naquela topologia**.
+- **O que ele protegia**: nada. O confine real é por tool, e já recusa travessia, absoluto e
+  escape por symlink (`files.go:114-127`). O que ele fazia era **impedir a separação** que o
+  operador precisa.
+- **Decisão**: removido. `project_root` (novo) e `workdir` (que passa a significar *só* a casa
+  do agente) são irmãos, e `internal/workspace` passa a recusar a raiz que seja, esteja dentro
+  **ou contenha** a casa do agente.
+- **Por que "conter" também**: com a casa em `~/ancientcode` e o projeto em `~`, qualquer
+  `write_file` alcançaria `~/ancientcode/auth.json` por caminho, porque o confine é
+  por **diretório**, não por nome. A primeira versão da checagem só recusava "dentro", e um
+  teste meu pegou isso.
+- **Custo aceito**: perde-se o invariante estático "o shell não enxerga a raiz das tools".
+  Ganhou-se uma única raiz, que é o que `/cd` significa.
+
+### D-2026-10-03-77 — O shell NÃO é confinável por path, e o harness diz isso por escrito
+
+- **O pedido**: "ele precisa me pedir permissão para ler e escrever fora da pasta do projeto".
+- **O conflito**: a mesma frase pede `ps`, `df` e `free`, que são **leitura** fora do projeto. Se
+  leitura pedir consentimento, `ps` pede — todo turno.
+- **Por que não dá para contornar**: o "path" do shell é texto livre. `find / -name x`,
+  `cat /etc/hosts` e `ls .` são todos "shell". Uma allowlist de comandos seria análise de
+  comando — frágil e contornável (`sh -c`, `xargs`, redirecionamento).
+- **Decisão**: leitura segue pelo gate do shell, que mostra o comando **inteiro** e roda como
+  `run_user` não-privilegiado. O que se aperta é **escrita** fora de projeto+rascunho, mais
+  `/grant <pasta>`, que concede por pasta e é listável pelo operador.
+- **Por que isso está na spec**: prometer um controle que não existe foi exatamente o que fez
+  `/connect` guardar uma chave errada (D-70). A limitação está escrita em §5.1 da spec, e o
+  código de `workspace` documenta em package comment que `proc.Dir` é diretório de partida, não
+  confine.
+
+### D-2026-10-03-78 — A raiz tem de ser lida por função, porque o registry não aceita troca
+
+- **Problema estrutural**: `files.Files`, `code.Toolset` e `sandbox.Executor` capturam a raiz na
+  **construção** e nenhum tem setter; `tools.Registry.Register` **recusa duplicata**
+  (`tool.go:102-104`). Não existe caminho para reinstalar as tools com a raiz nova.
+- **Decisão**: os três passaram a guardar a raiz como `func() string`, lida no momento do uso,
+  por trás da `workspace.Ref`. Construtores antigos (`NewFiles`, `NewToolset`, `NewExecutor`)
+  continuam existindo e Meaning fixo, para quem quer tool imutável.
+- **Por que isso importa mais do que parece**: com a string capturada, `/cd` trocava o
+  `Workspace` e as tools seguiam presas ao path antigo — o agente leria no projeto novo e
+  escreveria no velho. **Pior que não ter o comando**, porque o prompt diria a pasta nova.
+- **Precedente**: o mesmo molde de `Loop.SetToolboxMode` + `toolboxMu`.
+
+### D-2026-10-03-79 — Confirmar por repetição na TUI, por `y/N` no REPL
+
+- **Restrição real**: o event loop do Bubble Tea não pode bloquear num prompt. As operações que
+  precisam de diálogo (`SwitchModel`, `SwitchProvider`) vão por `tea.Cmd` porque emitem evento e
+  travariam o loop se fossem_called direto (`tui.go:890-892`).
+- **Opção descartada**: painel modal novo, para uma mutação **síncrona** (trocar uma string).
+  Seria maquinaria.
+- **Decisão**: `/cd` que **amplia** pede confirmação por **repetição do mesmo comando** (padrão
+  `sudo`). Custa uma linha, não precisa de painel e não pode ser disparado por tecla perdida.
+- **Por que só quando amplia**: estreitar não amplia o blast radius, e um prompt a cada
+  diretório é atrito. Prompt demais ensina a digitar "y" sem ler — e aí o gate vira decoração.
+- **A recusa vem ANTES do prompt**: `/cd` para a casa do agente falha em `cdCommand`, não em
+  `SetProjectRoot`. Pedir consentimento para algo que nunca seria aceito ensina que o prompt é
+  decorativo.
+
+### D-2026-10-03-80 — `project_root` no `state.json` é confiança, e por isso é validado como entrada remota
+
+- **Decisão**: `/cd` persiste a última raiz; a próxima execução reabre nela.
+- **Por que validar**: o valor vem de **disco**. Um `state.json` editado à mão escolhe a pasta
+  onde o agente vai escrever. É a mesma situação de um model id vindo de catálogo remoto:
+  limitado, sem NUL, revalidado na leitura (`state/project_root.go`).
+- **Leitura inválida devolve "ausente"**, não o valor: o chamador cai na config e o operador não
+  recebe um caminho de um arquivo que alguém escreveu.
+- **Ressalva honesta**: isso torna o `state.json` um canal de persistência de confiança. Quem
+  escreve nele escolhe a pasta. É o mesmo estado de confiança do `config.yaml`, e por isso fica
+  fora da árvore do projeto (D-68) e `0600`.

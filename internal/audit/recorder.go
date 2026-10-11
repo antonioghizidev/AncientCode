@@ -68,6 +68,20 @@ func NewRecorder(path string, maxBytes int64, keepCount int) (*Recorder, error) 
 }
 
 // Record appends one entry.  It is safe for concurrent use.
+// Path returns the audit file this recorder writes to.
+//
+// It exists so a test can prove the path does NOT follow the project root when
+// /cd changes it (M15). An audit log that moved with the working directory
+// would open a fresh trail exactly when the operator widened the blast radius —
+// which is the one moment the log matters most. Reading the path is safe: it is
+// a filename, never content, and never a secret.
+func (r *Recorder) Path() string {
+	if r == nil {
+		return ""
+	}
+	return r.path
+}
+
 func (r *Recorder) Record(entry Entry) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

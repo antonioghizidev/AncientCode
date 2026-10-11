@@ -23,7 +23,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/antonioghizidev/ancientcode/internal/audit"
 	"github.com/antonioghizidev/ancientcode/internal/catalog"
 	"github.com/antonioghizidev/ancientcode/internal/config"
 	"github.com/antonioghizidev/ancientcode/internal/connect"
@@ -31,15 +30,9 @@ import (
 	"github.com/antonioghizidev/ancientcode/internal/loop"
 	"github.com/antonioghizidev/ancientcode/internal/model"
 	"github.com/antonioghizidev/ancientcode/internal/provider"
-	"github.com/antonioghizidev/ancientcode/internal/sandbox"
 	"github.com/antonioghizidev/ancientcode/internal/skills"
-	"github.com/antonioghizidev/ancientcode/internal/tools"
-	"github.com/antonioghizidev/ancientcode/internal/tools/apttools"
-	"github.com/antonioghizidev/ancientcode/internal/tools/code"
-	"github.com/antonioghizidev/ancientcode/internal/tools/docker"
 	"github.com/antonioghizidev/ancientcode/internal/tools/files"
-	"github.com/antonioghizidev/ancientcode/internal/tools/shell"
-	skillstool "github.com/antonioghizidev/ancientcode/internal/tools/skills"
+	"github.com/antonioghizidev/ancientcode/internal/workspace"
 )
 
 var (
@@ -70,7 +63,7 @@ var skillFlags []string
 // would abort before the provider itself gives up.
 const turnTimeout = 5 * time.Minute
 
-const version = "0.14.0-m14"
+const version = "0.15.0-m15"
 
 // terminalApprover is the human gate (SPEC §5.6.6). It shows the exact command
 // before deciding. Answering "d" registers a veto for the tool: from then on
@@ -182,6 +175,36 @@ var catalogPage = struct {
 	page int
 	cur  int // last rendered page, so --next knows where it came from
 }{}
+
+// restoreSavedProjectRoot reopens the project from the previous session.
+//
+// Extracted so the STARTUP behaviour is testable. A test that built its own
+// Workspace restore would pass while main() did the wrong thing — which is D-75,
+// and it already bit this codebase twice.
+//
+// It returns the notice instead of printing it, so the caller decides the
+// stream and the test can read it.
+func restoreSavedProjectRoot(ws *workspace.Workspace, st rootReader, fallback string) string {
+	if st == nil || ws == nil {
+		return ""
+	}
+	saved, ok, err := st.ProjectRoot()
+	if err != nil || !ok || saved == "" {
+		return ""
+	}
+	if err := ws.RestoreProjectRoot(saved); err != nil {
+		return savedRootNotice(saved, err.Error(), ws.ProjectRoot())
+	}
+	fallback = ws.ProjectRoot()
+	_ = fallback
+	return ""
+}
+
+// rootReader is the slice of internal/state this needs, so main and the test
+// agree on the contract without importing the store here.
+type rootReader interface {
+	ProjectRoot() (string, bool, error)
+}
 
 func main() {
 	flag.Parse()
@@ -326,70 +349,34 @@ func main() {
 		client.SetKeyResolver(keyResolverFor(credStoreForConfig))
 	}
 
-	// The filesystem tools are rooted at code_root (SPEC §10.3): every
-	// read/write for the coding agent stays inside the dedicated code tree.
-	fs := files.NewFiles(cfg.CodeRoot, cfg.OutputMaxBytes)
-	reg := tools.NewRegistry()
-	for _, t := range []tools.Tool{fs.ToolReadFile(), fs.ToolWriteFile(), fs.ToolListDir()} {
-		if err := reg.Register(t); err != nil {
-			fmt.Fprintln(os.Stderr, "tools:", err)
-			os.Exit(1)
-		}
+	// M15: one live root, shared by the shell and the file/code tools.
+	//
+	// These used to be two different directories (workdir for the shell,
+	// code_root for the tools), which meant the agent could read in one place
+	// and write in another. One root fixes that and is what makes /cd mean
+	// "this folder is now the project".
+	ws, err := workspace.New(cfg.ProjectRoot, cfg.Workdir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "workspace:", err)
+		os.Exit(1)
 	}
-	// M6: coding-agent tools (SPEC §10). code_review is read-only; scaffold and
-	// edit always require human approval. Generated code is never executed.
-	codeTools := code.NewToolset(cfg.CodeRoot, cfg.OutputMaxBytes)
-	for _, t := range []tools.Tool{codeTools.ToolCodeScaffold(), codeTools.ToolEditFile(), codeTools.ToolCodeReview()} {
-		if err := reg.Register(t); err != nil {
-			fmt.Fprintln(os.Stderr, "tools:", err)
-			os.Exit(1)
+	// M15: reopen in the last project the operator cd'ed into. A failure falls
+	// back to the config — but SAYS so: silently landing somewhere else is how
+	// the agent ends up writing to a folder the operator thinks it moved out of.
+	if st, serr := stateStore(); serr == nil {
+		if aviso := restoreSavedProjectRoot(ws, st, cfg.ProjectRoot); aviso != "" {
+			fmt.Fprintln(os.Stderr, aviso)
 		}
+		cfg.ProjectRoot = ws.ProjectRoot()
 	}
-	if cfg.ShellTool == "enabled" {
-		shellTimeout, err := cfg.ToolTimeout("shell")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "config:", err)
-			os.Exit(1)
-		}
-		policy := sandbox.NewPolicy(sandbox.DefaultAllowed)
-		exec := sandbox.NewExecutor(cfg.Workdir, cfg.RunUser, shellTimeout, cfg.OutputMaxBytes)
-		if err := reg.Register(shell.New(policy, exec, cfg.OutputMaxBytes)); err != nil {
-			fmt.Fprintln(os.Stderr, "tools:", err)
-			os.Exit(1)
-		}
-	}
-	// M5: docker and apt only operate with human approval (ask), and only when
-	// explicitly enabled in the config. Both are argument-vector wrappers —
-	// model text never becomes a shell line.
-	if cfg.DockerTool == "enabled" {
-		dockerTimeout, err := cfg.ToolTimeout("docker")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "config:", err)
-			os.Exit(1)
-		}
-		if err := reg.Register(docker.New(dockerTimeout, cfg.OutputMaxBytes)); err != nil {
-			fmt.Fprintln(os.Stderr, "tools:", err)
-			os.Exit(1)
-		}
-	}
-	if cfg.AptTool == "enabled" {
-		aptTimeout, err := cfg.ToolTimeout("apt")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "config:", err)
-			os.Exit(1)
-		}
-		if err := reg.Register(apttools.New(aptTimeout, cfg.OutputMaxBytes)); err != nil {
-			fmt.Fprintln(os.Stderr, "tools:", err)
-			os.Exit(1)
-		}
-	}
-	// M7: skills (SPEC §11.1). One shared skills.Set bonds the loop and the
-	// skill_run tool; --skill loads are validated against the registry before
-	// any turn (fail-closed activation). skill_run is always registered but the
-	// loop only exposes it when a scripted skill is active in run mode.
-	set := skills.NewSet()
-	exec := sandbox.NewExecutor(cfg.Workdir, cfg.RunUser, 60*time.Second, cfg.OutputMaxBytes)
-	if err := reg.Register(skillstool.New(set, exec, cfg.OutputMaxBytes)); err != nil {
+	rootRef := workspace.NewRef(ws)
+
+	// The filesystem tools are rooted at the project root (SPEC §10.3): every
+	// read/write for the coding agent stays inside the folder the operator is
+	// working in.
+	fs := files.NewFilesGranted(rootRef.CodeRoot, rootRef.Writable, cfg.OutputMaxBytes)
+	reg, set, err := buildRegistry(cfg, rootRef, fs)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "tools:", err)
 		os.Exit(1)
 	}
@@ -412,7 +399,7 @@ func main() {
 
 	// M4: append-only audit (SPEC §5.7). Fail-closed: only the hash of the
 	// output and the redacted args go to disk; never the model's secrets.
-	rec, err := audit.NewRecorder(filepath.Join(cfg.Workdir, "audit.jsonl"), 10<<20, 5)
+	rec, err := newAuditRecorder(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "audit:", err)
 		os.Exit(1)
@@ -478,7 +465,9 @@ func main() {
 	// M9: the TUI frontend owns the terminal; everything above (config, tools,
 	// audit, approver) is shared with the REPL. runTUI blocks until exit.
 	if *flagTUI {
-		runTUI(agent, gate, cfg, version, filepath.Base(sessionPath), credSvcForTUI())
+		tuiWs := ws
+		tuiPersist := cdPersister(cfg)
+		runTUI(agent, gate, cfg, version, filepath.Base(sessionPath), credSvcForTUI(), tuiWs, tuiPersist)
 		return
 	}
 	// M8: structured observer replaces the D-35 status string on TTYs — the
@@ -487,7 +476,7 @@ func main() {
 		agent.SetObserver(func(ev loop.Event) { renderStatus(ev.Phase.Label()) })
 	}
 
-	fmt.Fprint(os.Stderr, banner(version, agent, filepath.Base(sessionPath), cfg.ToolboxMode))
+	fmt.Fprint(os.Stderr, banner(version, agent, filepath.Base(sessionPath), cfg.ToolboxMode, ws.ProjectRoot()))
 
 	// Ctrl+C semantics (M8, D-37): a signal during a turn cancels the turn
 	// context (tools never run post-cancel, loop-level guarantee); a signal at
@@ -708,6 +697,17 @@ func main() {
 						fmt.Println(st.Describe())
 					}
 				}
+				continue
+			case cmdCd:
+				runCdREPL(ws, cmd, askLine, cdPersister(cfg))
+				continue
+			case cmdGrant:
+				msg, gerr := grantCommand(ws, cmd.arg)
+				if gerr != nil {
+					fmt.Fprintln(os.Stderr, "erro:", msg)
+					continue
+				}
+				fmt.Println(msg)
 				continue
 			case cmdConnect:
 				runConnectREPL(ctx, cmd, credService, agent, cfg)

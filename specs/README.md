@@ -19,9 +19,8 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
 
 ## Estado por milestone
 
-**M1–M13 mergeados em `main`. M14 implementado e validado** na branch
-`m14-connect-credenciais` (PR aberto à mão — o fine-grained PAT tem `contents: write`, não
-`pull requests: write`).
+**M1–M14 mergeados em `main`** (M14 no PR #10, `89fdf19`). **M15 implementado e validado
+no hardware**, aguardando merge na branch `m15-projeto-rascunho` (PR #11).
 
 | | Milestone | Spec | Nota de sessão |
 |---|---|---|---|
@@ -44,11 +43,12 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
 
 ### Em aberto
 
-- **Merge do M14** em `main`. Depois: decidir o driver raw do Windows (`golang.org/x/term`).
+- **`--check` dentro da TUI.** Hoje a TUI recusa a flag e aponta o REPL.
 - **LiteLLM nunca foi medido.** NVIDIA e OpenRouter têm smoke real; LiteLLM ainda não tem
   instância rodando, então a estratégia de verificação foi escolhida por leitura de contrato,
   não por medição.
-- **`--check` dentro da TUI.** Hoje a TUI recusa a flag e aponta o REPL.
+- **Driver raw do Windows** (`golang.org/x/term`), se a experiência de edição justificar —
+  hoje o REPL roda em modo *cooked* fora do Linux e a TUI cobre o caso.
 - **Backlog anotado**: `/compact`, `/new`, `/autocompact` (a unidade é a **sessão** — os três criam
   sessão nova, ver `milestones/13-m13-painel-sessao.md` §10); `/sessions` para não perder acesso
   à anterior; backlog Web (SSE + shell-HTTP + `Approver` por canal), cujo agendamento depende

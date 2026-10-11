@@ -260,6 +260,59 @@ Digitar qualquer tecla ou `c` limpa o banner; o histórico permanece.
 > caso contrário um `\x1b[2J` no retorno de uma tool poderia apagar o próprio gate e torná-lo
 > inconfiável. Segredos são mascarados antes disso.
 
+### 3.2 Dar acesso do agente às suas pastas (`/cd`)
+
+O harness roda como **usuário próprio** (`ancientcode`), não como você. É deliberado: o agente
+fica com menos privilégio que o operador. O preço é que ele não enxerga — nem escreve — nas
+suas pastas até você dar acesso.
+
+O `/cd` **avisa** quando a pasta não é gravável, e diz qual usuário precisa de acesso e com
+o quê. Se você viu só isso, é o que falta:
+
+```sh
+# 1. o caminho precisa ser atravessável (+x sem listagem: o agente entra, não vasculha)
+sudo chmod 711 /home/SEU_USUARIO
+
+# 2. a pasta de trabalho passa a ser do grupo do harness
+sudo chgrp -R ancientcode /home/SEU_USUARIO/workspace/SEU_PROJETO
+
+# 3. e o grupo ganha escrita
+sudo chmod -R g+rwX /home/SEU_USUARIO/workspace/SEU_PROJETO
+
+# 4. setgid nas pastas — ESSA é a etapa que se esquece
+sudo find /home/SEU_USUARIO/workspace/SEU_PROJETO -type d -exec chmod g+s {} \;
+```
+
+**Por que o passo 4 não é opcional.** Sem `setgid`, os arquivos que **você** criar depois
+nascem com o grupo do dono e sem escrita para o grupo. O acesso que você acabou de liberar
+vale só para o que já existe, e some no primeiro `git clone` ou no primeiro arquivo novo —
+sem nenhum aviso. Com `setgid`, o grupo é herdado pelas pastas e o acesso se sustenta.
+
+Pelo mesmo motivo, o seu shell precisa de um `umask` que deixe o grupo escrever:
+
+```sh
+umask 002        # arquivos 664, pastas 775
+echo 'umask 002' >> ~/.bashrc
+```
+
+**Conferindo:**
+
+```sh
+sudo -u ancientcode touch /caminho/do/projeto/.prova && echo "ESCREVE" || echo "NAO ESCREVE"
+sudo -u ancientcode rm -f /caminho/do/projeto/.prova
+cd ~ && ./ancientcode && /cd          # onde o harness está agora
+```
+
+Se `ESCREVE` falhar depois de um tempo, quase sempre é um arquivo novo em diretório sem
+`setgid` — refaça o passo 4.
+
+**Para ler sem escrever**, basta o passo 1 (o `711`). O `/cd` aceita e segue: revisar um
+projeto somente-leitura é legítimo, e recusar transformaria um aviso em obstáculo.
+
+**Se preferir rodar com o seu usuário**, nenhum `chgrp` é necessário. O custo é real: o agente
+passa a ter **os seus** privilégios, e o `run_user` precisa ser o seu login — o executor
+recusa `run_user` diferente do usuário atual (ele não faz `su`, recusa).
+
 ## 3.1 Escolher o modelo (`/models`)
 
 O provedor expõe um catálogo (`GET {base_url}/models`). O critério de "funciona aqui" é mais

@@ -29,22 +29,55 @@ var sensitiveSegments = []string{
 }
 
 // Files groups the three filesystem tools around one confined root.
+//
+// root is a FUNCTION, not a field, because the root changes at runtime (M15's
+// /cd) and Registry.Register refuses duplicates — so there is no way to
+// re-register the tool with a new root. Reading the root per call is what makes
+// a directory switch actually take effect; capturing it at construction left
+// the tools writing to the previous project, which is worse than not having the
+// command at all.
 type Files struct {
-	root  string
+	root  func() string
 	limit int
+	// granted reports whether a path outside the project root was allowed by the
+	// operator (/grant). nil means "no grant mechanism", which keeps the
+	// pre-M15 behaviour byte for byte: absolute paths refused, full stop.
+	granted func(path string) bool
 }
 
-// NewFiles returns the filesystem tools rooton. limit is the maximum number
-// of output bytes returned to the model (SPEC §5.2).
+// NewFiles returns the filesystem tools rooted on a FIXED directory. limit is
+// the maximum number of output bytes returned to the model (SPEC §5.2).
 func NewFiles(root string, limit int) *Files {
+	return NewFilesLive(func() string { return root }, limit)
+}
+
+// NewFilesLive returns the filesystem tools rooted on whatever get returns at
+// the moment of each call.
+func NewFilesLive(get func() string, limit int) *Files {
 	if limit <= 0 {
 		limit = 65536
 	}
-	return &Files{root: root, limit: limit}
+	if get == nil {
+		get = func() string { return "" }
+	}
+	return &Files{root: get, limit: limit}
 }
 
-// Root returns the confined root directory.
-func (f *Files) Root() string { return f.root }
+// NewFilesGranted returns the filesystem tools rooted on a live directory, with
+// a predicate deciding which paths OUTSIDE that root the operator allowed.
+//
+// It exists because /grant (M15) was bookkeeping until the tools consulted it:
+// the shell could already write anywhere (it is not path-confined, D-77), so the
+// grant changed nothing there — and the file tools, where confinement IS
+// enforceable, refused the granted folder. The dialog had no consequence.
+func NewFilesGranted(get func() string, granted func(path string) bool, limit int) *Files {
+	f := NewFilesLive(get, limit)
+	f.granted = granted
+	return f
+}
+
+// Root returns the confined root directory as it is RIGHT NOW.
+func (f *Files) Root() string { return f.root() }
 
 // ToolReadFile returns the read_file tool.
 func (f *Files) ToolReadFile() tools.Tool { return readFile{fs: f} }
@@ -56,7 +89,7 @@ func (f *Files) ToolWriteFile() tools.Tool { return writeFile{fs: f} }
 func (f *Files) ToolListDir() tools.Tool { return listDir{fs: f} }
 
 func (f *Files) within(p string) bool {
-	rel, err := filepath.Rel(f.root, p)
+	rel, err := filepath.Rel(f.Root(), p)
 	if err != nil {
 		return false
 	}
@@ -104,26 +137,63 @@ func (f *Files) ResolveWrite(rel string) (string, error) { return f.resolveWrite
 // CheckSensitive rejects paths located in sensitive locations (SPEC §5.6.3).
 func (f *Files) CheckSensitive(rel string) error { return f.checkSensitive(rel) }
 
-// resolve validates and resolves a user-supplied path against the root for
-// read-only operations. The final resolved path (after symlinks) must stay
-// inside the root.
+// resolve validates and resolves a user-supplied path for read-only
+// operations.
+//
+// An ABSOLUTE path is refused outright — unless the operator granted that
+// folder with /grant (M15). The grant is checked against the RESOLVED path, so
+// granting /tmp does not hand over the filesystem through a symlink inside it.
 func (f *Files) resolve(rel string) (string, error) {
 	if strings.TrimSpace(rel) == "" {
 		return "", errors.New("files: path is required")
 	}
 	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("files: path %q must be relative to the root %q (absolute paths are refused fail-closed)", rel, f.root)
+		return f.resolveAbsolute(rel, "read")
 	}
-	clean := filepath.Clean(filepath.Join(f.root, rel))
+	clean := filepath.Clean(filepath.Join(f.Root(), rel))
 	if !f.within(clean) {
-		return "", fmt.Errorf("files: path %q escapes the root %q", rel, f.root)
+		return "", fmt.Errorf("files: path %q escapes the root %q", rel, f.Root())
 	}
 	resolved, err := filepath.EvalSymlinks(clean)
 	if err != nil {
 		return "", err
 	}
 	if !f.within(resolved) {
-		return "", fmt.Errorf("files: path %q resolves outside the root %q (symlink)", rel, f.root)
+		return "", fmt.Errorf("files: path %q resolves outside the root %q (symlink)", rel, f.Root())
+	}
+	return resolved, nil
+}
+
+// resolveAbsolute handles the only case where a path outside the project root
+// is legal: the operator granted it.
+//
+// Two rules keep this from becoming "grant = root":
+//   - the grant is tested on the RESOLVED path, so a symlink inside a granted
+//     folder cannot point out of it;
+//   - a relative path never reaches here, so ".." can never escape into a
+//     granted folder by accident.
+func (f *Files) resolveAbsolute(abs, what string) (string, error) {
+	if f.granted == nil {
+		return "", fmt.Errorf("files: path %q must be relative to the root %q "+
+			"(absolute paths are refused fail-closed)", abs, f.Root())
+	}
+	clean := filepath.Clean(abs)
+	resolved, err := filepath.EvalSymlinks(clean)
+	if err != nil {
+		// Not there yet: judge the cleaned path, and the write path will create
+		// the parent. A missing path is not an escape.
+		if os.IsNotExist(err) {
+			if !f.granted(clean) {
+				return "", fmt.Errorf("files: %s de %q recusado: fora do projeto e sem concessao",
+					what, abs)
+			}
+			return clean, nil
+		}
+		return "", err
+	}
+	if !f.granted(resolved) {
+		return "", fmt.Errorf("files: %s de %q recusado: fora do projeto e sem concessao",
+			what, abs)
 	}
 	return resolved, nil
 }
@@ -134,11 +204,11 @@ func (f *Files) resolveWrite(rel string) (string, error) {
 		return "", errors.New("files: path is required")
 	}
 	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("files: path %q must be relative to the root %q (absolute paths are refused fail-closed)", rel, f.root)
+		return f.resolveAbsolute(rel, "escrita")
 	}
-	clean := filepath.Clean(filepath.Join(f.root, rel))
+	clean := filepath.Clean(filepath.Join(f.Root(), rel))
 	if !f.within(clean) {
-		return "", fmt.Errorf("files: path %q escapes the root %q", rel, f.root)
+		return "", fmt.Errorf("files: path %q escapes the root %q", rel, f.Root())
 	}
 	dir := filepath.Dir(clean)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -149,7 +219,7 @@ func (f *Files) resolveWrite(rel string) (string, error) {
 		return "", err
 	}
 	if !f.within(rdir) {
-		return "", fmt.Errorf("files: path %q resolves outside the root %q (symlink)", rel, f.root)
+		return "", fmt.Errorf("files: path %q resolves outside the root %q (symlink)", rel, f.Root())
 	}
 	return filepath.Join(rdir, filepath.Base(clean)), nil
 }
@@ -158,7 +228,7 @@ func (f *Files) checkSensitive(rel string) error {
 	if IsSensitivePath(rel) {
 		return fmt.Errorf("files: path %q is a sensitive location and is blocked (fail-closed)", rel)
 	}
-	if IsSensitivePath(filepath.Join(f.root, rel)) {
+	if IsSensitivePath(filepath.Join(f.Root(), rel)) {
 		return fmt.Errorf("files: path %q resolves into a sensitive location and is blocked (fail-closed)", rel)
 	}
 	return nil

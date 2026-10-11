@@ -63,8 +63,18 @@ type Config struct {
 	APIKeyEnv string `yaml:"api_key_env"`
 	Model     string `yaml:"model"`
 
-	Workdir         string            `yaml:"workdir"`
-	CodeRoot        string            `yaml:"code_root"`
+	// Workdir is the AGENT HOME, not the folder you work in: it holds
+	// sessions/, audit.jsonl and the scratch dir. Created at install, never
+	// something the agent edits. M15.
+	Workdir string `yaml:"workdir"`
+	// ProjectRoot is where the shell runs and where the file/code tools are
+	// confined — the folder the operator actually works in. Defaults inside
+	// Workdir so an unconfigured setup still starts somewhere valid, but it may
+	// live ANYWHERE: it is a sibling of the agent home by design (M15).
+	ProjectRoot string `yaml:"project_root"`
+	// Scratch is where throwaway output goes, ungated, so `go build > log.txt`
+	// never dirties the repository. Defaults to <Workdir>/scratch (M15).
+	Scratch         string            `yaml:"scratch"`
 	SkillsDir       string            `yaml:"skills_dir"` // M7: local skills (SPEC §11.1)
 	RunUser         string            `yaml:"run_user"`
 	ShellTool       string            `yaml:"shell_tool"`
@@ -139,8 +149,14 @@ func applyDefaults(c *Config) {
 		}
 		c.Workdir = filepath.Join(home, "ancientcode")
 	}
-	if c.CodeRoot == "" {
-		c.CodeRoot = filepath.Join(c.Workdir, "code")
+	if c.ProjectRoot == "" {
+		// Default INSIDE the agent home, and never the home itself: the agent
+		// must not work where sessions/ and audit.jsonl live. An operator who
+		// wants the source elsewhere sets project_root, or /cd at runtime.
+		c.ProjectRoot = filepath.Join(c.Workdir, "project")
+	}
+	if c.Scratch == "" {
+		c.Scratch = filepath.Join(c.Workdir, "scratch")
 	}
 	if c.SkillsDir == "" {
 		home, err := os.UserHomeDir()
@@ -260,11 +276,17 @@ func (c *Config) Validate() error {
 		return errors.New("config: run_user must be a non-root, non-empty account")
 	}
 
-	// M6 (SPEC §10.3): code_root must live inside workdir. The code-agent tools
-	// are rooted there; an escape would widen the filesystem confine silently.
-	if !withinDir(c.Workdir, c.CodeRoot) {
-		return errors.New("config: code_root must be inside workdir (SPEC §10.3)")
-	}
+	// M15 removed the "code_root must live inside workdir" invariant (SPEC §10.3).
+	//
+	// It was sound in M6, when both paths were siblings under one home and the
+	// shell was the wider of the two. It became the thing that FORBADE the real
+	// topology: an agent installed under ~/ancientcode cannot work on a source tree
+	// anywhere else. Nothing was protected by it — the confine is per-tool and
+	// already rejects traversal, absolute paths and symlink escapes.
+	//
+	// The replacement is in internal/workspace: the project root may not be, lie
+	// inside, nor CONTAIN the agent home, because that is where auth.json is.
+	// That check runs on every /cd, not once at load.
 
 	if c.ShellTool != "disabled" && c.ShellTool != "enabled" {
 		return fmt.Errorf("config: shell_tool must be disabled or enabled, got %q", c.ShellTool)

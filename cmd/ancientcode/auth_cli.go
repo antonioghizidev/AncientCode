@@ -53,6 +53,19 @@ func stateStore() (*state.Store, error) {
 	return state.Open(path)
 }
 
+// cdPersister returns the preference store used to remember the last /cd.
+//
+// Returning nil on failure is deliberate: persistence is a convenience, and a
+// state file that cannot be opened must not stop /cd from working in this
+// session. persistRoot treats nil as "do not persist".
+func cdPersister(_ *config.Config) rootPersister {
+	st, err := stateStore()
+	if err != nil {
+		return nil
+	}
+	return st
+}
+
 // credSvc builds the connect service wired to a real HTTP verifier.
 func credSvc() (*connect.Service, error) {
 	store, err := credStore()
@@ -156,7 +169,11 @@ func runAuthCLI(ctx context.Context, args []string) int {
 //
 // Pure so it can be tested: an Fprintf in main() had no test at all, and that
 // missing test is how the defect survived a green suite.
-func banner(version string, agent *loop.Loop, sessionName, toolboxMode string) string {
+//
+// projectRoot is asked of the WORKSPACE, not of cfg, for the same reason the
+// provider is asked of the loop: the banner must report what is in use, and
+// /cd changes the root after startup.
+func banner(version string, agent *loop.Loop, sessionName, toolboxMode, projectRoot string) string {
 	provider, model := "", ""
 	restored := false
 	if agent != nil {
@@ -166,6 +183,12 @@ func banner(version string, agent *loop.Loop, sessionName, toolboxMode string) s
 	var b strings.Builder
 	fmt.Fprintf(&b, "ancientcode %s — provider=%s model=%s session=%s\n",
 		version, provider, model, sessionName)
+	if projectRoot != "" {
+		// Always visible (M15): without it, `pwd` in a shell and the folder the
+		// file tools confine to can disagree, and the operator edits one project
+		// believing it is another.
+		fmt.Fprintf(&b, "projeto: %s\n", projectRoot)
+	}
 	if restored && model != "" {
 		fmt.Fprintf(&b, "modelo restaurado de state.json (provider %s)\n", provider)
 	}

@@ -29,6 +29,7 @@ import (
 	"github.com/antonioghizidev/ancientcode/internal/connect"
 	"github.com/antonioghizidev/ancientcode/internal/loop"
 	"github.com/antonioghizidev/ancientcode/internal/redact"
+	"github.com/antonioghizidev/ancientcode/internal/workspace"
 )
 
 // turnRunner is the tiny port the TUI drives turns through. Internal/loop is
@@ -117,10 +118,18 @@ type tuiModel struct {
 	histIdx    int // -1 = editing a fresh line
 	draft      string
 
-	session  []string // session panel lines (redacted before paint)
-	activity []string // activity panel lines (from the observer)
-	banner   string   // one error/info line
-	usage    loop.Usage
+	session []string // session panel lines (redacted before paint)
+	// ws is the live workspace (M15): /cd and /grant change the project root
+	// and the write allowances without restarting the harness.
+	ws *workspace.Workspace
+	// persist remembers the last /cd for the next run (M15).
+	persist rootPersister
+	// pendingCd holds a widening /cd waiting for a confirmation by retyping.
+	// It is cleared by any other /cd so a stale one can never fire later.
+	pendingCd string
+	activity  []string // activity panel lines (from the observer)
+	banner    string   // one error/info line
+	usage     loop.Usage
 
 	// M13: physical (wrapped) projections. The logical slices above keep the
 	// text WHOLE; these are what the viewport scrolls over, so a long answer is
@@ -873,6 +882,17 @@ func (m *tuiModel) handleCommand(raw string, cmd command) tea.Cmd {
 		return m.openPicker(cmd.opts)
 	case cmdConnect:
 		return m.openConnectPanel()
+	case cmdCd:
+		m.handleCd(cmd.arg)
+		return nil
+	case cmdGrant:
+		msg, err := grantCommand(m.ws, cmd.arg)
+		if err != nil {
+			m.appendSession("! erro: " + redact.Redact(msg))
+			return nil
+		}
+		m.appendSession("> " + redact.Redact(msg))
+		return nil
 	case cmdContext:
 		m.refreshUsage()
 		if m.usage.Pct < 0 {
@@ -963,6 +983,7 @@ func (m *tuiModel) View() string {
 		Model:    m.model,
 		Toolbox:  m.toolbox,
 		Session:  m.sessionName,
+		Project:  projectLine(m.ws),
 		Status:   m.statusTone(),
 		Usage:    m.usage,
 	}
@@ -1040,10 +1061,12 @@ func (m *tuiModel) openConnectPanel() tea.Cmd {
 	return nil
 }
 
-func runTUI(agent *loop.Loop, gate *tuiGate, cfg *config.Config, version, sessionName string, credSvc *connect.Service) {
+func runTUI(agent *loop.Loop, gate *tuiGate, cfg *config.Config, version, sessionName string, credSvc *connect.Service, ws *workspace.Workspace, persist rootPersister) {
 	m := &tuiModel{
 		agent:       agent,
 		gate:        gate,
+		ws:          ws,
+		persist:     persist,
 		runner:      loopRunner{agent: agent},
 		usageFn:     agent.ContextUsage,
 		version:     version,
