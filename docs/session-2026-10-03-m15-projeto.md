@@ -1,8 +1,8 @@
 # Sessão `2026-10-03` — `m15-projeto-rascunho`
 
 > Resumo exclusivo desta sessão. Metodologia: `specs/methodology.md`.
-> **Smoke no Inspiron NÃO executado** — o Dell estava desligado. Tudo abaixo está validado em
-> host (Windows) e WSL, e o hardware continua sendo o portão de aceitação.
+> **Smoke no Inspiron EXECUTADO** — e validou o caso mais difícil do milestone: o harness roda
+> numa conta (`ancientcode`) e o projeto fica na conta de outra pessoa. Ver §Smoke.
 
 ## Objetivo da sessão
 
@@ -118,28 +118,56 @@ escondia isso atras de um "flake".
 | `-race` no WSL | ✅ |
 | `gofmt`/`vet`/`build` | ✅ (gofmt por blob) |
 | Mutação de cada proteção | ✅ 37 + 1 equivalente |
-| `docs/DECISOES.md`, SPEC, README | ✅ |
+| `docs/DECISOES.md`, SPEC, README, MANUAL | ✅ |
 | Nota de sessão | ✅ esta |
-| **Smoke no Inspiron** | ❌ **não executado** |
-| 2 dos 8 testes de segurança da §6 | ❌ sem teste explícito |
+| 8 testes de segurança da §6 | ✅ todos com mutação |
+| **Smoke no Inspiron** | ✅ executado |
 
-## Não validado — o smoke precisa confirmar
+## Smoke no Inspiron — executado
 
-1. `/cd` troca a raiz **e o shell acompanha** (`pwd`), que é o defeito que o `RootRef` existe
-   para impedir.
-2. `audit.jsonl` **não** muda de caminho depois do `/cd`.
-3. Rascunho: `go build > log.txt` no scratch não suja o repositório.
-4. `/grant` libera escrita de verdade no caminho concedido.
-5. A raiz volta em `state.json` na execução seguinte.
+O caso que nenhum teste pega: **o harness numa conta, o projeto na conta de outra pessoa.**
+
+```
+[aprovacao] tool "shell"
+  shell {"cmd":"pwd > ONDE-EU-ESTOU.txt"}
+>>> arquivo contém: /home/USUARIO/workspace/PROJETO
+    dono: ancientcode:ancientcode   modo: 664
+```
+
+| | evidência |
+|---|---|
+| shell roda na raiz do projeto | o arquivo saiu com o path do projeto, gravado pelo processo de outra conta |
+| `audit.jsonl` **não** se move | gravou em `<agent_home>/`; `find` no projeto → nenhum |
+| rascunho não suja o repo | arquivo no scratch; projeto e subpastas limpos |
+| `/cd` persiste entre execuções | `state.json` gravou; a execução seguinte reabriu nela |
+| topologia antes impossível | projeto sob `~/workspace`, scratch sob `<agent_home>` — **irmãs** |
+| `/cd` para a casa do agente | recusado, **antes** de pedir confirmação |
+
+### O que o hardware achou que o host não achava
+
+1. **`/cd` aceitou uma pasta não gravável, calado.** O harness lia o projeto e não escrevia;
+   o operador trocava a raiz e a escrita falhava três comandos depois, com mensagem sem
+   relação. Corrigido: o `/cd` **avisa** e diz qual usuário precisa de acesso e com o quê
+   (MEDIANTE, nunca por bit de permissão — ACL e mount discordam do modo).
+2. **Restauração ressuscitava pasta apagada.** O `state.json` apontava para uma pasta removida;
+   o startup tentou restaurar e o `MkdirAll` só falhou por acaso (o usuário do harness não
+   pode criar em `/home`). Agora restaurar **recusa criar** — `/cd` cria porque o operador pode
+   estar digitando o projeto que vai clonar; um startup não pode desfazer uma remoção.
+3. **`/grant` era bookkeeping.** O smoke mostrou que a concessão não mudava nada: o shell
+   escrevia lá de qualquer jeito e as file tools recusavam. Agora as file/code tools consultam
+   a concessão.
+
+## Não validado
+
+- **`--check` dentro da TUI**: a TUI recusa a flag e aponta o REPL. Antes ela a ignorava em
+  silêncio — o mesmo defeito que este milestone remove do REPL.
+- **`litellm`**: sem instância para medir.
+- **`OpenRouter` sem crédito** (402 até em `:free`): o turno real do smoke passou pelo NVIDIA.
+- **Integração bit-a-bit via `--run`**: o cold start do NIM excede 600 s neste ambiente.
 
 ## Próxima sessão
 
-- [x] Escrever os **2 testes de segurança que faltavam** (§6): `/cd` não exposto ao modelo, e
-      `audit.jsonl` imutável após `/cd` — ambos com mutação.
-- [ ] **Smoke no Inspiron** com o binário `GOAMD64=v1`:
-  - [ ] os 5 itens de "Não validado" acima;
-  - [ ] renomear o usuário de execução do smoke (o `run_user` do config já é
-        `ancientcode`, então hoje ele **não casa** com o usuário real do host);
-  - [ ] verificar se a casa do agente atual (o diretório pessoal com o nome antigo do projeto)
-        pode ser removida depois da renomeação, e limpar os resíduos de smoke.
-- [ ] Push da branch e PR.
+- [ ] Mergear o PR #11.
+- [ ] `--check` dentro da TUI.
+- [ ] Instância LiteLLM para medir a estratégia de verificação.
+- [ ] Driver raw do Windows (`golang.org/x/term`), se a experiência de edição justificar.

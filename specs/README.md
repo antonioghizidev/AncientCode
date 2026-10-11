@@ -19,7 +19,8 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
 
 ## Estado por milestone
 
-**M1–M14 mergeados em `main`.** O M14 saiu no PR #10 (`89fdf19`).
+**M1–M14 mergeados em `main`** (M14 no PR #10, `89fdf19`). **M15 implementado e validado
+no hardware**, aguardando merge na branch `m15-projeto-rascunho` (PR #11).
 
 | | Milestone | Spec | Nota de sessão |
 |---|---|---|---|
@@ -42,19 +43,12 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
 
 ### Em aberto
 
-- **M15 — `/cd` em runtime.** Separar a **casa do agente** (config, `sessions/`, `audit.jsonl`)
-  da **raiz do projeto** (onde shell e file/code tools operam). Hoje `config.Validate()`
-  **exige** `code_root` dentro de `workdir` (`config.go:265`), o que torna a topologia real
-  — agente em `<agent_home>`, fonte em `/home/USUARIO/workspace/PROJETO` — **não
-  representável**. Entregaria: `/cd <pasta>`, pasta de rascunho para não poluir o repo,
-  `/grant <pasta>` para escrita liberada com registro no audit, e a pasta atual visível na UI.
-  Decidido com o usuário: leitura fora do projeto segue pelo gate do shell (confinamento por
-  path em shell livre **não é aplicável** — o path é texto, não argumento estruturado);
-  o que se aperta é **escrita** fora de projeto+rascunho.
 - **`--check` dentro da TUI.** Hoje a TUI recusa a flag e aponta o REPL.
 - **LiteLLM nunca foi medido.** NVIDIA e OpenRouter têm smoke real; LiteLLM ainda não tem
   instância rodando, então a estratégia de verificação foi escolhida por leitura de contrato,
   não por medição.
+- **Driver raw do Windows** (`golang.org/x/term`), se a experiência de edição justificar —
+  hoje o REPL roda em modo *cooked* fora do Linux e a TUI cobre o caso.
 - **Backlog anotado**: `/compact`, `/new`, `/autocompact` (a unidade é a **sessão** — os três criam
   sessão nova, ver `milestones/13-m13-painel-sessao.md` §10); `/sessions` para não perder acesso
   à anterior; backlog Web (SSE + shell-HTTP + `Approver` por canal), cujo agendamento depende

@@ -1,7 +1,8 @@
 # M15 — `/cd`: raiz do projeto separada da casa do agente, e pasta de rascunho
 
-**Status**: 🟡 em andamento (branch `m15-projeto-rascunho`) — implementado, com os 8 testes de
-segurança da §6 cobertos por mutação. **Falta o smoke** no Inspiron.
+**Status**: ✅ implementado e validado no hardware (branch `m15-projeto-rascunho`).
+Smoke real no Inspiron com o harness numa conta e o projeto na conta de outra pessoa —
+ver `docs/session-2026-10-03-m15-projeto.md`.
 **Depende de**: M14
 **Sessão de referência**: `docs/session-2026-10-03-m15-projeto.md`
 
