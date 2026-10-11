@@ -1,0 +1,86 @@
+name: release
+
+# Dispara em tag v*. A tag E a versao: o mesmo valor vai para o -X da build e
+# para o nome do artefato, para que --version e o arquivo instalado concordem
+# (spec M16 S7). Se esses dois divergirem, o usuario reporta bug contra a build
+# errada e ninguem consegue reproducir.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # publica a release; sem isto o upload falha
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe precisa da historia
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # A suite e o portao. Nao e' "rodar tambem": um artefato so' existe se a
+      # suite passar. Fail-closed tambem no CI (spec M16).
+      - name: suite completa antes de empacotar
+        run: go test -count=1 ./...
+
+      - name: vet
+        run: go vet ./...
+
+      - name: build do artefato (GOAMD64=v1 por contrato, constitution 7)
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          mkdir -p dist/ancientcode_${TAG}_linux_amd64
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 \
+            go build -trimpath \
+              -ldflags="-s -w -X main.version=${TAG}" \
+              -o "dist/ancientcode_${TAG}_linux_amd64/ancientcode" \
+              ./cmd/ancientcode
+          cp README.md LICENSE install.sh "dist/ancientcode_${TAG}_linux_amd64/"
+
+      # O instalador so confia no que este arquivo diz. Ele e' gerado do
+      # proprio artefato, nunca editado a mao: um SHA256SUMS escrito a mao e'
+      # exatamente o que um atacante com write no repositorio usaria.
+      - name: tar
+        env:
+          TAG: ${{ github.ref_name }}
+        run: cd dist && tar -czf "ancientcode_${TAG}_linux_amd64.tar.gz" "ancientcode_${TAG}_linux_amd64"
+
+      # O checksum e' do TARBAL, entao vem depois do tar. A ordem nao e' um
+      # detalhe: invertida, o SHA256SUMS descreve um arquivo que ninguem tem.
+      - name: SHA256SUMS
+        env:
+          TAG: ${{ github.ref_name }}
+        run: cd dist && sha256sum "ancientcode_${TAG}_linux_amd64.tar.gz" > SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/ancientcode_${{ github.ref_name }}_linux_amd64.tar.gz
+            dist/SHA256SUMS
+          generate_release_notes: true
+          body: |
+            ## Como instalar
+
+            ```sh
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/install.sh | sh
+            ```
+
+            O instalador confere o `SHA256SUMS` desta mesma release antes de
+            extrair. Divergencia = recusa, sem instalação.
+
+            ## Conferir na mao
+
+            ```sh
+            sha256sum -c SHA256SUMS
+            ./ancientcode --version   # deve dizer ${{ github.ref_name }}
+            ```
+
+            Alvo unico: `linux/amd64` com `GOAMD64=v1`, por causa do Core 2 Duo
+            sem AVX.

@@ -63,7 +63,10 @@ var skillFlags []string
 // would abort before the provider itself gives up.
 const turnTimeout = 5 * time.Minute
 
-const version = "0.15.0-m15"
+// version e injetada pela build de release com -ldflags="-X main.version=<tag>".
+// Fora de release ela e "dev": uma constante digitada a mao mente, porque
+// --version e a afirmacao que o usuario faz ao reportar um bug (spec M16 S7).
+var version = "dev"
 
 // terminalApprover is the human gate (SPEC §5.6.6). It shows the exact command
 // before deciding. Answering "d" registers a veto for the tool: from then on

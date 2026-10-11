@@ -36,18 +36,59 @@ nativa, footprint de processo na casa das dezenas de MB.
 | **Sessão persistente** | histórico em JSONL append-only, retomável e auditável |
 | **TUI** | painéis com quebra de linha, animação de atividade e controle do turno |
 
-## Começando
+## Instalação
 
-**Requisito**: Go 1.27+ para compilar. No destino, só o binário.
+Alvo único: **linux/amd64**, compilado com `GOAMD64=v1` para rodar em hardware sem AVX
+(Core 2 Duo e mais antigo). Sem toolchain Go na máquina de destino.
 
 ```sh
-# 1. configuração — a chave NUNCA vai no arquivo
+curl -fsSL https://raw.githubusercontent.com/antonioghizidev/ancientcode/<TAG>/install.sh | sh
+```
+
+Troque `<TAG>` por uma tag concreta (`v0.16.0`). O instalador instala em `~/.local/bin`,
+sem `sudo` — use `ANCIENTCODE_PREFIX=/usr/local/bin` se preferir um local system-wide.
+
+O que ele faz, nesta ordem: recusa se não for linux/amd64, baixa o tarball e o `SHA256SUMS`
+**da mesma versão**, confere o checksum **antes de extrair** e só então instala.
+Checksum divergente ou ausente é recusa, não aviso.
+
+Para conferir à mão, sem instalar:
+
+```sh
+curl -fsSLO https://github.com/antonioghizidev/ancientcode/releases/download/<TAG>/SHA256SUMS
+curl -fsSLO https://github.com/antonioghizidev/ancientcode/releases/download/<TAG>/ancientcode_<TAG>_linux_amd64.tar.gz
+sha256sum -c SHA256SUMS
+```
+
+### Alternativa: `go install`
+
+```sh
+go install github.com/antonioghizidev/ancientcode/cmd/ancientcode@<TAG>
+```
+
+Só se a máquina **já tiver** Go 1.27+ — o que o alvo não tem por definição. E atenção ao
+detalhe: o `go install` compila na máquina do usuário, então um `GOAMD64` exportado no shell
+quebre a compatibilidade com o Core 2 Duo silenciosamente. O caminho do binário pré-compilado
+não sofre disso.
+
+### Ainda não funciona para terceiros
+
+O repositório está **privado**. As instruções acima não instalam nada para quem não tem acesso,
+por decisão de acesso do GitHub, não por limite do instalador. Ver
+[`specs/milestones/16-m16-distribuicao.md`](specs/milestones/16-m16-distribuicao.md) §6.
+
+## Começando
+
+**Requisito para build local**: Go 1.27+. No destino, só o binário.
+
+```sh
+# 1. configuração - a chave NUNCA vai no arquivo
 cp ancientcode.example.yaml ancientcode.yaml
 export OPENROUTER_API_KEY='...'      # ou NVIDIA_API_KEY / LITELLM_API_KEY
 
 # 2. build para o alvo (o dev machine pode ser outro)
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 \
-  go build -trimpath -ldflags="-s -w" -o ancientcode ./cmd/ancientcode
+  go build -trimpath -ldflags="-s -w -X main.version=dev" -o ancientcode ./cmd/ancientcode
 
 # 3. executar
 ./ancientcode              # REPL

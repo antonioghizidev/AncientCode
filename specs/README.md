@@ -20,7 +20,8 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
 ## Estado por milestone
 
 **M1–M14 mergeados em `main`** (M14 no PR #10, `89fdf19`). **M15 implementado e validado
-no hardware**, aguardando merge na branch `m15-projeto-rascunho` (PR #11).
+no hardware**, aguardando merge (PR #11). **M16 — distribuição instalável** implementado e
+testado por mutação, aguardando merge.
 
 | | Milestone | Spec | Nota de sessão |
 |---|---|---|---|
@@ -43,6 +44,12 @@ no hardware**, aguardando merge na branch `m15-projeto-rascunho` (PR #11).
 
 ### Em aberto
 
+- **A release ainda não é instalável por terceiros: o repositório está privado.** O pipeline
+  (workflow de release, `install.sh`, checksum) está pronto e testado; o que falta é a decisão de
+  tornar público — e, antes disso, purgar os dois trechos de dado real de máquina que o `main`
+  carrega desde setembro. Ver `milestones/16-m16-distribuicao.md` §6.
+- **`SHA256SUMS` sem assinatura.** Quem controla o canal troca artefato e checksum juntos; o
+  modelo de chaves ainda não existe (D-86).
 - **`--check` dentro da TUI.** Hoje a TUI recusa a flag e aponta o REPL.
 - **LiteLLM nunca foi medido.** NVIDIA e OpenRouter têm smoke real; LiteLLM ainda não tem
   instância rodando, então a estratégia de verificação foi escolhida por leitura de contrato,
