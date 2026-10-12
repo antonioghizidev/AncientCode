@@ -20,12 +20,12 @@ func TestInstallLatestResolvesTagFromRedirect(t *testing.T) {
 	rel := buildFakeRelease(t, "v0.16.0", false)
 	prefix := t.TempDir()
 	out, code := runInstall(t, map[string]string{
-		"PATH":                   "/usr/bin:/bin",
-		"HOME":                   wslPath(t, t.TempDir()),
-		"ANCIENTCODE_VERSION":    "latest",
-		"ANCIENTCODE_PREFIX":     wslPath(t, prefix),
+		"PATH":                     "/usr/bin:/bin",
+		"HOME":                     wslPath(t, t.TempDir()),
+		"ANCIENTCODE_VERSION":      "latest",
+		"ANCIENTCODE_PREFIX":       wslPath(t, prefix),
 		"ANCIENTCODE_RELEASE_BASE": "file://" + wslPath(t, rel),
-		"ANCIENTCODE_RAW_BASE":   "file://" + wslPath(t, rel),
+		"ANCIENTCODE_RAW_BASE":     "file://" + wslPath(t, rel),
 	}, "cat '"+wslPath(t, installScriptRoot(t))+"/install.sh' | sh")
 
 	// Com file:// o redirect nao existe, entao `latest' NAO pode resolver: o
