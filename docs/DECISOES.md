@@ -1333,3 +1333,76 @@ helper não serve. Suba um nível e teste a chamada.
 - **Ressalva honesta**: isso torna o `state.json` um canal de persistência de confiança. Quem
   escreve nele escolhe a pasta. É o mesmo estado de confiança do `config.yaml`, e por isso fica
   fora da árvore do projeto (D-68) e `0600`.
+
+### D-2026-10-11-81 - A versao passa a ser injetada pela build; `--version` deixa de ser digitada a mao
+
+- **Decisao**: `version` deixa de ser `const` e passa a ser `var`, com default `dev`, injetada
+  por `-ldflags="-X main.version=$TAG"`.
+- **Por que**: `--version` e' a afirmacao que o usuario faz ao reportar bug. Uma constante
+  digitada a mao e' uma promessa que ninguem verificou - e ela mente em silencio depois do
+  primeiro commit esquecido de bump.
+- **Teste**: `TestVersionIsNotHardcodedOnAMilestone` falha se voltar a forma antiga, e
+  `TestVersionFlagReportsTheInjectedValue` sobe o binario com um valor absurdamente especifico
+  (`v9.9.9-prova`) e exige que `--version` o imprima.
+- **Consequencia**: um build local responde `dev`. Quem quiser a versao de release, constroi com
+  a flag - e `dev` na documentacao e' o sinal de que nao veio de release.
+
+### D-2026-10-11-82 - O instalador recusa plataforma errada; ele nao compila no lugar
+
+- **Decisao**: `install.sh` so instala em `linux/amd64`. Fora disso, `die`.
+- **Opcao descartada**: detectar e compilar com Go local, ou sugerir `apt install`.
+- **Por que**: o alvo nao tem Go (e' a razao de o binario ser pre-compilado). Um instalador que
+  "se vira" precisa de toolchain que o alvo nao tem, e a falha aparece no meio do caminho, com
+  `exec format error`, muito depois de o usuario achar que deu certo.
+- **Ressalva honesta**: o par (sistema, arquitetura) tem **duas** pernas, e cada uma precisou
+  de teste proprio. A primeira versao testava so a arquitetura; remover a checagem de sistema
+  passava. O mutation check e' que revelou isso.
+
+### D-2026-10-11-83 - `SHA256SUMS` e' lido por nome, nao por `sha256sum -c`
+
+- **Decisao**: o instalador extrai a linha cujo nome bate **exatamente** com o artefato e compara
+  o hash. Nao roda `sha256sum -c SHA256SUMS` no arquivo inteiro.
+- **Por que**: um `SHA256SUMS` pode citar `../../etc/passwd`. O `sha256sum -c` leria o arquivo
+  apontado, e o codigo de saida **pode ser 0** - a verificacao viraria decoracao exatamente
+  quando o atacante a manipulate.
+- **Teste**: `TestInstallRefusesPathTraversalInSums`.
+
+### D-2026-10-11-84 - Verificar ANTES de extrair, e o teste disso e' estrutural (com o motivo)
+
+- **Decisao**: o checksum e' conferido antes de qualquer extracao.
+- **Por que**: extrair e' ja executar a escolha de quem montou o tarball (caminho absoluto,
+  `..`, link para fora).
+- **Teste, e sua limitacao**: `TestInstallVerifiesBeforeExtractingOrder` afirma a **ordem no
+  texto** do script, nao por canario. A primeira versao foi comportamental e era **cega**: o GNU
+  tar remove o `/` inicial na extracao (sem `-P`), entao o payload malicioso caia dentro do
+  diretorio de trabalho e o canario nunca aparecia - o teste passava com a protecao removida.
+  O mutation check pegou isso; o teste comportamental foi descartado, e o motivo ficou escrito
+  no codigo para ninguem reintroduzir a versao ingenua.
+
+### D-2026-10-11-85 - O gate de compatibilidade do artefato verifica metadado de build, nao instrucoes
+
+- **Decisao**: `TestReleaseArtifactDeclaresV1Target` le `go version -m` e exige
+  `GOAMD64=v1`, `CGO_ENABLED=0`, `GOOS=linux`, `GOARCH=amd64`. O teste que varre instrucoes
+  VEX existe, mas so sobre as funcoes **do modulo**.
+- **Por que**: medido nesta sessao, **v1 e v3 geram o mesmo codigo para este projeto** - zero
+  instrucoes VEX nos dois. Um teste que so varresse instrucoes passaria com o build errado.
+  O que separa v1 de v3 aqui nao e' o codigo gerado: e' o metadado que o Go grava no binario.
+- **Achado honesto, que corrige leitura outdated da constitution**: o binario v1 **contem** ~40
+  instrucoes VEX (`VPXOR`, `VPSHUFB`, `VPBROADCASTB`...). Vem do assembly da stdlib
+  (`crypto/aes`, `crypto/sha256`), guardado por `internal/cpu` e executado so onde a instrucao
+  existe. Portanto "o artefato final nao contem AVX" (constitution 7), lido literalmente sobre o
+  binario inteiro, **ja era falso antes deste milestone**. O que o constitution quer dizer - e o
+  que este milestone garante - e' que o **codigo do projeto** nao depende de AVX.
+- **Consequencia para a constitution**: o texto de §7 merece ser reescrito para dizer "codigo do
+  projeto", senao o primeiro gate honesto contra ele falha por causa da stdlib.
+
+### D-2026-10-11-86 - A assinatura do `SHA256SUMS` fica para depois, e fica escrita por que
+
+- **Decisao**: publicar `SHA256SUMS` **sem** assinatura por enquanto.
+- **Por que adiar**: um checksum servido pelo mesmo canal do artefato protege contra corrupcao
+  e truncamento, **nao** contra quem controla o canal. Assinar de verdade exige um modelo de
+  chaves (quem assina, onde a chave publica mora, como o usuario a obtem) que este projeto ainda
+  nao tem - e um modelo ruim de chaves e pior que nenhum, porque da confianca falsa.
+- **O que fica registrado**: a divida e' real e nomeada, nao esquecida. Quando o modelo de chaves
+  existir, o instalador cresce um passo (verificar assinatura antes do checksum) e o teste ganha
+  o caso "assinatura invalida".

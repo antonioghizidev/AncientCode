@@ -1,0 +1,10 @@
+# O instalador e artefato distribuido: ele vai ser baixado e executado por
+# terceiros, em maquinas que nao sao o dev machine. Um CRLF aqui quebra o
+# script com "$'\r': command not found" - e o sintoma aparece no meio da
+# instalacao, longe da causa.
+*.sh text eol=lf
+
+# Workflow do GitHub tambem e executado por um interpretador que nao perdoa
+# CRLF, e um arquivo de workflow nao deve ser normalizado pela plataforma.
+*.yml text eol=lf
+*.yaml text eol=lf

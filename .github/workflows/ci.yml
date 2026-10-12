@@ -1,0 +1,52 @@
+name: ci
+
+# A suite como portao de merge. Sem isto, "a suite passa" era uma afirmacao
+# local do dev; com isto, passa a ser uma condicao do repositorio
+# (constitution 4: testes sao criterio de aceite).
+on:
+  push:
+    branches: [main, 'm**']
+  pull_request:
+
+permissions:
+  contents: read # padrao e' read; nada aqui escreve no repo
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt -l . encontrou:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: vet
+        run: go vet ./...
+
+      - name: build
+        run: go build ./...
+
+      - name: suite
+        run: go test -count=1 ./...
+
+      # -race so aqui: exige toolchain C, que o host de desenvolvimento
+      # Windows nao tem de forma util (constitution 5 pede assim que ha CI).
+      - name: suite com -race
+        run: go test -race -count=1 ./...
+
+      # Os gates de privacy e encoding varrem a ARVORE versionada, entao eles
+      # rodam aqui com o checkout inteiro - no host de desenvolvimento eles veem
+      # a working tree, que pode estar suja.
+      - name: build do artefato do notebook (GOAMD64=v1)
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 \
+            go build -trimpath -ldflags="-s -w" -o /tmp/ancientcode ./cmd/ancientcode
+          file /tmp/ancientcode
