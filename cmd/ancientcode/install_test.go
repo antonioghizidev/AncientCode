@@ -11,9 +11,9 @@ package main
 
 import (
 	"os"
-	"sort"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -118,13 +118,13 @@ func TestInstallRefusesTamperedChecksum(t *testing.T) {
 	rel := buildFakeRelease(t, "v0.0.1-teste", true)
 	prefix := t.TempDir()
 	out, code := runInstall(t, map[string]string{
-		"PATH":                   "/usr/bin:/bin",
-		"HOME":                   wslPath(t, t.TempDir()),
-		"ANCIENTCODE_VERSION":    "v0.0.1-teste",
-		"ANCIENTCODE_PREFIX":     wslPath(t, prefix),
-		"ANCIENTCODE_LOCAL_ASSET": wslPath(t, filepath.Join(rel, "v0.0.1-teste", "ancientcode_v0.0.1-teste_linux_amd64.tar.gz")),
+		"PATH":                     "/usr/bin:/bin",
+		"HOME":                     wslPath(t, t.TempDir()),
+		"ANCIENTCODE_VERSION":      "v0.0.1-teste",
+		"ANCIENTCODE_PREFIX":       wslPath(t, prefix),
+		"ANCIENTCODE_LOCAL_ASSET":  wslPath(t, filepath.Join(rel, "v0.0.1-teste", "ancientcode_v0.0.1-teste_linux_amd64.tar.gz")),
 		"ANCIENTCODE_RELEASE_BASE": "file://" + wslPath(t, rel),
-		"ANCIENTCODE_RAW_BASE":   "file://" + wslPath(t, rel),
+		"ANCIENTCODE_RAW_BASE":     "file://" + wslPath(t, rel),
 	}, "cat '"+wslPath(t, installScriptRoot(t))+"/install.sh' | sh")
 
 	if code == 0 {
@@ -149,12 +149,12 @@ func TestInstallRefusesMissingChecksumFile(t *testing.T) {
 	}
 	prefix := t.TempDir()
 	out, code := runInstall(t, map[string]string{
-		"PATH": "/usr/bin:/bin",
-		"HOME": wslPath(t, t.TempDir()),
-		"ANCIENTCODE_VERSION": "v0.0.2-teste",
-		"ANCIENTCODE_PREFIX":  wslPath(t, prefix),
+		"PATH":                     "/usr/bin:/bin",
+		"HOME":                     wslPath(t, t.TempDir()),
+		"ANCIENTCODE_VERSION":      "v0.0.2-teste",
+		"ANCIENTCODE_PREFIX":       wslPath(t, prefix),
 		"ANCIENTCODE_RELEASE_BASE": "file://" + wslPath(t, rel),
-		"ANCIENTCODE_RAW_BASE": "file://" + wslPath(t, rel),
+		"ANCIENTCODE_RAW_BASE":     "file://" + wslPath(t, rel),
 	}, "cat '"+wslPath(t, installScriptRoot(t))+"/install.sh' | sh")
 
 	if code == 0 {
@@ -178,13 +178,13 @@ func TestInstallRefusesForeignChecksumEntry(t *testing.T) {
 	}
 	prefix := t.TempDir()
 	out, code := runInstall(t, map[string]string{
-		"PATH": "/usr/bin:/bin",
-		"HOME": wslPath(t, t.TempDir()),
-		"ANCIENTCODE_VERSION": "v0.0.4-teste",
-		"ANCIENTCODE_PREFIX":  wslPath(t, prefix),
-		"ANCIENTCODE_LOCAL_ASSET": wslPath(t, filepath.Join(rel, "v0.0.4-teste", "ancientcode_v0.0.4-teste_linux_amd64.tar.gz")),
+		"PATH":                     "/usr/bin:/bin",
+		"HOME":                     wslPath(t, t.TempDir()),
+		"ANCIENTCODE_VERSION":      "v0.0.4-teste",
+		"ANCIENTCODE_PREFIX":       wslPath(t, prefix),
+		"ANCIENTCODE_LOCAL_ASSET":  wslPath(t, filepath.Join(rel, "v0.0.4-teste", "ancientcode_v0.0.4-teste_linux_amd64.tar.gz")),
 		"ANCIENTCODE_RELEASE_BASE": "file://" + wslPath(t, rel),
-		"ANCIENTCODE_RAW_BASE": "file://" + wslPath(t, rel),
+		"ANCIENTCODE_RAW_BASE":     "file://" + wslPath(t, rel),
 	}, "cat '"+wslPath(t, installScriptRoot(t))+"/install.sh' | sh")
 
 	if code == 0 {
@@ -208,13 +208,13 @@ func TestInstallRefusesPathTraversalInSums(t *testing.T) {
 	}
 	prefix := t.TempDir()
 	_, code := runInstall(t, map[string]string{
-		"PATH": "/usr/bin:/bin",
-		"HOME": wslPath(t, t.TempDir()),
-		"ANCIENTCODE_VERSION": "v0.0.5-teste",
-		"ANCIENTCODE_PREFIX":  wslPath(t, prefix),
-		"ANCIENTCODE_LOCAL_ASSET": wslPath(t, filepath.Join(rel, "v0.0.5-teste", asset)),
+		"PATH":                     "/usr/bin:/bin",
+		"HOME":                     wslPath(t, t.TempDir()),
+		"ANCIENTCODE_VERSION":      "v0.0.5-teste",
+		"ANCIENTCODE_PREFIX":       wslPath(t, prefix),
+		"ANCIENTCODE_LOCAL_ASSET":  wslPath(t, filepath.Join(rel, "v0.0.5-teste", asset)),
 		"ANCIENTCODE_RELEASE_BASE": "file://" + wslPath(t, rel),
-		"ANCIENTCODE_RAW_BASE": "file://" + wslPath(t, rel),
+		"ANCIENTCODE_RAW_BASE":     "file://" + wslPath(t, rel),
 	}, "cat '"+wslPath(t, installScriptRoot(t))+"/install.sh' | sh")
 
 	if code == 0 {
@@ -230,15 +230,15 @@ func TestInstallRefusesNonLinuxPlatform(t *testing.T) {
 	rel := buildFakeRelease(t, "v0.0.7-teste", false)
 	prefix := t.TempDir()
 	out, code := runInstall(t, map[string]string{
-		"PATH": "/usr/bin:/bin",
-		"HOME": wslPath(t, t.TempDir()),
-		"ANCIENTCODE_VERSION":    "v0.0.7-teste",
-		"ANCIENTCODE_PREFIX":     wslPath(t, prefix),
-		"ANCIENTCODE_LOCAL_ASSET": wslPath(t, filepath.Join(rel, "v0.0.7-teste", "ancientcode_v0.0.7-teste_linux_amd64.tar.gz")),
+		"PATH":                     "/usr/bin:/bin",
+		"HOME":                     wslPath(t, t.TempDir()),
+		"ANCIENTCODE_VERSION":      "v0.0.7-teste",
+		"ANCIENTCODE_PREFIX":       wslPath(t, prefix),
+		"ANCIENTCODE_LOCAL_ASSET":  wslPath(t, filepath.Join(rel, "v0.0.7-teste", "ancientcode_v0.0.7-teste_linux_amd64.tar.gz")),
 		"ANCIENTCODE_RELEASE_BASE": "file://" + wslPath(t, rel),
-		"ANCIENTCODE_RAW_BASE": "file://" + wslPath(t, rel),
-		"ANCIENTCODE_FAKE_OS":   "Darwin",
-		"ANCIENTCODE_FAKE_ARCH": "x86_64",
+		"ANCIENTCODE_RAW_BASE":     "file://" + wslPath(t, rel),
+		"ANCIENTCODE_FAKE_OS":      "Darwin",
+		"ANCIENTCODE_FAKE_ARCH":    "x86_64",
 	}, "cat '"+wslPath(t, installScriptRoot(t))+"/install.sh' | sh")
 
 	if code == 0 {
@@ -260,15 +260,15 @@ func TestInstallRefusesUnsupportedArch(t *testing.T) {
 	rel := buildFakeRelease(t, "v0.0.8-teste", false)
 	prefix := t.TempDir()
 	out, code := runInstall(t, map[string]string{
-		"PATH": "/usr/bin:/bin",
-		"HOME": wslPath(t, t.TempDir()),
-		"ANCIENTCODE_VERSION":    "v0.0.8-teste",
-		"ANCIENTCODE_PREFIX":     wslPath(t, prefix),
-		"ANCIENTCODE_LOCAL_ASSET": wslPath(t, filepath.Join(rel, "v0.0.8-teste", "ancientcode_v0.0.8-teste_linux_amd64.tar.gz")),
+		"PATH":                     "/usr/bin:/bin",
+		"HOME":                     wslPath(t, t.TempDir()),
+		"ANCIENTCODE_VERSION":      "v0.0.8-teste",
+		"ANCIENTCODE_PREFIX":       wslPath(t, prefix),
+		"ANCIENTCODE_LOCAL_ASSET":  wslPath(t, filepath.Join(rel, "v0.0.8-teste", "ancientcode_v0.0.8-teste_linux_amd64.tar.gz")),
 		"ANCIENTCODE_RELEASE_BASE": "file://" + wslPath(t, rel),
-		"ANCIENTCODE_RAW_BASE": "file://" + wslPath(t, rel),
-		"ANCIENTCODE_FAKE_OS":   "Linux",
-		"ANCIENTCODE_FAKE_ARCH": "aarch64",
+		"ANCIENTCODE_RAW_BASE":     "file://" + wslPath(t, rel),
+		"ANCIENTCODE_FAKE_OS":      "Linux",
+		"ANCIENTCODE_FAKE_ARCH":    "aarch64",
 	}, "cat '"+wslPath(t, installScriptRoot(t))+"/install.sh' | sh")
 
 	if code == 0 {
