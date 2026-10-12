@@ -19,9 +19,15 @@
 set -eu
 
 REPO="antonioghizidev/ancientcode"
-BASE="${ANCIENTCODE_RELEASE_BASE:-https://github.com/$REPO/releases/download}"
+RELEASES="https://github.com/$REPO/releases"
+BASE="${ANCIENTCODE_RELEASE_BASE:-$RELEASES/download}"
 RAWBASE="${ANCIENTCODE_RAW_BASE:-https://raw.githubusercontent.com/$REPO}"
-WANT_VERSION="${ANCIENTCODE_VERSION:-latest}"
+
+# A versao fixada e o DEFAULT de proposito: "latest" e convenience, nao
+# reprodutibilidade: se o usuario rodar o instalador amanha sem querer, ele
+# recebe outra build. Quem quiser a ultima tem que pedir (ANCIENTCODE_VERSION).
+DEFAULT_VERSION="${ANCIENTCODE_DEFAULT_VERSION:-v0.16.0}"
+WANT_VERSION="${ANCIENTCODE_VERSION:-$DEFAULT_VERSION}"
 PREFIX="${ANCIENTCODE_PREFIX:-$HOME/.local/bin}"
 
 die() {
@@ -70,15 +76,24 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/ancientcode.XXXXXX") || die "mktemp falhou"
 trap 'rm -rf "$WORK"' EXIT INT TERM
 
 # --- versao (S4) -------------------------------------------------------------
-# 'latest' precisa ser resolvido para uma tag concreta ANTES de escolher as
-# URLs. Se o tarball viesse de 'latest' e o SHA256SUMS de uma tag fixada, os
-# dois viriam de versoes diferentes - e a verificacao passaria validando um
-# arquivo contra o checksum de outro.
+# 'latest' e' resolvido pelo REDIRECT de /releases/latest, que leva a
+# /releases/tag/<TAG>. Nao se descobre a tag por um nome de asset: o nome do
+# asset carrega a versao, entao procurar '..._latest_...' nunca encontraria
+# nada. Era exatamente o bug que havia aqui.
+#
+# ATENCAO: o GitHub NAO aponta /releases/latest para prerelease. Se a ultima
+# release for '-pre', este caminho devolve 404 e o instalador recusa, dizendo
+# para pedir a versao explicita. E o comportamento certo: 'latest' que cai
+# numa prerelease e' uma surpresa.
 VERSION="$WANT_VERSION"
 if [ "$VERSION" = "latest" ]; then
-	redirected=$(fetch_head_url "$BASE/latest/download/ancientcode_latest_linux_amd64.tar.gz") || die "nao consegui consultar a ultima release"
-	VERSION=$(basename "$(dirname "$(dirname "$redirected")")")
-	[ -n "$VERSION" ] || die "nao consegui determinar a versao mais recente"
+	redirected=$(fetch_head_url "$RELEASES/latest") || die "nao consegui consultar a ultima release (o repositorio esta privado, ou a ultima release e' prerelease?)"
+	VERSION=$(basename "$redirected")
+	case "$VERSION" in
+	v*) ;;
+	*) die "nao consegui determinar a versao mais recente (URL inesperada: $VERSION)" ;;
+	esac
+	echo "ultima release: $VERSION"
 fi
 case "$VERSION" in
 v*) ;;

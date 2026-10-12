@@ -41,40 +41,65 @@ nativa, footprint de processo na casa das dezenas de MB.
 Alvo único: **linux/amd64**, compilado com `GOAMD64=v1` para rodar em hardware sem AVX
 (Core 2 Duo e mais antigo). Sem toolchain Go na máquina de destino.
 
+### Via binário (recomendado)
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/antonioghizidev/ancientcode/<TAG>/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/antonioghizidev/ancientcode/HEAD/install.sh | sh
 ```
 
-Troque `<TAG>` por uma tag concreta (`v0.16.0`). O instalador instala em `~/.local/bin`,
-sem `sudo` — use `ANCIENTCODE_PREFIX=/usr/local/bin` se preferir um local system-wide.
+Esse link é **estável**: aponta para o instalador do branch principal e **não muda de URL**
+a cada release. O instalador em si tem uma versão **fixada** (`v0.16.0`), então rodar o comando
+amanhã instala exatamente a mesma build de hoje — é reprodutível, e é por isso que não_USE
+`latest` como padrão.
 
-O que ele faz, nesta ordem: recusa se não for linux/amd64, baixa o tarball e o `SHA256SUMS`
-**da mesma versão**, confere o checksum **antes de extrair** e só então instala.
-Checksum divergente ou ausente é recusa, não aviso.
-
-Para conferir à mão, sem instalar:
+O instalador grava em `~/.local/bin`, sem `sudo`. Para outro local:
 
 ```sh
-curl -fsSLO https://github.com/antonioghizidev/ancientcode/releases/download/<TAG>/SHA256SUMS
-curl -fsSLO https://github.com/antonioghizidev/ancientcode/releases/download/<TAG>/ancientcode_<TAG>_linux_amd64.tar.gz
+ANCIENTCODE_PREFIX=/usr/local/bin curl -fsSL .../HEAD/install.sh | sh
+```
+
+Para pedir explicitamente a última release estável:
+
+```sh
+ANCIENTCODE_VERSION=latest curl -fsSL .../HEAD/install.sh | sh
+```
+
+> **`latest` não alcança prereleases.** O GitHub não aponta `/releases/latest` para uma
+> release marcada como pre-release. Se a mais recente for `-pre`, `latest` falha — e é o
+> comportamento certo, porque `latest` caindo numa prerelease é surpresa. Nesse caso use a tag.
+
+### Via `go install`
+
+Só se a máquina **já tiver** Go 1.27+, o que o alvo não tem por definição.
+
+```sh
+# versão fixa (reprodutível)
+go install github.com/antonioghizidev/ancientcode/cmd/ancientcode@v0.16.0
+
+# última estável
+go install github.com/antonioghizidev/ancientcode/cmd/ancientcode@latest
+```
+
+Atenção ao detalhe que só aparece aqui: `go install` **compila na máquina do usuário**, então um
+`GOAMD64` exportado no shell quebra a compatibilidade com o Core 2 Duo silenciosamente. O caminho
+do binário pré-compilado não sofre disso.
+
+### Conferir o download à mão
+
+```sh
+TAG=v0.16.0
+curl -fsSLO "https://github.com/antonioghizidev/ancientcode/releases/download/$TAG/SHA256SUMS"
+curl -fsSLO "https://github.com/antonioghizidev/ancientcode/releases/download/$TAG/ancientcode_${TAG}_linux_amd64.tar.gz"
 sha256sum -c SHA256SUMS
 ```
 
-### Alternativa: `go install`
-
-```sh
-go install github.com/antonioghizidev/ancientcode/cmd/ancientcode@<TAG>
-```
-
-Só se a máquina **já tiver** Go 1.27+ — o que o alvo não tem por definição. E atenção ao
-detalhe: o `go install` compila na máquina do usuário, então um `GOAMD64` exportado no shell
-quebre a compatibilidade com o Core 2 Duo silenciosamente. O caminho do binário pré-compilado
-não sofre disso.
+O `SHA256SUMS` não é assinado: protege contra corrupção e truncamento, **não** contra quem
+controla o canal (ver D-86).
 
 ### Ainda não funciona para terceiros
 
-O repositório está **privado**. As instruções acima não instalam nada para quem não tem acesso,
-por decisão de acesso do GitHub, não por limite do instalador. Ver
+O repositório está **privado**. As URLs acima devolvem 404 para quem não tem acesso — isso é
+controle de acesso do GitHub, não limitação do instalador. Ver
 [`specs/milestones/16-m16-distribuicao.md`](specs/milestones/16-m16-distribuicao.md) §6.
 
 ## Começando

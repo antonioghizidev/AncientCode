@@ -7,6 +7,15 @@ name: release
 on:
   push:
     tags: ['v*']
+  # Botao "Run workflow" na UI. Sem isto a unica forma de rodar o release e
+  # criar tag, e nao ha como REGERAR uma release que ja saiu errada - que e
+  # exatamente o que aconteceu com a primeira.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag a publicar (ex.: v0.16.0). Sera criada e apontada para o HEAD do branch padrao se ainda nao existir.'
+        required: true
+        type: string
 
 permissions:
   contents: write # publica a release; sem isto o upload falha
@@ -17,11 +26,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # git describe precisa da historia
+          # O dispatch manual roda a partir do branch padrao, entao o contexto
+          # do git nao tem nenhuma tag. Precisa do historico inteiro para o
+          # git describe e para o scrub.
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
+      # A tag e a versao: o mesmo valor vai para o -X da build e para o nome do
+      # artefato, para que --version e o arquivo instalado concordem (M16 S7).
+      # Num dispatch manual a tag vem do input; num push de tag, do proprio ref.
+      - name: resolve a tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -eu
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+            case "$TAG" in v*) ;; *) echo "::error::a tag precisa comecar com v"; exit 1;; esac
+            # Cria a tag se ela nao existir: e o que permite re-gerar uma
+            # release sem forcar ninguem a mexer no repositorio local.
+            git fetch --tags --force || true
+            if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              git tag -a "$TAG" -m "release $TAG" "${GITHUB_SHA}"
+              git push origin "refs/tags/$TAG"
+            fi
+          else
+            TAG="$REF_NAME"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tag resolvida: $TAG"
 
       # A suite e o portao. Nao e' "rodar tambem": um artefato so' existe se a
       # suite passar. Fail-closed tambem no CI (spec M16).
@@ -33,7 +72,7 @@ jobs:
 
       - name: build do artefato (GOAMD64=v1 por contrato, constitution 7)
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -eu
           mkdir -p dist/ancientcode_${TAG}_linux_amd64
@@ -49,27 +88,27 @@ jobs:
       # exatamente o que um atacante com write no repositorio usaria.
       - name: tar
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: cd dist && tar -czf "ancientcode_${TAG}_linux_amd64.tar.gz" "ancientcode_${TAG}_linux_amd64"
 
       # O checksum e' do TARBAL, entao vem depois do tar. A ordem nao e' um
       # detalhe: invertida, o SHA256SUMS descreve um arquivo que ninguem tem.
       - name: SHA256SUMS
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: cd dist && sha256sum "ancientcode_${TAG}_linux_amd64.tar.gz" > SHA256SUMS
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/ancientcode_${{ github.ref_name }}_linux_amd64.tar.gz
+            dist/ancientcode_${{ steps.tag.outputs.tag }}_linux_amd64.tar.gz
             dist/SHA256SUMS
           generate_release_notes: true
           body: |
             ## Como instalar
 
             ```sh
-            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/install.sh | sh
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.tag.outputs.tag }}/install.sh | sh
             ```
 
             O instalador confere o `SHA256SUMS` desta mesma release antes de
@@ -79,7 +118,7 @@ jobs:
 
             ```sh
             sha256sum -c SHA256SUMS
-            ./ancientcode --version   # deve dizer ${{ github.ref_name }}
+            ./ancientcode --version   # deve dizer ${{ steps.tag.outputs.tag }}
             ```
 
             Alvo unico: `linux/amd64` com `GOAMD64=v1`, por causa do Core 2 Duo
