@@ -13,14 +13,40 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
 )
 
-// wslPrefixtranslate um caminho Windows para o que o WSL ve (/mnt/c/...).
-func wslPath(t *testing.T, p string) string {
+// shellExec roda um comando no shell da PLATAFORMA: o /bin/sh do WSL no
+// Windows, o proprio /bin/sh no Linux.
+//
+// O guard nao e' opcional. Sem ele, `wsl' - que nao existe num runner Linux do
+// GitHub Actions - derrubava a suite inteira: oito testes que nunca rodaram
+// fora do Windows, e ninguem percebeu.
+func shellExec(t *testing.T, script string) (string, error) {
 	t.Helper()
+	var sh *exec.Cmd
+	if runtime.GOOS == "windows" {
+		sh = exec.Command("wsl", "-d", "Ubuntu-24.04", "--", "sh", "-c", script)
+	} else {
+		sh = exec.Command("/bin/sh", "-c", script)
+	}
+	out, err := sh.CombinedOutput()
+	return string(out), err
+}
+
+// shellPath devolve o caminho como o SHELL QUE VAI RODAR O INSTALADOR enxerga.
+//
+// No Windows o shell ve /mnt/c/...; no Linux o caminho ja esta certo. A versao
+// anterior convertia sempre, e em Linux produzia "/mnt//tmp/..." - caminho que
+// nao existe.
+func shellPath(t *testing.T, p string) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return p
+	}
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		t.Fatalf("abs: %v", err)
@@ -28,6 +54,13 @@ func wslPath(t *testing.T, p string) string {
 	vol := strings.ToUpper(abs[:1])
 	rest := strings.ReplaceAll(abs[3:], `\`, "/")
 	return "/mnt/" + strings.ToLower(vol) + "/" + rest
+}
+
+// wslPath permanece como alias: onde o teste fala de WSL explicitamente, o nome
+// antigo le melhor do que um generico.
+func wslPath(t *testing.T, p string) string {
+	t.Helper()
+	return shellPath(t, p)
 }
 
 // installScriptRoot localiza o install.sh na raiz do repositorio. Nao chama a
@@ -62,15 +95,14 @@ func runInstall(t *testing.T, env map[string]string, script string) (stdout stri
 	}
 	full := exports.String() + script
 
-	sh := exec.Command("wsl", "-d", "Ubuntu-24.04", "--", "sh", "-c", full)
-	out, err := sh.CombinedOutput()
+	out, err := shellExec(t, full)
 	code := 0
 	if ee, ok := err.(*exec.ExitError); ok {
 		code = ee.ExitCode()
 	} else if err != nil {
-		t.Fatalf("wsl falhou: %v\n%s", err, out)
+		t.Fatalf("shell falhou: %v\n%s", err, out)
 	}
-	return string(out), code
+	return out, code
 }
 
 // buildFakeRelease monta um "release" local com o MESMO layout que o GitHub
@@ -89,18 +121,15 @@ func buildFakeRelease(t *testing.T, tag string, tamper bool) string {
 		t.Fatal(err)
 	}
 	asset := "ancientcode_" + tag + "_linux_amd64.tar.gz"
-	cmd := exec.Command("wsl", "-d", "Ubuntu-24.04", "--", "sh", "-c",
-		"cd '"+wslPath(t, root)+"' && tar -czf '"+wslPath(t, filepath.Join(root, asset))+"' ancientcode")
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := shellExec(t,
+		"cd '"+shellPath(t, root)+"' && tar -czf '"+shellPath(t, filepath.Join(root, asset))+"' ancientcode"); err != nil {
 		t.Fatalf("tar falhou: %v\n%s", err, out)
 	}
-	sum := exec.Command("wsl", "-d", "Ubuntu-24.04", "--", "sh", "-c",
-		"cd '"+wslPath(t, root)+"' && sha256sum "+asset)
-	sumOut, err := sum.Output()
+	sumOut, err := shellExec(t, "cd '"+shellPath(t, root)+"' && sha256sum "+asset)
 	if err != nil {
-		t.Fatalf("sha256sum falhou: %v", err)
+		t.Fatalf("sha256sum falhou: %v\n%s", err, sumOut)
 	}
-	line := strings.TrimSpace(string(sumOut))
+	line := strings.TrimSpace(sumOut)
 	if tamper {
 		// S1: checksum que nao corresponde ao conteudo.
 		fields := strings.Fields(line)

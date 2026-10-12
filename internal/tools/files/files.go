@@ -178,17 +178,8 @@ func (f *Files) resolveAbsolute(abs, what string) (string, error) {
 			"(absolute paths are refused fail-closed)", abs, f.Root())
 	}
 	clean := filepath.Clean(abs)
-	resolved, err := filepath.EvalSymlinks(clean)
+	resolved, err := resolveExisting(clean)
 	if err != nil {
-		// Not there yet: judge the cleaned path, and the write path will create
-		// the parent. A missing path is not an escape.
-		if os.IsNotExist(err) {
-			if !f.granted(clean) {
-				return "", fmt.Errorf("files: %s de %q recusado: fora do projeto e sem concessao",
-					what, abs)
-			}
-			return clean, nil
-		}
 		return "", err
 	}
 	if !f.granted(resolved) {
@@ -196,6 +187,43 @@ func (f *Files) resolveAbsolute(abs, what string) (string, error) {
 			what, abs)
 	}
 	return resolved, nil
+}
+
+// resolveExisting devolve o caminho com os symlinks resolvidos, mesmo quando o
+// FIM ainda nao existe.
+//
+// O bug que ela mata: ao escrever um arquivo novo, o caminho final quase nunca
+// existe ainda, e filepath.EvalSymlinks falha com IsNotExist. O codigo tratava
+// isso como "caminho ausente nao e fuga" e julgava o caminho CRU. Era
+// exatamente o caso perigoso: com um symlink concedido apontando para fora,
+// `<concedido>/atalho/novo.txt` passava pela concessao e criava arquivo do
+// outro lado da pasta concedida.
+//
+// A solucao e o padrao de securejoin: resolver o ancestral mais proximo que
+// EXISTE e religar por cima dele os componentes que ainda nao existem. O que
+// nao existe nao pode ser symlink, entao nao ha nada a resolver neles.
+func resolveExisting(clean string) (string, error) {
+	var tail []string
+	p := clean
+	for {
+		resolved, err := filepath.EvalSymlinks(p)
+		if err == nil {
+			for i := len(tail) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, tail[i])
+			}
+			return resolved, nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			// Chegou na raiz sem achar nada que exista: devolve o erro original.
+			return "", err
+		}
+		tail = append(tail, filepath.Base(p))
+		p = parent
+	}
 }
 
 // resolveWrite is the private body of ResolveWrite.
