@@ -58,8 +58,16 @@ jobs:
               # release, porque manda o relato de bug para o commit errado.
               git checkout -f "refs/tags/$TAG"
             else
-              # Cria a tag se ela nao existir: e o que permite publicar sem
+              # Cria a tag se ela nao existir: e' o que permite publicar sem
               # forcar ninguem a mexer no repositorio local.
+              #
+              # `git tag -a` grava um TAGGER no objeto da tag, e o runner nao
+              # tem identidade de git configurada. Sem estas duas linhas o
+              # passo morre com "Committer identity unknown" - e a tag nem
+              # chega a ser criada. Nao e' o autor do commit: e' quem assina a
+              # tag, por isso a identidade do bot, nao a do ator.
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
               git tag -a "$TAG" -m "release $TAG" "${GITHUB_SHA}"
               git push origin "refs/tags/$TAG"
             fi

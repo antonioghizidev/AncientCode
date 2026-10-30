@@ -30,7 +30,9 @@ artefato real, link estável para `latest` no README e, quando possível, na UI 
     compilava o HEAD do branch padrão e publicava sob a tag antiga;
   - `tag_name` explícito no passo de release: num dispatch a action derivava a tag de
     `github.ref` (`refs/heads/main`) e ficava sem tag — o botão **Run workflow** construía o
-    artefato e falhava ao publicar.
+    artefato e falhava ao publicar;
+  - identidade de git configurada antes de `git tag -a`: o runner não tem `user.name`/`user.email`
+    e o primeiro run real morreu com `Committer identity unknown`, sem nem criar a tag.
 - README: typo `não_USE` corrigido; link explícito para `releases/latest` e explicação de que
   ele só resolve quando há release não-prerelease.
 - Simulação de ponta a ponta com binário real: build `GOAMD64=v1` → `package-release.sh` →
@@ -43,6 +45,7 @@ artefato real, link estável para `latest` no README e, quando possível, na UI 
 - D-2026-10-30-88 — dispatch constrói a tag, nunca o HEAD do branch padrão.
 - D-2026-10-30-89 — `prerelease` e `make_latest` explícitos.
 - D-2026-10-30-90 — `tag_name` explícito; sem ele o dispatch não publica.
+- D-2026-10-30-91 — identidade de git antes de `git tag -a`; sem ela o runner não cria a tag.
 
 ## Testes
 

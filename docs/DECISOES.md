@@ -1457,3 +1457,18 @@ helper não serve. Suba um nível e teste a chamada.
   parece quase verde.
 - **Teste**: `TestReleaseWorkflowUsesSharedPackager` falha se a linha sumir. Mutacao aplicada:
   pega.
+
+### D-2026-10-30-91 - O workflow configura identidade de git antes de criar a tag anotada
+
+- **Decisao**: `git config user.name "github-actions[bot]"` e
+  `git config user.email "41898282+github-actions[bot]@users.noreply.github.com"` imediatamente
+  antes de `git tag -a`.
+- **Por que**: `git tag -a` grava um **tagger** no objeto da tag, e o runner do GitHub nao tem
+  identidade configurada. O primeiro run real morreu com `Committer identity unknown` /
+  `fatal: empty ident name ... not allowed` (exit 128) e a tag `v0.16.0` **nem foi criada**.
+  Nao e' o autor do commit: e' quem assina a tag, por isso a identidade do bot e nao a do ator.
+- **Medido**: reproduzido num repo limpo com `GIT_CONFIG_GLOBAL` vazia - falha sem as duas
+  linhas, exit 0 com elas, e o objeto da tag mostra `tagger github-actions[bot] <...>`.
+- **Teste**: `TestReleaseWorkflowConfiguresGitIdentity` compara **linhas de comando** (nao
+  posicoes no arquivo, senao o proprio comentario que cita `git tag -a` engana o indice) e exige
+  as duas linhas antes do `git tag -a`. Mutacao aplicada: pega.

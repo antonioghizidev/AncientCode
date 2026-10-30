@@ -66,3 +66,51 @@ func TestReleaseWorkflowUsesSharedPackager(t *testing.T) {
 			`(esperado: tar -czf ... -C "$DIR" .): o install.sh vai recusar a release`)
 	}
 }
+
+// TestReleaseWorkflowConfiguresGitIdentity trava um defeito que so' aparece no
+// runner, nunca no dev machine: `git tag -a` grava um TAGGER no objeto da tag,
+// e o runner do GitHub nao tem user.name/user.email configurados. O passo
+// morria com "Committer identity unknown" e a tag nem era criada - o job
+// construia tudo e falhava no primeiro passo.
+//
+// Medido: num HOME limpo, com GIT_CONFIG_GLOBAL vazia,
+// `git tag -a v0.0.1 -m ... HEAD` responde
+// "fatal: empty ident name ... not allowed" e sai com 128.
+func TestReleaseWorkflowConfiguresGitIdentity(t *testing.T) {
+	root := installScriptRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "release.yml"))
+	if err != nil {
+		t.Fatalf("release.yml nao encontrado: %v", err)
+	}
+	s := string(raw)
+
+	// Comparar LINHAS, nao posicoes no arquivo: o comentario que explica o
+	// defeito cita `git tag -a`, e um strings.Index ingenuo acha a mencao na
+	// prosa antes de achar o comando. So' conta linha cujo conteudo comeca
+	// pelo comando (comentario comeca com '#').
+	lineOf := func(prefix string) int {
+		for i, line := range strings.Split(s, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), prefix) {
+				return i
+			}
+		}
+		return -1
+	}
+
+	tagAt := lineOf("git tag -a")
+	if tagAt < 0 {
+		t.Fatal("o workflow nao cria tag anotada: este teste ficou sem objeto")
+	}
+
+	for _, want := range []string{"git config user.name", "git config user.email"} {
+		at := lineOf(want)
+		if at < 0 {
+			t.Fatalf("o workflow nao configura %q: num runner sem identidade, "+
+				"git tag -a morre com \"Committer identity unknown\"", want)
+		}
+		if at > tagAt {
+			t.Fatalf("%q aparece DEPOIS de git tag -a: a tag seria criada antes "+
+				"de a identidade existir", want)
+		}
+	}
+}
