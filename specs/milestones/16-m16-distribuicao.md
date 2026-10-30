@@ -131,6 +131,7 @@ reprovar este arquivo.
 - [x] Instalação bem-sucedida coberta por teste (S8), com o mesmo empacotador do workflow.
 - [x] README traz as duas vias de instalação e nomeia a pegadinha do `GOAMD64`.
 - [x] Suíte completa verde; `gofmt`/`vet`/`build` limpos.
-- [x] DECISOES, nota de sessão, `specs/README.md` e `docs/SPEC.md` atualizados.
+- [x] DECISOES, nota de sessão e `specs/README.md` atualizados; `docs/SPEC.md` revisado (o
+      contrato de build/`GOAMD64=v1` já estava correto, não precisou mudar).
 - [x] **Dívidas registradas** (§5), não silenciosamente adiadas.
 - [ ] Release publicada com o artefato corrigido (depende do run do workflow).
