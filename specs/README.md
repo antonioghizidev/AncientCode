@@ -9,7 +9,7 @@ AncientCode e contém as especificações de cada milestone.
 |---|---|
 | `constitution.md` | Regras não-negociáveis do projeto (segurança, testes, documentação). |
 | `methodology.md` | Metodologia de trabalho que **toda sessão** deve seguir. |
-| `milestones/` | Uma especificação por milestone (M1..M14). |
+| `milestones/` | Uma especificação por milestone (M1..M16). |
 | `templates/milestone.md` | Template para abrir uma nova spec de milestone. |
 | `templates/session.md` | Template para notas de sessão em `docs/`. |
 
@@ -19,9 +19,9 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
 
 ## Estado por milestone
 
-**M1–M14 mergeados em `main`** (M14 no PR #10, `89fdf19`). **M15 implementado e validado
-no hardware**, aguardando merge (PR #11). **M16 — distribuição instalável** implementado e
-testado por mutação, aguardando merge.
+**M1–M16 mergeados em `main`** (M14 no PR #10; M15 no PR #11; M16 no PR #12). O **M16 —
+distribuição instalável** tem o pipeline pronto e testado, mas a release ainda não foi
+publicada com o artefato corrigido — ver "Em aberto".
 
 | | Milestone | Spec | Nota de sessão |
 |---|---|---|---|
@@ -39,15 +39,20 @@ testado por mutação, aguardando merge.
 | M12 | Catálogo de modelos | [`12-m12`](milestones/12-m12-catalogo-modelos.md) | [`m12`](../docs/session-2026-10-01-m12-catalogo-modelos.md) |
 | M13 | Painel de sessão | [`13-m13`](milestones/13-m13-painel-sessao.md) | [`m13`](../docs/session-2026-10-02-m13-painel-sessao.md) |
 | M14 | `/connect` + credenciais | [`14-m14`](milestones/14-m14-connect-credenciais.md) | [`m14`](../docs/session-2026-10-02-m14-connect.md) |
+| M15 | `/grant` (concessão de pasta) | [`15-m15`](milestones/15-m15-projeto-e-rascunho.md) | [`m15`](../docs/session-2026-10-03-m15-projeto.md) |
+| M16 | Distribuição instalável | [`16-m16`](milestones/16-m16-distribuicao.md) | [`m16`](../docs/session-2026-10-11-m16-distribuicao.md), [release instalável](../docs/session-2026-10-30-m16-release-instalavel.md) |
 
 `08-m8-agentes-paralelos.md` é um esboço não entregue (sem nota de sessão).
 
 ### Em aberto
 
+- **Falta publicar a release `v0.16.0`.** A `v0.16.0-pre` publicada é ininstalável: o tarball
+  saía com diretório de topo e o `install.sh` procura `<extraído>/ancientcode` (corrigido em
+  D-87, com empacotador único). Falta rodar o workflow com a tag nova e conferir o artefato.
 - **A release ainda não é instalável por terceiros: o repositório está privado.** O pipeline
-  (workflow de release, `install.sh`, checksum) está pronto e testado; o que falta é a decisão de
-  tornar público — e, antes disso, purgar os dois trechos de dado real de máquina que o `main`
-  carrega desde setembro. Ver `milestones/16-m16-distribuicao.md` §6.
+  está pronto e testado; o que falta é a decisão de tornar público — e, antes disso, a remoção
+  dos `refs/pull/*/head` pelo GitHub Support, que ainda guardam commits com dado real de
+  máquina. Ver `milestones/16-m16-distribuicao.md` §6.
 - **`SHA256SUMS` sem assinatura.** Quem controla o canal troca artefato e checksum juntos; o
   modelo de chaves ainda não existe (D-86).
 - **`--check` dentro da TUI.** Hoje a TUI recusa a flag e aponta o REPL.

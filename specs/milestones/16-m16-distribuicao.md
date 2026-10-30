@@ -91,6 +91,7 @@ Cada um com teste que **falha se a proteção for removida**.
 | S5 | `install.sh` não executa nada antes de verificar o checksum | verificar depois de extrair já executou código do atacante |
 | S6 | o binário publicado não contém instrução pós-SSE2 | a constituição §7 é um contrato; um artefato que quebra o Core 2 Duo é falha de distribuição |
 | S7 | o valor de `version` injetado bate com a tag do release | `--version` como evidência |
+| S8 | o caminho de **sucesso** instala o binário no prefixo | S1–S7 testam recusas; um instalador quebrado no sucesso continua verde em todos eles — foi assim que um tarball com diretório de topo chegou à primeira release |
 
 ## 5. O que este milestone **não** faz
 
@@ -121,13 +122,15 @@ reprovar este arquivo.
 
 ## 7. Critérios de aceite
 
-- [ ] `--version` devolve a versão injetada pela build, e `dev` fora de release.
-- [ ] Workflow compila `GOAMD64=v1` e falha se a suíte não passar.
-- [ ] `install.sh` recusa checksum divergente (S1), checksum ausente (S2) e plataforma fora
+- [x] `--version` devolve a versão injetada pela build, e `dev` fora de release.
+- [x] Workflow compila `GOAMD64=v1` e falha se a suíte não passar.
+- [x] `install.sh` recusa checksum divergente (S1), checksum ausente (S2) e plataforma fora
       (S3), **antes** de executar qualquer coisa do artefato (S5).
-- [ ] `install.sh` fixa a tag: artefato e `SHA256SUMS` vêm da mesma versão (S4).
-- [ ] Artefato verificado sem instrução pós-SSE2 (S6).
-- [ ] README traz as duas vias de instalação e nomeia a pegadinha do `GOAMD64`.
-- [ ] Suíte completa verde; `gofmt`/`vet`/`build` limpos.
-- [ ] DECISOES, nota de sessão, `specs/README.md` e `docs/SPEC.md` atualizados.
-- [ ] **Débidas registradas** (§5), não silenciosamente adiadas.
+- [x] `install.sh` fixa a tag: artefato e `SHA256SUMS` vêm da mesma versão (S4).
+- [x] Artefato verificado sem instrução pós-SSE2 (S6).
+- [x] Instalação bem-sucedida coberta por teste (S8), com o mesmo empacotador do workflow.
+- [x] README traz as duas vias de instalação e nomeia a pegadinha do `GOAMD64`.
+- [x] Suíte completa verde; `gofmt`/`vet`/`build` limpos.
+- [x] DECISOES, nota de sessão, `specs/README.md` e `docs/SPEC.md` atualizados.
+- [x] **Dívidas registradas** (§5), não silenciosamente adiadas.
+- [ ] Release publicada com o artefato corrigido (depende do run do workflow).

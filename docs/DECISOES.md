@@ -1406,3 +1406,43 @@ helper não serve. Suba um nível e teste a chamada.
 - **O que fica registrado**: a divida e' real e nomeada, nao esquecida. Quando o modelo de chaves
   existir, o instalador cresce um passo (verificar assinatura antes do checksum) e o teste ganha
   o caso "assinatura invalida".
+
+### D-2026-10-30-87 - O empacotamento do release e' um script unico, compartilhado pelo workflow e pelos testes
+
+- **Decisao**: `scripts/package-release.sh <dist-dir> <tag>` e' o **unico** lugar que monta o
+  tarball e o `SHA256SUMS`. O workflow de release chama o script; `buildFakeRelease` nos testes
+  chama o **mesmo** script. O tarball e' **plano** (`tar -C "$DIR" .`), sem diretorio de topo.
+- **Por que**: a primeira release real era **ininstalavel**. O workflow gerava
+  `tar -czf ... ancientcode_<tag>_linux_amd64` (diretorio de topo) e o teste gerava
+  `tar -czf ... ancientcode` (plano). O `install.sh` procura `<extraido>/ancientcode` e recusava
+  com "o tarball nao contem o binario ancientcode". Cada empacotador estava coerente consigo
+  mesmo; a divergencia entre os dois era o defeito.
+- **Por que nenhum teste pegou**: **todos** os testes de instalacao esperavam **falha**. Um
+  instalador quebrado no caminho de sucesso continua verde neles, porque cada um falha antes, no
+  checksum. Faltava um teste que instalasse de verdade. `TestInstallSucceedsAndPlacesBinary`
+  cobre o caminho feliz inteiro (resolve versao, baixa artefato e sums, confere, extrai, coloca
+  o binario no prefixo) e falhou com o layout antigo antes da correcao.
+- **Teste de call site**: `TestReleaseWorkflowUsesSharedPackager` le o `release.yml` e falha se
+  o workflow voltar a chamar `tar` por conta propria. Mutacao aplicada (voltar o `tar` inline):
+  pega. E' a licao de D-75 - helper certo, chamador errado nao aparece em teste de helper.
+
+### D-2026-10-30-88 - O dispatch de release constroi a TAG, nunca o HEAD do branch padrao
+
+- **Decisao**: em `workflow_dispatch`, se a tag ja existe, o job faz
+  `git checkout -f refs/tags/<tag>` antes de compilar; se nao existe, cria a tag no
+  `GITHUB_SHA` e empurra.
+- **Por que**: antes, re-gerar uma release antiga compilava o HEAD do branch padrao e publicava
+  sob a tag antiga. O binario responderia `--version <tag>` sem ser o codigo daquela tag - um
+  `--version` que mente manda o relato de bug para o commit errado, o que e' pior que nao ter
+  release.
+- **Consequencia pratica**: nao da para "consertar" `v0.16.0-pre` por dispatch. Aquele tag
+  aponta para um commit cujo `install.sh` ainda tem o bug do asset `latest` e que nao tem
+  `scripts/package-release.sh`. Publicar `v0.16.0` a partir do `main` atual e' o caminho certo.
+
+### D-2026-10-30-89 - Prerelease e "latest" explicitos no workflow
+
+- **Decisao**: `prerelease: ${{ contains(tag, '-') }}` e `make_latest: legacy`.
+- **Por que**: sem `prerelease` explicito, uma tag `-pre` publicada por dispatch nasceria como
+  release **normal** e viraria a "latest" do repositorio - e `/releases/latest` passaria a
+  apontar para uma prerelease, que e' exatamente o que o instalador documenta que nao acontece.
+  `legacy` deixa o GitHub marcar como latest so o que nao e' prerelease nem draft.

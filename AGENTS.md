@@ -23,14 +23,14 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
 
 ## Estado atual
 
-**M1–M13 mergeados em `main`. M14 implementado e validado** na branch
-`m14-connect-credenciais` (PR aberto à mão — o fine-grained PAT tem `contents: write`, não
-`pull requests: write`).
+**M1–M16 mergeados em `main`.** O M16 (distribuição instalável) tem o pipeline pronto e
+testado; a **release `v0.16.0` ainda não foi publicada**, e a `v0.16.0-pre` que existe é
+ininstalável (tarball com diretório de topo — D-87).
 
 | | |
 |---|---|
-| Estado por milestone | [`specs/README.md`](specs/README.md) — tabela M1..M14 com spec e nota de sessão |
-| O que está aberto agora | merge do M14; depois, decidir o driver raw do Windows (`golang.org/x/term`) |
+| Estado por milestone | [`specs/README.md`](specs/README.md) — tabela M1..M16 com spec e nota de sessão |
+| O que está aberto agora | publicar `v0.16.0` pelo workflow e conferir o artefato; tornar o repo público depende da remoção dos `refs/pull/*/head` pelo GitHub Support |
 | Backlog anotado | `/compact`, `/new`, `/autocompact` (paridade com o opencode — a unidade é a **sessão**, os três criam sessão nova); `/sessions` para não perder acesso à anterior; backlog Web (SSE + shell-HTTP + `Approver` por canal) |
 
 **Não reescreva o histórico de milestones aqui.** Ele vive em `specs/milestones/` (spec) e

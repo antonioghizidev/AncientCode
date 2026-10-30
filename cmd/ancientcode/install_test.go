@@ -106,30 +106,39 @@ func runInstall(t *testing.T, env map[string]string, script string) (stdout stri
 }
 
 // buildFakeRelease monta um "release" local com o MESMO layout que o GitHub
-// usa: <base>/<tag>/<artefato> e <base>/<tag>/SHA256SUMS. O teste precisa
-// respeitar esse desenho, ou exercita um caminho que o instalador nunca usa.
+// usa: <base>/<tag>/<artefato> e <base>/<tag>/SHA256SUMS.
+//
+// O empacotamento e' feito por scripts/package-release.sh - o MESMO script que
+// o workflow chama. Antes havia dois empacotadores: o workflow gerava um
+// tarball com diretorio de topo e o teste um tarball plano. O teste ficava
+// verde e toda release real era recusada pelo install.sh, que procura
+// <extraido>/ancientcode. Um script so' e' o que impede essa divergencia de
+// voltar: mudar o layout agora quebra este teste.
 func buildFakeRelease(t *testing.T, tag string, tamper bool) string {
 	t.Helper()
 	base := t.TempDir()
 	root := filepath.Join(base, tag)
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	stage := filepath.Join(root, "ancientcode_"+tag+"_linux_amd64")
+	if err := os.MkdirAll(stage, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	payload := filepath.Join(root, "ancientcode")
 	// Um binario falso basta: o instalador nao executa o conteudo, ele extrai.
-	if err := os.WriteFile(payload, []byte("#!/bin/sh\necho ancientcode\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(stage, "ancientcode"), []byte("#!/bin/sh\necho ancientcode\n"), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	script := filepath.Join(installScriptRoot(t), "scripts", "package-release.sh")
+	if out, err := shellExec(t, "sh '"+shellPath(t, script)+"' '"+shellPath(t, root)+"' '"+tag+"'"); err != nil {
+		t.Fatalf("package-release.sh falhou: %v\n%s", err, out)
 	}
 	asset := "ancientcode_" + tag + "_linux_amd64.tar.gz"
-	if out, err := shellExec(t,
-		"cd '"+shellPath(t, root)+"' && tar -czf '"+shellPath(t, filepath.Join(root, asset))+"' ancientcode"); err != nil {
-		t.Fatalf("tar falhou: %v\n%s", err, out)
-	}
-	sumOut, err := shellExec(t, "cd '"+shellPath(t, root)+"' && sha256sum "+asset)
+	sumOut, err := os.ReadFile(filepath.Join(root, "SHA256SUMS"))
 	if err != nil {
-		t.Fatalf("sha256sum falhou: %v\n%s", err, sumOut)
+		t.Fatalf("SHA256SUMS nao foi gerado: %v", err)
 	}
-	line := strings.TrimSpace(sumOut)
+	line := strings.TrimSpace(string(sumOut))
+	if !strings.Contains(line, asset) {
+		t.Fatalf("SHA256SUMS nao descreve %s:\n%s", asset, line)
+	}
 	if tamper {
 		// S1: checksum que nao corresponde ao conteudo.
 		fields := strings.Fields(line)
@@ -139,6 +148,47 @@ func buildFakeRelease(t *testing.T, tag string, tamper bool) string {
 		t.Fatal(err)
 	}
 	return base
+}
+
+// TestInstallSucceedsAndPlacesBinary e' o teste que faltava, e a razao de um
+// defeito real ter chegado ate a primeira release.
+//
+// Todos os outros testes de instalacao esperam FALHA. Um instalador que
+// quebrasse no caminho de sucesso - por exemplo recusando o tarball de verdade
+// - continuaria verde em todos eles, porque cada um falha antes, no checksum.
+// Foi o que aconteceu: o workflow empacotava o tarball com um diretorio de topo
+// e o install.sh procurava <extraido>/ancientcode. Nenhum teste percebeu, e a
+// primeira release real era ininstalavel.
+//
+// Este teste percorre o caminho feliz inteiro: resolve a versao, baixa o
+// artefato E o SHA256SUMS, confere, extrai e coloca o binario no prefixo.
+func TestInstallSucceedsAndPlacesBinary(t *testing.T) {
+	const tag = "v0.0.7-teste"
+	rel := buildFakeRelease(t, tag, false)
+	prefix := t.TempDir()
+	out, code := runInstall(t, map[string]string{
+		"PATH":                     "/usr/bin:/bin",
+		"HOME":                     wslPath(t, t.TempDir()),
+		"ANCIENTCODE_VERSION":      tag,
+		"ANCIENTCODE_PREFIX":       wslPath(t, prefix),
+		"ANCIENTCODE_RELEASE_BASE": "file://" + wslPath(t, rel),
+		"ANCIENTCODE_RAW_BASE":     "file://" + wslPath(t, rel),
+	}, "cat '"+wslPath(t, installScriptRoot(t))+"/install.sh' | sh")
+
+	if code != 0 {
+		t.Fatalf("o instalador recusou uma release valida (exit %d):\n%s", code, out)
+	}
+	if !strings.Contains(out, "instalado em") {
+		t.Fatalf("o instalador nao anunciou a instalacao:\n%s", out)
+	}
+	installed := filepath.Join(prefix, "ancientcode")
+	body, err := os.ReadFile(installed)
+	if err != nil {
+		t.Fatalf("o binario nao foi instalado em %s: %v\nsaida:\n%s", installed, err, out)
+	}
+	if !strings.Contains(string(body), "ancientcode") {
+		t.Fatalf("o arquivo instalado nao e' o binario do artefato: %q", body)
+	}
 }
 
 // TestInstallRefusesTamperedChecksum (S1) e o teste central: se o checksum

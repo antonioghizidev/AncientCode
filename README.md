@@ -49,8 +49,8 @@ curl -fsSL https://raw.githubusercontent.com/antonioghizidev/ancientcode/HEAD/in
 
 Esse link é **estável**: aponta para o instalador do branch principal e **não muda de URL**
 a cada release. O instalador em si tem uma versão **fixada** (`v0.16.0`), então rodar o comando
-amanhã instala exatamente a mesma build de hoje — é reprodutível, e é por isso que não_USE
-`latest` como padrão.
+amanhã instala exatamente a mesma build de hoje — é reprodutível, e é por isso que `latest`
+não é o padrão.
 
 O instalador grava em `~/.local/bin`, sem `sudo`. Para outro local:
 
@@ -67,6 +67,12 @@ ANCIENTCODE_VERSION=latest curl -fsSL .../HEAD/install.sh | sh
 > **`latest` não alcança prereleases.** O GitHub não aponta `/releases/latest` para uma
 > release marcada como pre-release. Se a mais recente for `-pre`, `latest` falha — e é o
 > comportamento certo, porque `latest` caindo numa prerelease é surpresa. Nesse caso use a tag.
+
+A página da última release estável é sempre
+[`releases/latest`](https://github.com/antonioghizidev/ancientcode/releases/latest); ela
+também aparece no menu **Releases** da barra lateral do repositório. As duas coisas só
+existem quando há uma release **não** marcada como pre-release — enquanto a única for
+`-pre`, o GitHub devolve 404 nesse caminho.
 
 ### Via `go install`
 

@@ -24,14 +24,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # O dispatch manual roda a partir do branch padrao, entao o contexto
           # do git nao tem nenhuma tag. Precisa do historico inteiro para o
           # git describe e para o scrub.
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -49,10 +49,17 @@ jobs:
           if [ "$EVENT" = "workflow_dispatch" ]; then
             TAG="$INPUT_TAG"
             case "$TAG" in v*) ;; *) echo "::error::a tag precisa comecar com v"; exit 1;; esac
-            # Cria a tag se ela nao existir: e o que permite re-gerar uma
-            # release sem forcar ninguem a mexer no repositorio local.
             git fetch --tags --force || true
-            if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              # A tag JA existe. O build tem que sair DELA, nao do HEAD do
+              # branch padrao: sem isto, re-gerar uma release antiga publicava
+              # um binario que responde --version <tag> sem ser o codigo
+              # daquela tag. Um `--version` que mente e' pior que nao ter
+              # release, porque manda o relato de bug para o commit errado.
+              git checkout -f "refs/tags/$TAG"
+            else
+              # Cria a tag se ela nao existir: e o que permite publicar sem
+              # forcar ninguem a mexer no repositorio local.
               git tag -a "$TAG" -m "release $TAG" "${GITHUB_SHA}"
               git push origin "refs/tags/$TAG"
             fi
@@ -83,27 +90,30 @@ jobs:
               ./cmd/ancientcode
           cp README.md LICENSE install.sh "dist/ancientcode_${TAG}_linux_amd64/"
 
-      # O instalador so confia no que este arquivo diz. Ele e' gerado do
-      # proprio artefato, nunca editado a mao: um SHA256SUMS escrito a mao e'
+      # O empacotamento mora num script, e nao aqui, para que o workflow e os
+      # testes usem O MESMO empacotador. Quando eram dois, o teste gerava um
+      # tarball plano e o workflow um com diretorio de topo: a suite ficava
+      # verde e toda release real era recusada pelo install.sh.
+      #
+      # O instalador so confia no que o SHA256SUMS diz, e ele e' gerado do
+      # proprio tarball, nunca editado a mao: um SHA256SUMS escrito a mao e'
       # exatamente o que um atacante com write no repositorio usaria.
-      - name: tar
+      - name: empacota (tarball + SHA256SUMS)
         env:
           TAG: ${{ steps.tag.outputs.tag }}
-        run: cd dist && tar -czf "ancientcode_${TAG}_linux_amd64.tar.gz" "ancientcode_${TAG}_linux_amd64"
+        run: sh scripts/package-release.sh dist "$TAG"
 
-      # O checksum e' do TARBAL, entao vem depois do tar. A ordem nao e' um
-      # detalhe: invertida, o SHA256SUMS descreve um arquivo que ninguem tem.
-      - name: SHA256SUMS
-        env:
-          TAG: ${{ steps.tag.outputs.tag }}
-        run: cd dist && sha256sum "ancientcode_${TAG}_linux_amd64.tar.gz" > SHA256SUMS
-
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/ancientcode_${{ steps.tag.outputs.tag }}_linux_amd64.tar.gz
             dist/SHA256SUMS
           generate_release_notes: true
+          # Sem isto, uma tag '-pre' publicada por dispatch nasceria como
+          # release normal e viraria a "latest" do repositorio - e o
+          # /releases/latest passaria a apontar para uma prerelease.
+          prerelease: ${{ contains(steps.tag.outputs.tag, '-') }}
+          make_latest: legacy
           body: |
             ## Como instalar
 
