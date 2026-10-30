@@ -1446,3 +1446,14 @@ helper não serve. Suba um nível e teste a chamada.
   release **normal** e viraria a "latest" do repositorio - e `/releases/latest` passaria a
   apontar para uma prerelease, que e' exatamente o que o instalador documenta que nao acontece.
   `legacy` deixa o GitHub marcar como latest so o que nao e' prerelease nem draft.
+
+### D-2026-10-30-90 - O passo de release fixa `tag_name` explicitamente
+
+- **Decisao**: `tag_name: ${{ steps.tag.outputs.tag }}` no `action-gh-release`.
+- **Por que**: a action deriva a tag de `github.ref`; num `workflow_dispatch` esse ref e'
+  `refs/heads/main`, que nao e' tag, entao a tag fica **vazia** e a publicacao falha. O
+  caminho que este projeto usa para publicar - o botao "Run workflow" - era justamente o
+  quebrado. Construir o artefato e falhar no ultimo passo e' pior que falhar cedo: o log
+  parece quase verde.
+- **Teste**: `TestReleaseWorkflowUsesSharedPackager` falha se a linha sumir. Mutacao aplicada:
+  pega.

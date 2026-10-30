@@ -44,6 +44,16 @@ func TestReleaseWorkflowUsesSharedPackager(t *testing.T) {
 			"use scripts/package-release.sh, ou o layout vai divergir do teste")
 	}
 
+	// O `workflow_dispatch` tem github.ref = refs/heads/main. A
+	// action-gh-release deriva a tag de github.ref e, quando o ref nao e'
+	// refs/tags/*, fica com tag vazia: sem `tag_name` explicito, o botao "Run
+	// workflow" constroi o artefato e falha ao publicar. Este e' o caminho que
+	// o projeto usa para publicar, entao ele precisa estar travado.
+	if !strings.Contains(s, "tag_name: ${{ steps.tag.outputs.tag }}") {
+		t.Fatal("o passo de release nao fixa tag_name: num workflow_dispatch a " +
+			"action fica sem tag (github.ref = refs/heads/main) e nao publica nada")
+	}
+
 	script := filepath.Join(root, "scripts", "package-release.sh")
 	body, err := os.ReadFile(script)
 	if err != nil {

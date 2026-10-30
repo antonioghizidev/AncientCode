@@ -105,6 +105,12 @@ jobs:
 
       - uses: softprops/action-gh-release@v3
         with:
+          # OBRIGATORIO. A action deriva a tag de github.ref, e num
+          # workflow_dispatch esse ref e' refs/heads/main - nao e' tag, entao a
+          # action fica com tag vazia. Sem esta linha o botao "Run workflow"
+          # constroi o artefato e falha ao publicar. O input ja resolveu a tag
+          # (e criou, se preciso), entao e' ele que manda.
+          tag_name: ${{ steps.tag.outputs.tag }}
           files: |
             dist/ancientcode_${{ steps.tag.outputs.tag }}_linux_amd64.tar.gz
             dist/SHA256SUMS
