@@ -57,6 +57,8 @@ jobs:
               # daquela tag. Um `--version` que mente e' pior que nao ter
               # release, porque manda o relato de bug para o commit errado.
               git checkout -f "refs/tags/$TAG"
+              # Tag existente tem conteudo imutavel: nao ha o que conferir.
+              CREATED=false
             else
               # Cria a tag se ela nao existir: e' o que permite publicar sem
               # forcar ninguem a mexer no repositorio local.
@@ -70,12 +72,28 @@ jobs:
               git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
               git tag -a "$TAG" -m "release $TAG" "${GITHUB_SHA}"
               git push origin "refs/tags/$TAG"
+              CREATED=true
             fi
           else
             TAG="$REF_NAME"
+            # Push de tag e' sempre tag nova: tag existente nao se re-empurra
+            # sem --force.
+            CREATED=true
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "tag resolvida: $TAG"
+          echo "created=$CREATED" >> "$GITHUB_OUTPUT"
+          echo "tag resolvida: $TAG (nova: $CREATED)"
+
+      # A versao fixada no install.sh e' o que o link estavel do README instala.
+      # Se ela nao for a tag que esta saindo, a pagina da release manda instalar a
+      # versao anterior - foi o que aconteceu na v0.16.1, que saiu fixando
+      # v0.16.0. So' vale para tag NOVA: uma tag existente tem conteudo imutavel,
+      # e re-gerar a release dela nao pode mudar o instalador.
+      - name: confere a versao fixada do install.sh
+        if: steps.tag.outputs.created == 'true'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: sh scripts/check-release-version.sh "$TAG"
 
       # A suite e o portao. Nao e' "rodar tambem": um artefato so' existe se a
       # suite passar. Fail-closed tambem no CI (spec M16).
@@ -132,8 +150,12 @@ jobs:
             ## Como instalar
 
             ```sh
-            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.tag.outputs.tag }}/install.sh | sh
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.tag.outputs.tag }}/install.sh \
+              | ANCIENTCODE_VERSION=${{ steps.tag.outputs.tag }} sh
             ```
+
+            A versão vai explícita **depois do pipe**, prefixando o `sh`: em
+            `VAR=x curl ... | sh` a atribuição vale só para o `curl`.
 
             O instalador confere o `SHA256SUMS` desta mesma release antes de
             extrair. Divergencia = recusa, sem instalação.

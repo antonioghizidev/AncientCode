@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -106,14 +107,20 @@ func TestInstallLatestFollowsRedirect(t *testing.T) {
 // TestInstallDefaultsToPinnedVersion: sem ANCIENTCODE_VERSION, o instalador
 // instala a versao FIXADA, nao `latest'. Reprodutibilidade vale mais que
 // conveniencia - rodar o instalador amanha tem que dar a mesma build de hoje.
+//
+// O pin NAO e' comparado com uma versao literal: ele muda a cada release (e o
+// portao de release exige que mude, D-95). Cravar `v0.16.0' aqui quebrava o
+// teste a cada bump sem testar nada de util - o que importa e' o default ser
+// uma tag fixa, nao `latest'.
 func TestInstallDefaultsToPinnedVersion(t *testing.T) {
 	script, err := os.ReadFile(filepath.Join(installScriptRoot(t), "install.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(script)
-	if !strings.Contains(s, `ANCIENTCODE_DEFAULT_VERSION:-v0.16.0`) {
-		t.Fatalf("o default deixou de ser uma versao fixada:\n%s", s[:200])
+	pin := pinnedDefaultVersion(t)
+	if !regexp.MustCompile(`^v\d+\.\d+\.\d+`).MatchString(pin) {
+		t.Fatalf("o default deixou de ser uma versao fixada: %q", pin)
 	}
 	if strings.Contains(s, `WANT_VERSION="${ANCIENTCODE_VERSION:-latest}"`) {
 		t.Fatal("o default voltou a ser `latest' - reprodutibilidade perdida")

@@ -27,7 +27,7 @@ RAWBASE="${ANCIENTCODE_RAW_BASE:-https://raw.githubusercontent.com/$REPO}"
 # A versao fixada e o DEFAULT de proposito: "latest" e convenience, nao
 # reprodutibilidade: se o usuario rodar o instalador amanha sem querer, ele
 # recebe outra build. Quem quiser a ultima tem que pedir (ANCIENTCODE_VERSION).
-DEFAULT_VERSION="${ANCIENTCODE_DEFAULT_VERSION:-v0.16.0}"
+DEFAULT_VERSION="${ANCIENTCODE_DEFAULT_VERSION:-v0.16.1}"
 WANT_VERSION="${ANCIENTCODE_VERSION:-$DEFAULT_VERSION}"
 PREFIX="${ANCIENTCODE_PREFIX:-$HOME/.local/bin}"
 

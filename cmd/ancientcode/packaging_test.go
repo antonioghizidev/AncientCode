@@ -114,3 +114,59 @@ func TestReleaseWorkflowConfiguresGitIdentity(t *testing.T) {
 		}
 	}
 }
+
+// pinnedDefaultVersion le a versao fixada do install.sh - a que o link estavel
+// do README instala.
+func pinnedDefaultVersion(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(installScriptRoot(t), "install.sh"))
+	if err != nil {
+		t.Fatalf("install.sh: %v", err)
+	}
+	m := regexp.MustCompile(`ANCIENTCODE_DEFAULT_VERSION:-([^}"]*)}`).FindStringSubmatch(string(raw))
+	if m == nil {
+		t.Fatal("install.sh nao tem ANCIENTCODE_DEFAULT_VERSION")
+	}
+	return m[1]
+}
+
+// TestReleaseWorkflowChecksPinnedVersion e' o portao que faltava quando a
+// v0.16.1 saiu: a tag apontava para o codigo novo, mas o install.sh continuava
+// fixando v0.16.0, e a pagina da release mandava instalar a versao anterior.
+//
+// O teste e' de CALL SITE (D-75): o script pode estar certo e nunca ser chamado.
+func TestReleaseWorkflowChecksPinnedVersion(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(installScriptRoot(t), ".github", "workflows", "release.yml"))
+	if err != nil {
+		t.Fatalf("release.yml: %v", err)
+	}
+	s := string(raw)
+	if !strings.Contains(s, "scripts/check-release-version.sh") {
+		t.Fatal("o workflow de release nao confere a versao fixada do install.sh: " +
+			"a release pode sair mandando instalar a versao anterior")
+	}
+	// So' para tag NOVA: re-gerar uma release antiga a partir da tag nao pode
+	// ser bloqueado por um pin que ja' e' historia.
+	if !strings.Contains(s, "steps.tag.outputs.created") {
+		t.Fatal("o workflow confere a versao fixada sem distinguir tag nova de " +
+			"existente: re-gerar uma release antiga passaria a falhar")
+	}
+}
+
+// TestCheckReleaseVersionScript exercita o portao de verdade, contra o
+// install.sh real: aceita a propria versao fixada, recusa outra tag estavel e
+// deixa prerelease passar (o canal fixo continua na ultima estavel).
+func TestCheckReleaseVersionScript(t *testing.T) {
+	script := filepath.Join(installScriptRoot(t), "scripts", "check-release-version.sh")
+	pin := pinnedDefaultVersion(t)
+
+	if out, err := shellExec(t, "sh '"+shellPath(t, script)+"' '"+pin+"'"); err != nil {
+		t.Fatalf("o portao recusou a propria versao fixada (%s): %v\n%s", pin, err, out)
+	}
+	if out, err := shellExec(t, "sh '"+shellPath(t, script)+"' 'v0.0.0'"); err == nil {
+		t.Fatalf("o portao aceitou uma tag estavel diferente da fixada:\n%s", out)
+	}
+	if out, err := shellExec(t, "sh '"+shellPath(t, script)+"' 'v0.0.0-pre'"); err != nil {
+		t.Fatalf("o portao recusou uma prerelease, que nao precisa ser a fixada: %v\n%s", err, out)
+	}
+}
