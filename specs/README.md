@@ -46,13 +46,13 @@ publicada com o artefato corrigido — ver "Em aberto".
 
 ### Em aberto
 
-- **Falta publicar a release `v0.16.0`.** A `v0.16.0-pre` publicada é ininstalável: o tarball
-  saía com diretório de topo e o `install.sh` procura `<extraído>/ancientcode` (corrigido em
-  D-87, com empacotador único). Falta rodar o workflow com a tag nova e conferir o artefato.
-- **A release ainda não é instalável por terceiros: o repositório está privado.** O pipeline
-  está pronto e testado; o que falta é a decisão de tornar público — e, antes disso, a remoção
-  dos `refs/pull/*/head` pelo GitHub Support, que ainda guardam commits com dado real de
-  máquina. Ver `milestones/16-m16-distribuicao.md` §6.
+- **Release `v0.16.0` publicada e verificada.** O tarball saiu plano, o `SHA256SUMS` confere, o
+  `go version -m` mostra `GOAMD64=v1`, e `install.sh` (versão fixa e `latest`) e
+  `go install @v0.16.0` funcionaram a partir das URLs públicas. A `v0.16.0-pre` continua
+  ininstalável e não é a `latest`.
+- **Repositório público.** Os `refs/pull/*/head` com dado real de máquina ficaram no repositório
+  antigo: o repo foi **recriado** com o mesmo nome, recebendo só `main` e a tag `v0.16.0`
+  (D-92). Ver `milestones/16-m16-distribuicao.md` §6.
 - **`SHA256SUMS` sem assinatura.** Quem controla o canal troca artefato e checksum juntos; o
   modelo de chaves ainda não existe (D-86).
 - **`--check` dentro da TUI.** Hoje a TUI recusa a flag e aponta o REPL.

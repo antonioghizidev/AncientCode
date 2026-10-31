@@ -70,9 +70,8 @@ ANCIENTCODE_VERSION=latest curl -fsSL .../HEAD/install.sh | sh
 
 A página da última release estável é sempre
 [`releases/latest`](https://github.com/antonioghizidev/ancientcode/releases/latest); ela
-também aparece no menu **Releases** da barra lateral do repositório. As duas coisas só
-existem quando há uma release **não** marcada como pre-release — enquanto a única for
-`-pre`, o GitHub devolve 404 nesse caminho.
+também aparece no menu **Releases** da barra lateral do repositório. Esse caminho só existe
+quando há pelo menos uma release **não** marcada como pre-release.
 
 ### Via `go install`
 
@@ -90,6 +89,10 @@ Atenção ao detalhe que só aparece aqui: `go install` **compila na máquina do
 `GOAMD64` exportado no shell quebra a compatibilidade com o Core 2 Duo silenciosamente. O caminho
 do binário pré-compilado não sofre disso.
 
+`go install` também não recebe `-ldflags`, então `--version` responde `dev` em vez da tag: o
+binário é o código da tag, mas não sabe qual é. Quem precisa que `--version` diga a versão usa o
+tarball.
+
 ### Conferir o download à mão
 
 ```sh
@@ -101,12 +104,6 @@ sha256sum -c SHA256SUMS
 
 O `SHA256SUMS` não é assinado: protege contra corrupção e truncamento, **não** contra quem
 controla o canal (ver D-86).
-
-### Ainda não funciona para terceiros
-
-O repositório está **privado**. As URLs acima devolvem 404 para quem não tem acesso — isso é
-controle de acesso do GitHub, não limitação do instalador. Ver
-[`specs/milestones/16-m16-distribuicao.md`](specs/milestones/16-m16-distribuicao.md) §6.
 
 ## Começando
 

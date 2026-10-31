@@ -66,22 +66,42 @@ artefato real, link estável para `latest` no README e, quando possível, na UI 
 | Testes de segurança do milestone presentes | ✅ |
 | Teste do caminho de sucesso do instalador | ✅ |
 | Documentação atualizada | ✅ |
-| Release publicada com artefato instalável | ⏳ depende do run do workflow |
+| Release publicada com artefato instalável | ✅ verificada contra as URLs públicas |
+
+## Publicação (2026-10-30)
+
+- O push da tag disparou o workflow (`on.push.tags`), que publicou a `v0.16.0` como release
+  normal: 2 assets, `prerelease=false`, e `/releases/latest` apontando para ela.
+- O repositório foi **recriado** com o mesmo nome (D-92) para eliminar os `refs/pull/*/head`
+  que guardavam dado real de máquina; só `main` e `v0.16.0` foram levados.
+- Verificado de fora, sem autenticação:
+  - repo 200; `/releases/latest` → `302 /tag/v0.16.0`; `raw.../HEAD/install.sh` 200;
+  - o `SHA256SUMS` publicado confere com o tarball baixado;
+  - tarball **plano**: `./ancientcode`, `./README.md`, `./LICENSE`, `./install.sh`;
+  - `go version -m` → `GOOS=linux`, `GOARCH=amd64`, `GOAMD64=v1`, `CGO_ENABLED=0`,
+    `trimpath`, revisão `a86dcae`, `vcs.modified=false`;
+  - `install.sh` com versão fixa e com `ANCIENTCODE_VERSION=latest` → `ancientcode v0.16.0`;
+  - `go install ...@v0.16.0` compila e roda (responde `dev`; ver observações).
+- **Teste não-hermético corrigido (2026-10-31)**: ao ficar público, o teste de `latest` passou a
+  falhar porque consultava o GitHub de verdade e antes só passava pelo 404 do repo privado.
+  `ANCIENTCODE_RELEASES_BASE` tornou a resolução sobrescrevível; o teste negativo agora aponta
+  para `file://` e há um positivo com `httptest` (302 → `/releases/tag/<tag>`) que roda no Linux.
+  Ver D-93.
 
 ## Próximos passos
 
-1. Rodar **Actions → release → Run workflow** com `v0.16.0` e conferir que publica
-   `ancientcode_v0.16.0_linux_amd64.tar.gz` + `SHA256SUMS`.
-2. Testar o `install.sh` contra a URL real do GitHub (até agora só `file://`).
-3. Tornar o repositório público quando o Support confirmar a remoção dos `refs/pull/*/head`.
-4. Reescrever a constitution §7 ("código do projeto", não o binário inteiro) — D-85.
+1. Reescrever a constitution §7 ("código do projeto", não o binário inteiro) — D-85.
+2. Opcional: fazer `--version` cair para `debug.ReadBuildInfo().Main.Version` quando o
+   `-ldflags` não foi passado, para o `go install` parar de dizer `dev`.
+3. Opcional: badge de release no README e `About → Website` = `releases/latest`.
 
 ## Observações / riscos
 
-- **Enquanto o repositório for privado, ninguém instala.** `raw.githubusercontent.com` e
-  `releases/download` exigem autenticação, e o `install.sh` não tem (nem deve ter) token. Isso é
-  controle de acesso do GitHub, não limitação do instalador.
 - **`v0.16.0-pre` não é consertável por dispatch**: aquele tag aponta para um commit com o
-  `install.sh` bugado e sem `scripts/package-release.sh`. A release boa é a `v0.16.0`.
-- O token fine-grained não enxerga o repositório pela API (404), então a publicação tem de ser
-  feita pela UI até a permissão ser corrigida.
+  `install.sh` bugado e sem `scripts/package-release.sh`. A release boa é a `v0.16.0`, e ela é
+  a `latest`.
+- **`go install` responde `dev`**: sem `-ldflags`, `main.version` fica no default. O binário é
+  o código da tag, mas não sabe qual é; o tarball responde a versão correta.
+- **`gh` e `git` usam credenciais diferentes.** O `gh` está com um PAT fine-grained escopado a
+  outro projeto; o `git` usa o token do GCM. Com o repositório público, a leitura por `gh`
+  passou a funcionar (leitura pública não exige token).

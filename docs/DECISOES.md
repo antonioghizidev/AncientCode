@@ -1472,3 +1472,36 @@ helper não serve. Suba um nível e teste a chamada.
 - **Teste**: `TestReleaseWorkflowConfiguresGitIdentity` compara **linhas de comando** (nao
   posicoes no arquivo, senao o proprio comentario que cita `git tag -a` engana o indice) e exige
   as duas linhas antes do `git tag -a`. Mutacao aplicada: pega.
+
+### D-2026-10-30-92 - O repositorio foi recriado em vez de esperar a remocao dos refs de PR
+
+- **Contexto**: o `main` estava limpo, mas `refs/pull/*/head` (10 de 12) ainda apontavam para
+  commits com um par `usuario@IP` de LAN e `/home/USUARIO/...`. Num repositorio publico esses
+  refs sao baixaveis (`git ls-remote` os anuncia, confirmado em repos publicos de terceiros) e
+  as paginas de PR exibem o diff antigo - entao apagar os refs nao bastaria.
+- **Decisao**: renomear o repositorio antigo para `AncientCode-archived` (privado) e criar um
+  novo com o mesmo nome, empurrando apenas `main` e a tag `v0.16.0`. O `gh` nao enxerga o repo
+  (o PAT fine-grained esta escopado a outro projeto), entao a publicacao foi feita pela UI.
+- **Consequencia**: o historico dos PRs se perde; as notas de sessao em `docs/` ficam. Owner e
+  nome nao mudam, entao as URLs do README e do `install.sh` continuam validas. A `v0.16.0-pre`
+  nao foi levada - era ininstalavel.
+- **Verificado depois**: repo 200 sem autenticacao, `/releases/latest` -> `/tag/v0.16.0`,
+  checksum do tarball confere, `go version -m` mostra `GOAMD64=v1`, e as tres vias de
+  instalacao (binario fixo, `latest`, `go install @v0.16.0`) funcionam.
+
+### D-2026-10-31-93 - A resolucao de `latest' no instalador e' sobrescrevivel, e o teste e' hermetico
+
+- **Sintoma**: ao tornar o repositorio publico, `TestInstallLatestResolvesTagFromRedirect`
+  passou a falhar - ele apontava os assets para `file://` mas a resolucao de `latest` usava
+  `$RELEASES/latest` com `RELEASES` hardcoded em `github.com`. Enquanto o repo era privado a
+  consulta dava 404 e o teste passava **pelo motivo errado**; publico, o redirect resolveu e o
+  instalador instalou. E' a mesma armadilha que o comentario de `runInstall` ja documentava.
+- **Decisao**: `RELEASES="${ANCIENTCODE_RELEASES_BASE:-https://github.com/$REPO/releases}"`,
+  no mesmo padrao de `ANCIENTCODE_RELEASE_BASE`/`ANCIENTCODE_RAW_BASE`. O teste negativo aponta
+  a variavel para `file://` (sem redirect) e volta a exercitar a recusa sem tocar na rede.
+- **Caminho positivo**: `TestInstallLatestFollowsRedirect` sobe um `httptest` que responde
+  `302 /releases/tag/<tag>` em `/releases/latest` e serve o artefato e o `SHA256SUMS` da tag;
+  o instalador tem de anunciar a tag e instalar. Roda no Linux; no Windows e' `t.Skip` porque o
+  instalador executa no WSL e nao alcanca o `127.0.0.1` do host.
+- **Teste**: o negativo falha (instala) sem a variavel e passa com ela; o positivo falha se a
+  resolucao por redirect for removida.

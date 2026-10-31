@@ -101,24 +101,22 @@ Cada um com teste que **falha se a proteção for removida**.
   chaves que este projeto ainda não tem.
 - **Multi-plataforma**: `linux/arm64`, macOS e Windows. Decidido com o usuário; ampliar depois
   é trivial, desde que a matriz do workflow seja a única coisa a mudar.
-- **`main` público**. O repositório está privado; nada disso é instalável por terceiros até
-  o repo ficar público. Ver §6.
 - **Auto-update.** Um binário que se atualiza sozinho é um binário que decide o que executa.
 
-## 6. Dependência externa: o repositório precisa ser público
+## 6. Dependência externa: repositório público (resolvido em 2026-10-30)
 
-Verificado nesta sessão: `GET /repos/antonioghizidev/ancientcode` devolve **404 sem
-autenticação**, o que para o GitHub significa **privado**.
+O repositório é **público**. Verificado sem autenticação: a página do repo responde 200,
+`/releases/latest` redireciona para `/tag/v0.16.0` e o `install.sh` em
+`raw.githubusercontent.com` responde 200.
 
-Enquanto for privado, **as instruções do README não funcionam para ninguém**. Isso não é
-limitação do instalador; é controle de acesso do GitHub. Decidido com o usuário: manter privado
-por enquanto, e entregar o pipeline pronto para quando a decisão mudar.
+O `main` já estava limpo — o par `usuário@IP` de LAN e o `/home/USUARIO/...` saíram com a
+reescrita de histórico. O problema eram os `refs/pull/*/head`: 10 dos 12 refs ainda apontavam
+para os commits antigos, e num repositório público esses refs são baixáveis por qualquer um.
+Como as páginas de PR também mostram o diff antigo, apagar os refs não bastaria.
 
-Antes de publicar, o `main` precisa ter os dois trechos de dado real de máquina que ele
-carrega desde setembro resolvidos — um par `usuário@IP` de LAN e um caminho
-`/home/USUARIO/...`, introduzidos em commits antigos (localizáveis com `git log -S` no `main`).
-Eles não são citados aqui de propósito: o gate de privacidade da §5 do constitution passaria a
-reprovar este arquivo.
+Decisão (D-92): **recriar o repositório** em vez de esperar o GitHub Support. O antigo foi
+renomeado para `AncientCode-archived` e mantido privado; o novo recebeu o mesmo nome e apenas
+`main` + a tag `v0.16.0` — nenhum ref de PR e nenhuma `v0.16.0-pre`.
 
 ## 7. Critérios de aceite
 
@@ -134,4 +132,6 @@ reprovar este arquivo.
 - [x] DECISOES, nota de sessão e `specs/README.md` atualizados; `docs/SPEC.md` revisado (o
       contrato de build/`GOAMD64=v1` já estava correto, não precisou mudar).
 - [x] **Dívidas registradas** (§5), não silenciosamente adiadas.
-- [ ] Release publicada com o artefato corrigido (depende do run do workflow).
+- [x] Release publicada e verificada a partir das URLs públicas: checksum confere, `GOAMD64=v1`
+      no `go version -m`, e `install.sh` (versão fixa e `latest`) e `go install @v0.16.0`
+      funcionam.
