@@ -1505,3 +1505,20 @@ helper não serve. Suba um nível e teste a chamada.
   instalador executa no WSL e nao alcanca o `127.0.0.1` do host.
 - **Teste**: o negativo falha (instala) sem a variavel e passa com ela; o positivo falha se a
   resolucao por redirect for removida.
+
+### D-2026-10-31-94 - --version cai para a versao do modulo quando nao ha -ldflags
+
+- **Problema**: `go install modulo@tag' nao passa `-ldflags`, entao `--version` respondia
+  `dev` num binario que era exatamente a tag. Quem abre um bug citando "dev" nao permite
+  saber qual codigo rodava - e a spec M16 S7 diz que `--version` e' a afirmacao do usuario.
+- **Decisao**: `resolveVersion(injected, buildInfo, ok)`: se `-X main.version` injetou algo
+  diferente de `dev`, vence; senao usa `BuildInfo.Main.Version`, ignorando `""` e `(devel)`.
+  Build local de trabalho continua `dev` - a funcao nunca inventa uma versao.
+- **Medido**: proxy de modulo local (`GOPROXY=file://`) com a arvore atual publicada como
+  `v0.0.0-teste`; `go install ...@v0.0.0-teste` sem ldflags respondeu
+  `ancientcode v0.0.0-teste`, e `go version -m` mostra `mod ... v0.0.0-teste`.
+- **Teste**: `TestResolveVersion` cobre ldflags vencendo, `go install`, build local e ausencia
+  de build info; `TestMainResolvesVersionFromBuildInfo` e' o teste de call site - falha se a
+  atribuicao no `main` sumir (a licao do D-75: helper certo, chamador errado).
+- **Alcance**: entra na proxima tag. A `v0.16.0` ja publicada mantem o `dev`, e o README diz
+  isso explicitamente.

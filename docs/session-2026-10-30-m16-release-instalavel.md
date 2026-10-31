@@ -88,20 +88,24 @@ artefato real, link estável para `latest` no README e, quando possível, na UI 
   para `file://` e há um positivo com `httptest` (302 → `/releases/tag/<tag>`) que roda no Linux.
   Ver D-93.
 
+## Correção do `go install` (2026-10-31)
+
+`--version` passa a cair para `BuildInfo.Main.Version` quando não há `-ldflags` (D-94). Provado
+com um proxy de módulo local: a árvore atual foi versionada como `v0.0.0-teste` e
+`go install ...@v0.0.0-teste`, sem ldflags, respondeu `ancientcode v0.0.0-teste`.
+
 ## Próximos passos
 
 1. Reescrever a constitution §7 ("código do projeto", não o binário inteiro) — D-85.
-2. Opcional: fazer `--version` cair para `debug.ReadBuildInfo().Main.Version` quando o
-   `-ldflags` não foi passado, para o `go install` parar de dizer `dev`.
-3. Opcional: badge de release no README e `About → Website` = `releases/latest`.
+2. Opcional: badge de release no README e `About → Website` = `releases/latest`.
 
 ## Observações / riscos
 
 - **`v0.16.0-pre` não é consertável por dispatch**: aquele tag aponta para um commit com o
   `install.sh` bugado e sem `scripts/package-release.sh`. A release boa é a `v0.16.0`, e ela é
   a `latest`.
-- **`go install` responde `dev`**: sem `-ldflags`, `main.version` fica no default. O binário é
-  o código da tag, mas não sabe qual é; o tarball responde a versão correta.
+- **`go install` responde `dev` na `v0.16.0`**: aquele código não tem o fallback para
+  `debug.ReadBuildInfo()`. A correção está em `main` (D-94) e vale a partir da próxima tag.
 - **`gh` e `git` usam credenciais diferentes.** O `gh` está com um PAT fine-grained escopado a
   outro projeto; o `git` usa o token do GCM. Com o repositório público, a leitura por `gh`
   passou a funcionar (leitura pública não exige token).

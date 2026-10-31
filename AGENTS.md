@@ -30,7 +30,7 @@ continua ininstalável e não é a `latest` (D-87, D-92).
 | | |
 |---|---|
 | Estado por milestone | [`specs/README.md`](specs/README.md) — tabela M1..M16 com spec e nota de sessão |
-| O que está aberto agora | dívidas do M16 (§5 da spec): `SHA256SUMS` assinado, multi-plataforma, auto-update; `go install` responde `dev` porque não recebe `-ldflags` |
+| O que está aberto agora | dívidas do M16 (§5 da spec): `SHA256SUMS` assinado, multi-plataforma, auto-update. O `go install` já cai para a versão do módulo no build info (D-94); isso entra na próxima tag |
 | Backlog anotado | `/compact`, `/new`, `/autocompact` (paridade com o opencode — a unidade é a **sessão**, os três criam sessão nova); `/sessions` para não perder acesso à anterior; backlog Web (SSE + shell-HTTP + `Approver` por canal) |
 
 **Não reescreva o histórico de milestones aqui.** Ele vive em `specs/milestones/` (spec) e

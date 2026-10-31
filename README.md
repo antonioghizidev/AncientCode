@@ -89,9 +89,9 @@ Atenção ao detalhe que só aparece aqui: `go install` **compila na máquina do
 `GOAMD64` exportado no shell quebra a compatibilidade com o Core 2 Duo silenciosamente. O caminho
 do binário pré-compilado não sofre disso.
 
-`go install` também não recebe `-ldflags`, então `--version` responde `dev` em vez da tag: o
-binário é o código da tag, mas não sabe qual é. Quem precisa que `--version` diga a versão usa o
-tarball.
+`go install` não recebe `-ldflags`, mas o Go grava a versão do módulo no build info do binário: a
+partir da próxima tag, `--version` responde a tag também nesse caminho. Na `v0.16.0` — a versão
+fixada acima — ele ainda responde `dev`, porque o fallback não existia no código daquela tag.
 
 ### Conferir o download à mão
 
