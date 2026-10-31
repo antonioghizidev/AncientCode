@@ -1522,3 +1522,35 @@ helper não serve. Suba um nível e teste a chamada.
   atribuicao no `main` sumir (a licao do D-75: helper certo, chamador errado).
 - **Alcance**: entra na proxima tag. A `v0.16.0` ja publicada mantem o `dev`, e o README diz
   isso explicitamente.
+
+### D-2026-10-31-95 - O pin do install.sh e' conferido contra a tag antes de publicar
+
+- **Sintoma**: a `v0.16.1` foi tagueada a partir de `06a2cc5` (codigo novo), mas o
+  `install.sh` continuava fixando `v0.16.0`. A pagina da release manda
+  `curl .../v0.16.1/install.sh | sh`, que instalava a versao ANTERIOR - e o proprio corpo
+  da release dizia que `--version` devia responder `v0.16.1`.
+- **Causa**: o pin e' atualizado a mao (de proposito: o link estavel do README instala a
+  versao fixada). Nada no pipeline conferia que ele acompanhou a tag.
+- **Decisao**: `scripts/check-release-version.sh <tag>` compara
+  `ANCIENTCODE_DEFAULT_VERSION` com a tag; o workflow roda antes de empacotar e falha a
+  release se divergirem. Vale so' para tag NOVA (output `created`): tag existente tem
+  conteudo imutavel, e re-gerar uma release antiga nao pode ser bloqueado por um pin
+  historico. Prerelease (`*-*`) passa direto: o canal fixo continua na ultima estavel.
+- **Medido**: rodando o script contra o `install.sh` da tag `v0.16.1` (pin `v0.16.0`) com a
+  tag `v0.16.1`, ele recusa com exit 1; com o pin corrigido no HEAD, aceita.
+- **Teste**: `TestCheckReleaseVersionScript` exercita o script de verdade (aceita o pin,
+  recusa `v0.0.0`, deixa `v0.0.0-pre` passar); `TestReleaseWorkflowChecksPinnedVersion` e'
+  o teste de call site - falha se o workflow parar de chamar o script ou perder o gate por
+  `created`.
+
+### D-2026-10-31-96 - Variavel de ambiente do instalador vai DEPOIS do pipe
+
+- **Sintoma**: os exemplos do README eram `ANCIENTCODE_PREFIX=/usr/local/bin curl ... | sh`
+  e `ANCIENTCODE_VERSION=latest curl ... | sh`. Em POSIX, `VAR=x cmd1 | cmd2` aplica a
+  atribuicao so' ao `cmd1`: o `sh` que executa o instalador nao ve a variavel. Os dois
+  exemplos estavam inertes.
+- **Decisao**: `curl ... | ANCIENTCODE_PREFIX=... sh`. O corpo da release usa a mesma forma,
+  com a versao explicita.
+- **Por que nao foi pego**: os testes chamam o instalador como `VAR=... sh script` (a
+  variavel vale para o `sh`), entao exercitam o comportamento certo por um caminho que o
+  README nao usava - a variante de "helper certo, chamador errado" na documentacao.

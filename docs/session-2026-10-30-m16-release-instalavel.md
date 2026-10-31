@@ -94,6 +94,30 @@ artefato real, link estável para `latest` no README e, quando possível, na UI 
 com um proxy de módulo local: a árvore atual foi versionada como `v0.0.0-teste` e
 `go install ...@v0.0.0-teste`, sem ldflags, respondeu `ancientcode v0.0.0-teste`.
 
+## Release `v0.16.1` (2026-10-31)
+
+Publicada pelo workflow a partir de `06a2cc5` (tag anotada `e034c6b`). Verificada de fora, sem
+autenticação:
+
+- release normal (`prerelease=false`, `draft=false`), 2 assets, `/releases/latest` → `v0.16.1`;
+- `SHA256SUMS` confere com o tarball baixado (`12c120b9…8f66`); tarball plano;
+- `go version -m` → `mod v0.16.1`, `GOAMD64=v1`, `CGO_ENABLED=0`, revisão `06a2cc5`,
+  `vcs.modified=false`;
+- `go install ...@v0.16.1` responde `ancientcode v0.16.1` — o D-94 provado em produção (a
+  `v0.16.0` ainda respondia `dev`).
+
+Dois defeitos encontrados na verificação, ambos corrigidos e com teste:
+
+- **O `install.sh` da tag fixava `v0.16.0`.** O corpo da release manda
+  `curl .../v0.16.1/install.sh | sh`, então a página mandava instalar a versão anterior. O pin é
+  manual de propósito (reprodutibilidade do link estável), mas nada o conferia contra a tag.
+  Agora `scripts/check-release-version.sh <tag>` roda no workflow antes de empacotar e falha em
+  tag **nova** com pin divergente; prerelease passa (D-95). Medido: contra o `install.sh` da tag
+  `v0.16.1` o script recusa com exit 1; com o pin corrigido, aceita.
+- **Os exemplos do README com variável de ambiente não funcionavam.**
+  `ANCIENTCODE_PREFIX=... curl ... | sh` aplica a atribuição só ao `curl`; o `sh` não a vê. Agora
+  a variável vai depois do pipe, prefixando o `sh` (D-96) — mesma forma no corpo da release.
+
 ## Próximos passos
 
 1. Reescrever a constitution §7 ("código do projeto", não o binário inteiro) — D-85.
@@ -105,7 +129,8 @@ com um proxy de módulo local: a árvore atual foi versionada como `v0.0.0-teste
   `install.sh` bugado e sem `scripts/package-release.sh`. A release boa é a `v0.16.0`, e ela é
   a `latest`.
 - **`go install` responde `dev` na `v0.16.0`**: aquele código não tem o fallback para
-  `debug.ReadBuildInfo()`. A correção está em `main` (D-94) e vale a partir da próxima tag.
+  `debug.ReadBuildInfo()`. A correção entrou na `v0.16.1` (D-94), que responde a versão do
+  módulo; só a `v0.16.0` fica com o `dev`.
 - **`gh` e `git` usam credenciais diferentes.** O `gh` está com um PAT fine-grained escopado a
   outro projeto; o `git` usa o token do GCM. Com o repositório público, a leitura por `gh`
   passou a funcionar (leitura pública não exige token).

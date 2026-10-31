@@ -20,8 +20,9 @@ Decisões registradas vivem em [docs/DECISOES.md](../docs/DECISOES.md). Notas po
 ## Estado por milestone
 
 **M1–M16 mergeados em `main`** (M14 no PR #10; M15 no PR #11; M16 no PR #12). O **M16 —
-distribuição instalável** tem o pipeline pronto e testado, mas a release ainda não foi
-publicada com o artefato corrigido — ver "Em aberto".
+distribuição instalável** está publicado e verificável: a `v0.16.1` é a `latest`, o
+repositório é público e a instalação por binário e por `go install` funciona a partir das
+URLs públicas — ver "Em aberto" para as dívidas que sobraram.
 
 | | Milestone | Spec | Nota de sessão |
 |---|---|---|---|
@@ -46,13 +47,17 @@ publicada com o artefato corrigido — ver "Em aberto".
 
 ### Em aberto
 
-- **Release `v0.16.0` publicada e verificada.** O tarball saiu plano, o `SHA256SUMS` confere, o
-  `go version -m` mostra `GOAMD64=v1`, e `install.sh` (versão fixa e `latest`) e
-  `go install @v0.16.0` funcionaram a partir das URLs públicas. A `v0.16.0-pre` continua
-  ininstalável e não é a `latest`.
+- **Release `v0.16.1` publicada e verificada.** O tarball saiu plano, o `SHA256SUMS` confere, o
+  `go version -m` mostra `GOAMD64=v1` e `vcs.modified=false`, e `install.sh` e
+  `go install @v0.16.1` funcionaram a partir das URLs públicas (o `go install` responde
+  `ancientcode v0.16.1` — D-94). A `v0.16.0-pre` continua ininstalável e não é a `latest`.
 - **Repositório público.** Os `refs/pull/*/head` com dado real de máquina ficaram no repositório
   antigo: o repo foi **recriado** com o mesmo nome, recebendo só `main` e a tag `v0.16.0`
   (D-92). Ver `milestones/16-m16-distribuicao.md` §6.
+- **O pin do `install.sh` tem portão.** O link estável do README instala a versão fixada; se ela
+  não acompanhar a tag, a página da release manda instalar a versão anterior (foi o que
+  aconteceu na `v0.16.1`, D-95). `scripts/check-release-version.sh <tag>` roda no workflow
+  antes de empacotar e falha em tag nova com pin divergente.
 - **`SHA256SUMS` sem assinatura.** Quem controla o canal troca artefato e checksum juntos; o
   modelo de chaves ainda não existe (D-86).
 - **`--check` dentro da TUI.** Hoje a TUI recusa a flag e aponta o REPL.

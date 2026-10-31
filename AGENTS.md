@@ -23,14 +23,14 @@ provedor remoto (OpenRouter / NVIDIA NIM / LiteLLM; contrato OpenAI-compatible).
 
 ## Estado atual
 
-**M1–M16 mergeados em `main`, e o projeto é instalável por terceiros.** A `v0.16.0` está
+**M1–M16 mergeados em `main`, e o projeto é instalável por terceiros.** A `v0.16.1` está
 publicada e verificada a partir das URLs públicas; o repositório é público. A `v0.16.0-pre`
 continua ininstalável e não é a `latest` (D-87, D-92).
 
 | | |
 |---|---|
 | Estado por milestone | [`specs/README.md`](specs/README.md) — tabela M1..M16 com spec e nota de sessão |
-| O que está aberto agora | dívidas do M16 (§5 da spec): `SHA256SUMS` assinado, multi-plataforma, auto-update. O `go install` já cai para a versão do módulo no build info (D-94); isso entra na próxima tag |
+| O que está aberto agora | dívidas do M16 (§5 da spec): `SHA256SUMS` assinado, multi-plataforma, auto-update. O fallback de versão do `go install` entrou na `v0.16.1` (D-94) |
 | Backlog anotado | `/compact`, `/new`, `/autocompact` (paridade com o opencode — a unidade é a **sessão**, os três criam sessão nova); `/sessions` para não perder acesso à anterior; backlog Web (SSE + shell-HTTP + `Approver` por canal) |
 
 **Não reescreva o histórico de milestones aqui.** Ele vive em `specs/milestones/` (spec) e

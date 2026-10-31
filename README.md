@@ -48,21 +48,24 @@ curl -fsSL https://raw.githubusercontent.com/antonioghizidev/ancientcode/HEAD/in
 ```
 
 Esse link é **estável**: aponta para o instalador do branch principal e **não muda de URL**
-a cada release. O instalador em si tem uma versão **fixada** (`v0.16.0`), então rodar o comando
+a cada release. O instalador em si tem uma versão **fixada** (`v0.16.1`), então rodar o comando
 amanhã instala exatamente a mesma build de hoje — é reprodutível, e é por isso que `latest`
 não é o padrão.
 
 O instalador grava em `~/.local/bin`, sem `sudo`. Para outro local:
 
 ```sh
-ANCIENTCODE_PREFIX=/usr/local/bin curl -fsSL .../HEAD/install.sh | sh
+curl -fsSL .../HEAD/install.sh | ANCIENTCODE_PREFIX=/usr/local/bin sh
 ```
 
 Para pedir explicitamente a última release estável:
 
 ```sh
-ANCIENTCODE_VERSION=latest curl -fsSL .../HEAD/install.sh | sh
+curl -fsSL .../HEAD/install.sh | ANCIENTCODE_VERSION=latest sh
 ```
+
+> As variáveis vão **depois do pipe**, prefixando o `sh`. Em `VAR=x curl ... | sh` a
+> atribuição vale só para o `curl`, e o instalador não a vê.
 
 > **`latest` não alcança prereleases.** O GitHub não aponta `/releases/latest` para uma
 > release marcada como pre-release. Se a mais recente for `-pre`, `latest` falha — e é o
@@ -79,7 +82,7 @@ Só se a máquina **já tiver** Go 1.27+, o que o alvo não tem por definição.
 
 ```sh
 # versão fixa (reprodutível)
-go install github.com/antonioghizidev/ancientcode/cmd/ancientcode@v0.16.0
+go install github.com/antonioghizidev/ancientcode/cmd/ancientcode@v0.16.1
 
 # última estável
 go install github.com/antonioghizidev/ancientcode/cmd/ancientcode@latest
@@ -90,13 +93,13 @@ Atenção ao detalhe que só aparece aqui: `go install` **compila na máquina do
 do binário pré-compilado não sofre disso.
 
 `go install` não recebe `-ldflags`, mas o Go grava a versão do módulo no build info do binário: a
-partir da próxima tag, `--version` responde a tag também nesse caminho. Na `v0.16.0` — a versão
-fixada acima — ele ainda responde `dev`, porque o fallback não existia no código daquela tag.
+partir da `v0.16.1` — a versão fixada acima — `--version` responde a tag também nesse caminho. Na
+`v0.16.0` ele ainda responde `dev`, porque o fallback não existia no código daquela tag.
 
 ### Conferir o download à mão
 
 ```sh
-TAG=v0.16.0
+TAG=v0.16.1
 curl -fsSLO "https://github.com/antonioghizidev/ancientcode/releases/download/$TAG/SHA256SUMS"
 curl -fsSLO "https://github.com/antonioghizidev/ancientcode/releases/download/$TAG/ancientcode_${TAG}_linux_amd64.tar.gz"
 sha256sum -c SHA256SUMS
