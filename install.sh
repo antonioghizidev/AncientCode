@@ -15,11 +15,12 @@
 #   ANCIENTCODE_VERSION   versao a instalar; padrao "latest"
 #   ANCIENTCODE_PREFIX    onde instalar; padrao "$HOME/.local/bin"
 #   ANCIENTCODE_RELEASE_BASE  base dos assets (usado por teste)
+#   ANCIENTCODE_RELEASES_BASE base de /releases, de onde 'latest' resolve (usado por teste)
 
 set -eu
 
 REPO="antonioghizidev/ancientcode"
-RELEASES="https://github.com/$REPO/releases"
+RELEASES="${ANCIENTCODE_RELEASES_BASE:-https://github.com/$REPO/releases}"
 BASE="${ANCIENTCODE_RELEASE_BASE:-$RELEASES/download}"
 RAWBASE="${ANCIENTCODE_RAW_BASE:-https://raw.githubusercontent.com/$REPO}"
 
@@ -87,7 +88,7 @@ trap 'rm -rf "$WORK"' EXIT INT TERM
 # numa prerelease e' uma surpresa.
 VERSION="$WANT_VERSION"
 if [ "$VERSION" = "latest" ]; then
-	redirected=$(fetch_head_url "$RELEASES/latest") || die "nao consegui consultar a ultima release (o repositorio esta privado, ou a ultima release e' prerelease?)"
+	redirected=$(fetch_head_url "$RELEASES/latest") || die "nao consegui consultar a ultima release (sem rede, ou a ultima release e' prerelease?)"
 	VERSION=$(basename "$redirected")
 	case "$VERSION" in
 	v*) ;;
