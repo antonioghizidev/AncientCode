@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -67,6 +68,24 @@ const turnTimeout = 5 * time.Minute
 // Fora de release ela e "dev": uma constante digitada a mao mente, porque
 // --version e a afirmacao que o usuario faz ao reportar um bug (spec M16 S7).
 var version = "dev"
+
+// resolveVersion decide o que --version deve afirmar.
+//
+// A build de release injeta -X main.version=<tag>. `go install modulo@tag' nao
+// passa -ldflags, mas o Go grava a versao do modulo no build info - por isso ela
+// e' o fallback. Build local de trabalho tem "(devel)" e continua "dev": nunca
+// inventar uma versao que a build nao tem.
+func resolveVersion(injected string, bi *debug.BuildInfo, ok bool) string {
+	if injected != "" && injected != "dev" {
+		return injected
+	}
+	if ok && bi != nil {
+		if v := bi.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
+	}
+	return injected
+}
 
 // terminalApprover is the human gate (SPEC §5.6.6). It shows the exact command
 // before deciding. Answering "d" registers a veto for the tool: from then on
@@ -210,6 +229,10 @@ type rootReader interface {
 }
 
 func main() {
+	// `go install modulo@tag' nao passa -ldflags; o build info carrega a versao
+	// do modulo. Sem este fallback, quem instalou assim reporta "dev".
+	buildInfo, buildInfoOK := debug.ReadBuildInfo()
+	version = resolveVersion(version, buildInfo, buildInfoOK)
 	flag.Parse()
 	if *flagVersion {
 		fmt.Printf("ancientcode %s\n", version)
